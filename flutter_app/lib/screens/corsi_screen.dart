@@ -825,11 +825,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                     ),
                                   );
                                   if (confirm == true) {
+                                    final messenger = ScaffoldMessenger.of(context);
                                     final ok = await _api.deleteCorso(c.id);
                                     if (ok) {
                                       _loadAll();
                                     } else if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      messenger.showSnackBar(
                                         const SnackBar(content: Text('Impossibile eliminare il corso. Verificare se ci sono allievi o lezioni collegate.')),
                                       );
                                     }

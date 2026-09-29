@@ -69,12 +69,19 @@ async function connectToWhatsApp() {
             }
         }
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = lastDisconnect.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             logToFile('Connessione chiusa. Motivo: ' + (lastDisconnect.error ? lastDisconnect.error.message : 'sconosciuto') + ' | Riconnessione: ' + shouldReconnect);
             currentStatus = 'DISCONNECTED';
             currentQrDataUrl = null;
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 2000); // Wait a bit before reconnecting to avoid tight loops
+            } else {
+                // Se è loggedOut (401), le credenziali non sono più valide. 
+                // Dobbiamo cancellare la cartella auth e rigenerare il QR code
+                logToFile('Credenziali invalidate (Logout). Elimino baileys_auth_info e riavvio...');
+                fs.rmSync('baileys_auth_info', { recursive: true, force: true });
+                setTimeout(connectToWhatsApp, 2000);
             }
         } else if (connection === 'open') {
             logToFile('Client WhatsApp pronto! (Baileys)');
@@ -264,6 +271,9 @@ app.post('/api/send', async (req, res) => {
         
         // Sostituzione per fallback se arriva c.us
         chatId = chatId.replace('@c.us', '@s.whatsapp.net');
+        
+        // Baileys fallisce silenziosamente o va in timeout se il JID contiene il simbolo '+'
+        chatId = chatId.replace('+', '');
         
         if (isPoll && pollOptions && pollOptions.length > 0) {
             logToFile(`Invio sondaggio a ${chatId}...`);
