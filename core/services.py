@@ -1,102 +1,120 @@
 import random
 from collections import defaultdict
-from django.db.models import Q
-from .models import Event, EventAttendance, Match, Role, AttendanceStatus
+from .models import Lezione, Presenza, Match, Role
 
-def generate_matches(event_id):
+
+def generate_matches(lezione_id):
     """
-    Algoritmo di abbinamento coppie per un dato evento.
+    Algoritmo di abbinamento coppie per una data lezione.
+    - Seleziona gli allievi con presenza confermata (presente=True).
     - Risolve i ruoli "BOTH" per equilibrare i numeri.
-    - Genera coppie evitando abbinamenti già avvenuti negli ultimi 3 eventi.
+    - Genera coppie evitando abbinamenti già avvenuti nelle ultime 3 lezioni dello stesso corso.
     - Gestisce la disparità assegnando il flag "is_rotation=True" a chi resta spaiato.
     """
-    event = Event.objects.get(id=event_id)
-    
-    # 1. Pulisci match pregressi per questo evento in caso di ricalcolo
-    Match.objects.filter(event=event).delete()
-    
-    attendances = EventAttendance.objects.filter(event=event, status=AttendanceStatus.ATTENDING)
-    
+    lezione = Lezione.objects.get(id=lezione_id)
+
+    # 1. Pulisci match pregressi per questa lezione in caso di ricalcolo
+    Match.objects.filter(lezione=lezione).delete()
+
+    presenze = Presenza.objects.filter(lezione=lezione, presente=True).select_related('allievo')
+
     leaders = []
     followers = []
     both = []
-    
-    # Estrai i ruoli
-    for att in attendances:
-        r = att.role_for_event if att.role_for_event else att.participant.role
-        if r == Role.LEADER:
-            leaders.append(att.participant)
-        elif r == Role.FOLLOWER:
-            followers.append(att.participant)
-        else:
-            both.append(att.participant)
-            
-    # 2. Assegna chi fa "BOTH" al ruolo più carente
+
+    # Estrai i ruoli in base all'anagrafica allievo
+    for p in presenze:
+        allievo = p.allievo
+        if allievo.ruolo == Role.LEADER:
+            leaders.append(allievo)
+        elif allievo.ruolo == Role.FOLLOWER:
+            followers.append(allievo)
+        elif allievo.ruolo == Role.BOTH:
+            both.append(allievo)
+
+    # 2. Bilancia ruoli BOTH
     random.shuffle(both)
-    for p in both:
+    for allievo in both:
         if len(leaders) <= len(followers):
-            leaders.append(p)
+            leaders.append(allievo)
         else:
-            followers.append(p)
-            
-    # 3. Costruisci lo storico per evitare ripetizioni
-    # Recupera gli ultimi 3 eventi precedenti a questo
-    recent_events = Event.objects.filter(date__lt=event.date).order_by('-date')[:3]
-    recent_matches = Match.objects.filter(event__in=recent_events, is_rotation=False)
-    
+            followers.append(allievo)
+
+    # 3. Storico delle ultime 3 lezioni dello stesso corso per evitare ripetizioni
+    recent_lezioni = Lezione.objects.filter(
+        corso=lezione.corso,
+        data__lt=lezione.data
+    ).order_by('-data')[:3]
+
     history = defaultdict(set)
-    for m in recent_matches:
-        if m.leader and m.follower:
-            history[m.leader.id].add(m.follower.id)
-            history[m.follower.id].add(m.leader.id)
-            
-    # 4. Abbinamento Greedy (con vincolo di Sesso Uomo/Donna)
+    for past_lezione in recent_lezioni:
+        past_matches = Match.objects.filter(
+            lezione=past_lezione, is_rotation=False
+        ).select_related('leader', 'follower')
+        for m in past_matches:
+            if m.leader and m.follower:
+                history[m.leader.id].add(m.follower.id)
+                history[m.follower.id].add(m.leader.id)
+
+    # 4. Algoritmo di matching
     random.shuffle(leaders)
     random.shuffle(followers)
-    
-    unmatched_leaders = leaders.copy()
-    unmatched_followers = followers.copy()
-    
+
     pairs = []
-    
-    # Cerchiamo coppie che NON hanno ballato insieme di recente E sono di sesso opposto
-    for l in list(unmatched_leaders):
-        possible_followers = [f for f in unmatched_followers if f.id not in history[l.id] and f.gender != l.gender]
-        
-        # Fallback: Se non c'è nessuno con cui non ha ballato di recente, 
-        # accontentiamoci di una persona di sesso opposto anche se hanno già ballato
-        if not possible_followers:
-            possible_followers = [f for f in unmatched_followers if f.gender != l.gender]
-            
-        if possible_followers:
-            # Prendi il primo possibile (sono già stati mischiati)
-            f = possible_followers[0]
-            pairs.append((l, f))
-            unmatched_leaders.remove(l)
-            unmatched_followers.remove(f)
-            
-    # Se restano persone, ma non ci sono più accoppiamenti di sesso opposto, 
-    # andranno in rotazione. Non accoppiamo forzatamente persone dello stesso sesso 
-    # dato che il requisito è "le coppie sono sempre Uomo Donna".
-        
-    # 5. Salvataggio su Database
+    unmatched_followers = list(followers)
+
+    for leader in leaders:
+        matched = None
+        # Prova prima partner mai incontrati recentemente
+        for follower in unmatched_followers:
+            if follower.id not in history[leader.id]:
+                matched = follower
+                break
+
+        # Se tutti già incontrati, fallback sul primo follower disponibile
+        if not matched and unmatched_followers:
+            matched = unmatched_followers[0]
+
+        if matched:
+            pairs.append((leader, matched))
+            unmatched_followers.remove(matched)
+
+    # 5. Salva i match nel database
     matches_to_create = []
-    
-    # Coppie fisse
-    for l, f in pairs:
-        matches_to_create.append(Match(event=event, leader=l, follower=f, is_rotation=False))
-        
-    # Gestione esuberi (Rotazione in sala - Opzione B scelta dall'utente)
-    for l in unmatched_leaders:
-        matches_to_create.append(Match(event=event, leader=l, follower=None, is_rotation=True))
-        
-    for f in unmatched_followers:
-        matches_to_create.append(Match(event=event, leader=None, follower=f, is_rotation=True))
-        
+
+    for leader, follower in pairs:
+        matches_to_create.append(Match(
+            lezione=lezione,
+            leader=leader,
+            follower=follower,
+            is_rotation=False
+        ))
+
+    # Surplus di leader -> rotazione
+    matched_leaders = {lead for lead, _ in pairs}
+    for leader in leaders:
+        if leader not in matched_leaders:
+            matches_to_create.append(Match(
+                lezione=lezione,
+                leader=leader,
+                follower=None,
+                is_rotation=True
+            ))
+
+    # Surplus di follower -> rotazione
+    for follower in unmatched_followers:
+        matches_to_create.append(Match(
+            lezione=lezione,
+            leader=None,
+            follower=follower,
+            is_rotation=True
+        ))
+
     Match.objects.bulk_create(matches_to_create)
-    
+
     return {
-        "pairs_count": len(pairs),
-        "rotating_leaders": len(unmatched_leaders),
-        "rotating_followers": len(unmatched_followers)
+        'pairs_count': len(pairs),
+        'rotating_leaders': sum(1 for m in matches_to_create if m.is_rotation and m.leader),
+        'rotating_followers': sum(1 for m in matches_to_create if m.is_rotation and m.follower)
     }
+

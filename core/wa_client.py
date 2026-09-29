@@ -1,7 +1,5 @@
 import os
 import requests
-from django.conf import settings
-from .models import MessageLog
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:4002/api/send")
 
