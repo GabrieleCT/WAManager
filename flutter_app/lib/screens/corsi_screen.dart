@@ -41,11 +41,21 @@ class _CorsiScreenState extends State<CorsiScreen> {
     }
   }
 
+
+  void _sortIscritti(List<Allievo> list) {
+    list.sort((a, b) {
+      int cmp = a.sortName.compareTo(b.sortName);
+      if (cmp != 0) return cmp;
+      return b.ruolo.compareTo(a.ruolo); // leader prima di follower
+    });
+  }
+
   Future<void> _fetchIscritti(String corsoId) async {
     if (_loadingIscritti.contains(corsoId)) return;
     setState(() => _loadingIscritti.add(corsoId));
     try {
       final list = await _api.getAllievi(corsoId: corsoId);
+        _sortIscritti(list);
       final lezioni = await _api.getLezioni(corsoId: corsoId);
       if (mounted) {
         setState(() {
@@ -644,7 +654,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       ),
                     ),
                     title: Row(children: [Text(effettivi[idx].nomeCompleto, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), if (effettivi[idx].partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 14, color: Colors.pink)]]),
-                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('?? ${effettivi[idx].telefono}', style: const TextStyle(fontSize: 12)), if (effettivi[idx].partnerId != null) Text('Partner: ${effettivi[idx].partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))]),
+                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('📞 ${effettivi[idx].telefono}', style: const TextStyle(fontSize: 12)), if (effettivi[idx].partnerId != null) Text('Partner: ${effettivi[idx].partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))]),
                     trailing: Wrap(
                       spacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
@@ -748,7 +758,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Text('?? ${p.telefono}', style: const TextStyle(fontSize: 12)), const SizedBox(width: 8), _buildRuoloBadge(p.ruolo), if (p.partnerId != null) ...[const SizedBox(width: 8), Text('Partner: ${p.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))],
+                                  Text('📞 ${p.telefono}', style: const TextStyle(fontSize: 12)), const SizedBox(width: 8), _buildRuoloBadge(p.ruolo), if (p.partnerId != null) ...[const SizedBox(width: 8), Text('Partner: ${p.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))],
                                 ],
                               ),
                               if (p.note.isNotEmpty) ...[

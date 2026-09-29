@@ -248,7 +248,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
           children: [
             Text('📞 ${a.telefono}'),
             if (a.corsoDescrizione != null)
-              Text('?? ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)), if (a.partnerId != null) Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
+              Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)), if (a.partnerId != null) Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
           ],
         ),
         trailing: Wrap(
