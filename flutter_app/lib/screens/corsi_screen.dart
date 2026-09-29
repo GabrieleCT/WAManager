@@ -643,8 +643,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                         ),
                       ),
                     ),
-                    title: Text(effettivi[idx].nomeCompleto, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: Text('📞 ${effettivi[idx].telefono}', style: const TextStyle(fontSize: 12)),
+                    title: Row(children: [Text(effettivi[idx].nomeCompleto, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), if (effettivi[idx].partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 14, color: Colors.pink)]]),
+                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('?? ${effettivi[idx].telefono}', style: const TextStyle(fontSize: 12)), if (effettivi[idx].partnerId != null) Text('Partner: ${effettivi[idx].partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))]),
                     trailing: Wrap(
                       spacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
@@ -729,10 +729,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    p.nomeCompleto,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
+                                  Text(p.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                  if (p.partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 14, color: Colors.pink)],
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -750,9 +748,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Text('📞 ${p.telefono}', style: const TextStyle(fontSize: 12)),
-                                  const SizedBox(width: 8),
-                                  _buildRuoloBadge(p.ruolo),
+                                  Text('?? ${p.telefono}', style: const TextStyle(fontSize: 12)), const SizedBox(width: 8), _buildRuoloBadge(p.ruolo), if (p.partnerId != null) ...[const SizedBox(width: 8), Text('Partner: ${p.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))],
                                 ],
                               ),
                               if (p.note.isNotEmpty) ...[
