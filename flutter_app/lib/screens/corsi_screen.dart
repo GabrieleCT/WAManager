@@ -48,6 +48,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
       if (cmp != 0) return cmp;
       return b.ruolo.compareTo(a.ruolo); // leader prima di follower
     });
+  });
   }
 
   Future<void> _fetchIscritti(String corsoId) async {

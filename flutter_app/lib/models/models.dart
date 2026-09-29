@@ -173,9 +173,9 @@ class Allievo {
   String get partnerNomeCompleto => partnerNome != null ? '$partnerNome $partnerCognome' : '';
 
   String get sortName {
-    final myName = '$cognome $nome';
+    final myName = '$cognome $nome'.toLowerCase().trim();
     if (partnerId == null || partnerNome == null) return myName;
-    final pName = '$partnerCognome $partnerNome';
+    final pName = '$partnerCognome $partnerNome'.toLowerCase().trim();
     return myName.compareTo(pName) < 0 ? myName : pName;
   }
 
@@ -320,8 +320,10 @@ class Presenza {
   final String? allievoPartnerId;
   final String? allievoPartnerNome;
   String get allievoSortName {
-    if (allievoPartnerId == null || allievoPartnerNome == null) return allievoNome;
-    return allievoNome.compareTo(allievoPartnerNome!) < 0 ? allievoNome : allievoPartnerNome!;
+    final myName = allievoNome.toLowerCase().trim();
+    if (allievoPartnerId == null || allievoPartnerNome == null) return myName;
+    final pName = allievoPartnerNome!.toLowerCase().trim();
+    return myName.compareTo(pName) < 0 ? myName : pName;
   }
 
   bool presente;

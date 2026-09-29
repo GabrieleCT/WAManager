@@ -127,7 +127,12 @@ class PresenzaSerializer(serializers.ModelSerializer):
     allievo_telefono = serializers.CharField(source='allievo.telefono', read_only=True)
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
     allievo_partner_id = serializers.UUIDField(source='allievo.partner.id', read_only=True)
-    allievo_partner_nome = serializers.CharField(source='allievo.partner.__str__', read_only=True)
+    allievo_partner_nome = serializers.SerializerMethodField()
+
+    def get_allievo_partner_nome(self, obj):
+        if obj.allievo.partner:
+            return str(obj.allievo.partner)
+        return None
     lezione_data = serializers.DateField(source='lezione.data', read_only=True)
 
     class Meta:
