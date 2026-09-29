@@ -78,10 +78,10 @@ class _LezioniScreenState extends State<LezioniScreen> {
 
   DateTime _prossimoGiorno(int targetWeekday) {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = DateTime(now.year, now.month, now.day, 12, 0);
     int diff = targetWeekday - today.weekday;
     if (diff < 0) diff += 7;
-    return today.add(Duration(days: diff));
+    return DateTime(today.year, today.month, today.day + diff, 12, 0);
   }
 
   // ─── DIALOG NUOVA LEZIONE SINGOLA ─────────────────────────────
@@ -326,10 +326,8 @@ class _LezioniScreenState extends State<LezioniScreen> {
                           label: const Text('Avanti: Genera Calendario'),
                           onPressed: () {
                             dateProposte.clear();
-                            DateTime d = DateTime(selectedDataInizio.year, selectedDataInizio.month, selectedDataInizio.day);
                             for (int i = 0; i < numeroLezioni; i++) {
-                              dateProposte.add(d);
-                              d = d.add(const Duration(days: 7));
+                              dateProposte.add(DateTime(selectedDataInizio.year, selectedDataInizio.month, selectedDataInizio.day + (i * 7), 12, 0));
                             }
                             setWizState(() => currentStep = 1);
                           },
@@ -628,7 +626,9 @@ class _LezioniScreenState extends State<LezioniScreen> {
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Aggiungi Data'),
                 onPressed: () async {
-                  final initial = dateProposte.isNotEmpty ? dateProposte.last.add(const Duration(days: 7)) : DateTime.now();
+                  final initial = dateProposte.isNotEmpty
+                      ? DateTime(dateProposte.last.year, dateProposte.last.month, dateProposte.last.day + 7, 12, 0)
+                      : DateTime.now();
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: initial,
@@ -636,7 +636,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
                     lastDate: DateTime(2035),
                   );
                   if (picked != null) {
-                    final normalized = DateTime(picked.year, picked.month, picked.day);
+                    final normalized = DateTime(picked.year, picked.month, picked.day, 12, 0);
                     if (!dateProposte.any((d) => d.year == normalized.year && d.month == normalized.month && d.day == normalized.day)) {
                       setWizState(() {
                         dateProposte.add(normalized);
@@ -739,7 +739,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
                                 lastDate: DateTime(2035),
                               );
                               if (picked != null) {
-                                final normalized = DateTime(picked.year, picked.month, picked.day);
+                                final normalized = DateTime(picked.year, picked.month, picked.day, 12, 0);
                                 setWizState(() {
                                   dateProposte[i] = normalized;
                                   dateProposte.sort((a, b) => a.compareTo(b));
@@ -766,9 +766,129 @@ class _LezioniScreenState extends State<LezioniScreen> {
     );
   }
 
+  String _extractTrimestre(Lezione l) {
+    if (l.titolo.isNotEmpty) {
+      final match = RegExp(r'(\d+°\s*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
+      if (match != null) return match.group(1)!;
+      if (l.titolo.toLowerCase().contains('trimestre')) {
+        final parts = l.titolo.split('-');
+        if (parts.length > 1) return parts.last.trim();
+        return l.titolo;
+      }
+    }
+    final date = DateTime.tryParse(l.data);
+    if (date != null) {
+      if (date.month >= 10 && date.month <= 12) return '1° Trimestre';
+      if (date.month >= 1 && date.month <= 3) return '2° Trimestre';
+      if (date.month >= 4 && date.month <= 6) return '3° Trimestre';
+      return '4° Trimestre';
+    }
+    return 'Altre Lezioni';
+  }
+
+  int _trimestreOrder(String t) {
+    if (t.contains('1°')) return 1;
+    if (t.contains('2°')) return 2;
+    if (t.contains('3°')) return 3;
+    if (t.contains('4°')) return 4;
+    return 99;
+  }
+
+  String _formatDataItaliano(String dataStr) {
+    final d = DateTime.tryParse(dataStr);
+    if (d == null) return dataStr;
+    return '${_giornoItaliano(d.weekday)} ${DateFormat('dd/MM/yyyy').format(d)}';
+  }
+
+  Future<void> _deleteLezione(Lezione l) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Elimina Lezione'),
+          ],
+        ),
+        content: Text(
+          'Sei sicuro di voler eliminare la lezione del ${_formatDataItaliano(l.data)} (${l.titolo.isNotEmpty ? l.titolo : l.corsoDescrizione})?\n\nTutte le presenze registrate per questa lezione andranno perse.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _loading = true);
+      final ok = await _api.deleteLezione(l.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok ? 'Lezione eliminata con successo.' : 'Errore durante l\'eliminazione della lezione.'),
+            backgroundColor: ok ? Colors.green.shade800 : Colors.red.shade800,
+          ),
+        );
+      }
+      _loadAll();
+    }
+  }
+
+  Future<void> _deleteTrimestre(String corsoDescrizione, String trimestre, List<Lezione> lezioni) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever, color: Colors.red),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Elimina $trimestre')),
+          ],
+        ),
+        content: Text(
+          'Sei sicuro di voler eliminare TUTTE le ${lezioni.length} lezioni del "$trimestre" per il corso "$corsoDescrizione"?\n\nQuesta operazione cancellerà anche tutte le relative presenze e non può essere annullata.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Elimina ${lezioni.length} Lezioni'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _loading = true);
+      int deleted = 0;
+      for (final l in lezioni) {
+        final ok = await _api.deleteLezione(l.id);
+        if (ok) deleted++;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Eliminate $deleted lezioni del $trimestre con successo.'),
+            backgroundColor: Colors.green.shade800,
+          ),
+        );
+      }
+      _loadAll();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filteredLezioni = _filterScuolaId == null ? _lezioni : _lezioni.where((l) => l.scuolaId == _filterScuolaId).toList();
+    final displayedScuole = _filterScuolaId == null
+        ? _scuole
+        : _scuole.where((s) => s.id == _filterScuolaId).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -832,66 +952,282 @@ class _LezioniScreenState extends State<LezioniScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : filteredLezioni.isEmpty
-                    ? const Center(child: Text('Nessuna lezione trovata.'))
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
-                        itemCount: filteredLezioni.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (ctx, i) {
-                          final l = filteredLezioni[i];
+                : displayedScuole.isEmpty
+                    ? const Center(child: Text('Nessuna scuola trovata.'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
+                        itemCount: displayedScuole.length,
+                        itemBuilder: (ctx, sIdx) {
+                          final scuola = displayedScuole[sIdx];
+                          final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+                          final lezioniScuola = _lezioni.where((l) => l.scuolaId == scuola.id || corsiScuola.any((c) => c.id == l.corsoId)).toList();
+
                           return Card(
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.deepPurple.shade100,
-                                child: const Icon(Icons.event, color: Colors.deepPurple),
-                              ),
-                              title: Row(
+                            margin: const EdgeInsets.only(bottom: 14),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: Theme(
+                              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                              child: ExpansionTile(
+                                initiallyExpanded: true,
+                                tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.deepPurple.shade100,
+                                  child: const Icon(Icons.apartment, color: Colors.deepPurple),
+                                ),
+                                title: Text(
+                                  scuola.nome,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                                subtitle: Text(
+                                  '${scuola.sede} • ${corsiScuola.length} corsi attivi • ${lezioniScuola.length} lezioni registrate',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                ),
                                 children: [
-                                  if (l.titolo.isNotEmpty) ...[
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      margin: const EdgeInsets.only(right: 8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.deepPurple.shade50,
-                                        border: Border.all(color: Colors.deepPurple.shade200),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
+                                  if (corsiScuola.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.all(16),
                                       child: Text(
-                                        l.titolo,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.deepPurple.shade900,
-                                        ),
+                                        'Nessun corso configurato per questa scuola.',
+                                        style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
                                       ),
-                                    ),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      '${l.data} | ${l.corsoDescrizione}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
+                                    )
+                                  else
+                                    ...corsiScuola.map((corso) {
+                                      final lezioniCorso = _lezioni.where((l) => l.corsoId == corso.id).toList();
+
+                                      // Raggruppamento per Trimestre
+                                      final Map<String, List<Lezione>> trimestriMap = {};
+                                      for (final l in lezioniCorso) {
+                                        final trim = _extractTrimestre(l);
+                                        trimestriMap.putIfAbsent(trim, () => []).add(l);
+                                      }
+
+                                      // Ordinamento lezioni per data crescente
+                                      for (final list in trimestriMap.values) {
+                                        list.sort((a, b) => a.data.compareTo(b.data));
+                                      }
+
+                                      // Ordinamento trimestri
+                                      final sortedTrimestriKeys = trimestriMap.keys.toList()
+                                        ..sort((a, b) => _trimestreOrder(a).compareTo(_trimestreOrder(b)));
+
+                                      return Container(
+                                        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade50,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: Colors.grey.shade300),
+                                        ),
+                                        child: ExpansionTile(
+                                          initiallyExpanded: true,
+                                          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                          leading: CircleAvatar(
+                                            radius: 16,
+                                            backgroundColor: Colors.indigo.shade100,
+                                            child: const Icon(Icons.class_outlined, size: 18, color: Colors.indigo),
+                                          ),
+                                          title: Text(
+                                            '${corso.livelloDisplay} • ${corso.giornoSettimana} ore ${corso.orario}',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                          ),
+                                          subtitle: Text(
+                                            'Anno ${corso.annoAccademico} • ${lezioniCorso.length} lezioni in ${sortedTrimestriKeys.length} trimestri',
+                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                          ),
+                                          children: [
+                                            if (sortedTrimestriKeys.isEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.all(12),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
+                                                    const SizedBox(width: 8),
+                                                    const Text(
+                                                      'Nessuna lezione registrata per questo corso.',
+                                                      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey, fontSize: 13),
+                                                    ),
+                                                  ],
+                                                ),
+                                              )
+                                            else
+                                              ...sortedTrimestriKeys.map((trimestreKey) {
+                                                final lezioniTrimestre = trimestriMap[trimestreKey]!;
+
+                                                return Container(
+                                                  margin: const EdgeInsets.fromLTRB(8, 4, 8, 10),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(color: Colors.deepPurple.shade100),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                    children: [
+                                                      // HEADER TRIMESTRE
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.deepPurple.shade50,
+                                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                          children: [
+                                                            Row(
+                                                              children: [
+                                                                const Icon(Icons.calendar_month, size: 18, color: Colors.deepPurple),
+                                                                const SizedBox(width: 8),
+                                                                Text(
+                                                                  trimestreKey,
+                                                                  style: TextStyle(
+                                                                    fontWeight: FontWeight.bold,
+                                                                    fontSize: 14,
+                                                                    color: Colors.deepPurple.shade900,
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(width: 8),
+                                                                Container(
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                                  decoration: BoxDecoration(
+                                                                    color: Colors.white,
+                                                                    borderRadius: BorderRadius.circular(12),
+                                                                    border: Border.all(color: Colors.deepPurple.shade200),
+                                                                  ),
+                                                                  child: Text(
+                                                                    '${lezioniTrimestre.length} Lezioni',
+                                                                    style: TextStyle(
+                                                                      fontSize: 11,
+                                                                      fontWeight: FontWeight.bold,
+                                                                      color: Colors.deepPurple.shade800,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            TextButton.icon(
+                                                              style: TextButton.styleFrom(
+                                                                foregroundColor: Colors.red.shade700,
+                                                                visualDensity: VisualDensity.compact,
+                                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                              ),
+                                                              icon: const Icon(Icons.delete_sweep, size: 16),
+                                                              label: const Text(
+                                                                'Elimina Trimestre',
+                                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                                              ),
+                                                              onPressed: () => _deleteTrimestre(
+                                                                '${scuola.nome} - ${corso.livelloDisplay}',
+                                                                trimestreKey,
+                                                                lezioniTrimestre,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+
+                                                      // LISTA LEZIONI DEL TRIMESTRE (ORDINATE PER DATA CRESCENTE)
+                                                      ListView.separated(
+                                                        shrinkWrap: true,
+                                                        physics: const NeverScrollableScrollPhysics(),
+                                                        itemCount: lezioniTrimestre.length,
+                                                        separatorBuilder: (_, __) => const Divider(height: 1),
+                                                        itemBuilder: (ctx, lIdx) {
+                                                          final l = lezioniTrimestre[lIdx];
+                                                          final dataFormatted = _formatDataItaliano(l.data);
+
+                                                          return ListTile(
+                                                            dense: true,
+                                                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                                            leading: Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.deepPurple.shade50,
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                border: Border.all(color: Colors.deepPurple.shade200),
+                                                              ),
+                                                              child: Text(
+                                                                l.titolo.isNotEmpty
+                                                                    ? l.titolo.split(' - ').first
+                                                                    : '${lIdx + 1}/${lezioniTrimestre.length}',
+                                                                style: TextStyle(
+                                                                  fontSize: 11,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  color: Colors.deepPurple.shade900,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            title: Row(
+                                                              children: [
+                                                                Text(
+                                                                  dataFormatted,
+                                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                                                ),
+                                                                if (l.titolo.isNotEmpty) ...[
+                                                                  const SizedBox(width: 8),
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      l.titolo,
+                                                                      style: TextStyle(
+                                                                        fontSize: 12,
+                                                                        color: Colors.deepPurple.shade700,
+                                                                        fontWeight: FontWeight.w500,
+                                                                      ),
+                                                                      overflow: TextOverflow.ellipsis,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ],
+                                                            ),
+                                                            subtitle: Row(
+                                                              children: [
+                                                                if (l.argomentoTitolo != null && l.argomentoTitolo!.isNotEmpty) ...[
+                                                                  Text(
+                                                                    '📖 ${l.argomentoTitolo!}  •  ',
+                                                                    style: const TextStyle(color: Colors.deepPurple, fontSize: 11),
+                                                                  ),
+                                                                ],
+                                                                Text(
+                                                                  '👥 ${l.presentiCount} / ${l.presenzeTotali} presenti',
+                                                                  style: TextStyle(color: Colors.grey.shade800, fontSize: 11),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            trailing: Row(
+                                                              mainAxisSize: MainAxisSize.min,
+                                                              children: [
+                                                                IconButton(
+                                                                  icon: const Icon(Icons.how_to_reg, color: Colors.deepPurple, size: 20),
+                                                                  tooltip: 'Gestisci Presenze',
+                                                                  onPressed: () {
+                                                                    Navigator.of(context)
+                                                                        .push(
+                                                                          MaterialPageRoute(
+                                                                            builder: (_) => PresenzeScreen(initialLezioneId: l.id),
+                                                                          ),
+                                                                        )
+                                                                        .then((_) => _loadAll());
+                                                                  },
+                                                                ),
+                                                                IconButton(
+                                                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                                                  tooltip: 'Elimina Lezione',
+                                                                  onPressed: () => _deleteLezione(l),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          );
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }),
+                                          ],
+                                        ),
+                                      );
+                                    }),
                                 ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (l.argomentoTitolo != null)
-                                    Text('📖 Argomento: ${l.argomentoTitolo}', style: const TextStyle(color: Colors.deepPurple)),
-                                  Text('👥 Presenze: ${l.presentiCount} presenti su ${l.presenzeTotali} allievi registrati'),
-                                ],
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.how_to_reg, color: Colors.deepPurple),
-                                tooltip: 'Gestisci Presenze',
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => const PresenzeScreen()),
-                                  );
-                                },
                               ),
                             ),
                           );

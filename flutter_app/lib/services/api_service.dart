@@ -299,6 +299,11 @@ class ApiService {
     return [];
   }
 
+  Future<bool> deleteLezione(String id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/api/lezioni/$id/'), headers: _headers);
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
   Future<void> initPresenzeLezione(String lezioneId) async {
     await http.post(Uri.parse('$baseUrl/api/lezioni/$lezioneId/init_presenze/'), headers: _headers);
   }

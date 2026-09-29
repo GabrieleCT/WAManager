@@ -15,8 +15,9 @@ class _CorsiScreenState extends State<CorsiScreen> {
   List<Scuola> _scuole = [];
   bool _loading = true;
 
-  // Cache degli iscritti per il drill-down
+  // Cache degli iscritti e delle lezioni per il drill-down
   final Map<String, List<Allievo>> _iscrittiMap = {};
+  final Map<String, List<Lezione>> _lezioniMap = {};
   final Set<String> _loadingIscritti = {};
 
   @override
@@ -34,6 +35,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
         _corsi = corsi;
         _scuole = scuole;
         _iscrittiMap.clear();
+        _lezioniMap.clear();
         _loading = false;
       });
     }
@@ -44,9 +46,11 @@ class _CorsiScreenState extends State<CorsiScreen> {
     setState(() => _loadingIscritti.add(corsoId));
     try {
       final list = await _api.getAllievi(corsoId: corsoId);
+      final lezioni = await _api.getLezioni(corsoId: corsoId);
       if (mounted) {
         setState(() {
           _iscrittiMap[corsoId] = list;
+          _lezioniMap[corsoId] = lezioni;
           _loadingIscritti.remove(corsoId);
         });
       }
@@ -377,6 +381,60 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final effettivi = iscritti.where((a) => !a.isProspect).toList();
     final prospects = iscritti.where((a) => a.isProspect).toList();
 
+    final lezioni = _lezioniMap[c.id] ?? [];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    int lezioniFatte = 0;
+    int lezioniRimanenti = 0;
+    int lezioniTotaliTrimestre = 0;
+    String activeTrimestreName = 'Trimestre';
+
+    if (lezioni.isNotEmpty) {
+      final sortedLezioni = List<Lezione>.from(lezioni)..sort((a, b) => a.data.compareTo(b.data));
+      final Map<String, List<Lezione>> byTrimestre = {};
+      for (final l in sortedLezioni) {
+        String trim = 'Trimestre in corso';
+        if (l.titolo.isNotEmpty) {
+          final m = RegExp(r'(\d+°\s*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
+          if (m != null) {
+            trim = m.group(1)!;
+          } else if (l.titolo.toLowerCase().contains('trimestre')) {
+            trim = l.titolo;
+          }
+        }
+        byTrimestre.putIfAbsent(trim, () => []).add(l);
+      }
+
+      String? activeKey;
+      for (final entry in byTrimestre.entries) {
+        final hasUpcoming = entry.value.any((l) {
+          final d = DateTime.tryParse(l.data);
+          return d != null && !d.isBefore(today);
+        });
+        if (hasUpcoming) {
+          activeKey = entry.key;
+          break;
+        }
+      }
+      activeKey ??= byTrimestre.keys.last;
+      activeTrimestreName = activeKey;
+
+      final lezioniTrimestre = byTrimestre[activeKey] ?? sortedLezioni;
+      lezioniTotaliTrimestre = lezioniTrimestre.length;
+
+      for (final l in lezioniTrimestre) {
+        final d = DateTime.tryParse(l.data);
+        if (d != null) {
+          if (d.isBefore(today)) {
+            lezioniFatte++;
+          } else {
+            lezioniRimanenti++;
+          }
+        }
+      }
+    }
+
     final effLeaders = effettivi.where((a) => a.ruolo == 'leader').length;
     final effFollowers = effettivi.where((a) => a.ruolo == 'follower').length;
     final effBoth = effettivi.where((a) => a.ruolo == 'both').length;
@@ -523,6 +581,20 @@ class _CorsiScreenState extends State<CorsiScreen> {
               ),
               if (effBoth > 0)
                 _buildStatCard('Both', '$effBoth', Icons.people, Colors.teal),
+              if (lezioniTotaliTrimestre > 0) ...[
+                _buildStatCard(
+                  'Lezioni Fatte ($activeTrimestreName)',
+                  '$lezioniFatte / $lezioniTotaliTrimestre',
+                  Icons.task_alt,
+                  Colors.teal,
+                ),
+                _buildStatCard(
+                  'Lezioni Rimanenti',
+                  '$lezioniRimanenti',
+                  Icons.hourglass_bottom,
+                  Colors.indigo,
+                ),
+              ],
               if (balanceBadge != const SizedBox.shrink())
                 balanceBadge,
             ],
