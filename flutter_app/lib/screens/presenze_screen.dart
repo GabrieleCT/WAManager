@@ -22,10 +22,13 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   bool _saving = false;
   Map<String, dynamic>? _matchStats;
 
+  List<Scuola> _scuole = [];
+  List<Corso> _corsi = [];
+
   @override
   void initState() {
     super.initState();
-    _loadLezioni();
+    _loadAll();
   }
 
   String _formatData(String dataStr) {
@@ -36,9 +39,11 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     return '$giorno ${DateFormat('dd/MM/yyyy').format(d)}';
   }
 
-  Future<void> _loadLezioni() async {
+  Future<void> _loadAll() async {
     setState(() => _loading = true);
     final lezioni = await _api.getLezioni();
+    final scuole = await _api.getScuole();
+    final corsi = await _api.getCorsi();
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     // Ordine cronologico decrescente per facile reperibilità
@@ -69,6 +74,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
     if (mounted) {
       setState(() {
+        _scuole = scuole;
+        _corsi = corsi;
         _allLezioni = allSorted;
         _lezioniOggi = oggi;
         _selectedLezione = target;
@@ -84,12 +91,10 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
   Future<void> _loadPresenze(String lezioneId) async {
     setState(() => _loading = true);
+    // Assicura che i nuovi allievi vengano aggiunti alle presenze
+    await _api.initPresenze(lezioneId);
     var presenze = await _api.getPresenzeForLezione(lezioneId);
-    // Se la lezione non ha ancora record presenze inizializzati, li creiamo al volo dal corso!
-    if (presenze.isEmpty) {
-      await _api.initPresenzeLezione(lezioneId);
-      presenze = await _api.getPresenzeForLezione(lezioneId);
-    }
+    
     if (mounted) {
       setState(() {
         _presenze = presenze;
@@ -130,18 +135,32 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   }
 
   void _showSelectAnyLezioneDialog() {
-    final searchCtl = TextEditingController();
-    List<Lezione> filtered = List.from(_allLezioni);
+    String? selectedScuolaId;
+    String? selectedCorsoId;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
+        builder: (ctx, setDlgState) {
+          List<Corso> availableCorsi = selectedScuolaId == null 
+              ? [] 
+              : _corsi.where((c) => c.scuolaId == selectedScuolaId).toList();
+              
+          List<Lezione> filteredLezioni = _allLezioni;
+          if (selectedCorsoId != null) {
+            filteredLezioni = _allLezioni.where((l) => l.corsoId == selectedCorsoId).toList();
+          } else if (selectedScuolaId != null) {
+            filteredLezioni = _allLezioni.where((l) => l.scuolaId == selectedScuolaId || availableCorsi.any((c) => c.id == l.corsoId)).toList();
+          }
+          
+          filteredLezioni.sort((a, b) => a.data.compareTo(b.data));
+
+          return AlertDialog(
           title: const Row(
             children: [
               Icon(Icons.calendar_month, color: Colors.deepPurple),
               SizedBox(width: 10),
-              Text('Scegli una Lezione (Qualsiasi data)'),
+              Text('Scegli una Lezione'),
             ],
           ),
           content: SizedBox(
@@ -149,35 +168,49 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             height: 480,
             child: Column(
               children: [
-                TextField(
-                  controller: searchCtl,
+                DropdownButtonFormField<String?>(
+                  value: selectedScuolaId,
                   decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'Cerca per data (es. 2025-10-06), corso o scuola...',
+                    labelText: 'Filtra per Scuola',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Tutte le Scuole')),
+                    ..._scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))),
+                  ],
                   onChanged: (val) {
-                    final query = val.toLowerCase().trim();
                     setDlgState(() {
-                      filtered = _allLezioni.where((l) {
-                        return l.data.toLowerCase().contains(query) ||
-                            l.corsoDescrizione.toLowerCase().contains(query) ||
-                            (l.scuolaNome != null && l.scuolaNome!.toLowerCase().contains(query)) ||
-                            l.titolo.toLowerCase().contains(query);
-                      }).toList();
+                      selectedScuolaId = val;
+                      selectedCorsoId = null; // reset corso when scuola changes
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  value: selectedCorsoId,
+                  decoration: InputDecoration(
+                    labelText: 'Filtra per Corso',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Tutti i Corsi')),
+                    ...availableCorsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'))),
+                  ],
+                  onChanged: selectedScuolaId == null ? null : (val) {
+                    setDlgState(() {
+                      selectedCorsoId = val;
                     });
                   },
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: filtered.isEmpty
-                      ? const Center(child: Text('Nessuna lezione corrispondente alla ricerca.'))
+                  child: filteredLezioni.isEmpty
+                      ? const Center(child: Text('Nessuna lezione corrispondente ai filtri.'))
                       : ListView.separated(
-                          itemCount: filtered.length,
+                          itemCount: filteredLezioni.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (ctx, i) {
-                            final l = filtered[i];
+                            final l = filteredLezioni[i];
                             final isCurrent = _selectedLezione?.id == l.id;
 
                             return ListTile(
@@ -677,23 +710,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
               ),
             ),
 
-          // ── PULSANTE BOTTOM: GENERAZIONE MATCHING COPPIE ──
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.shuffle),
-                label: const Text('Genera Coppie (Matching) per questa lezione'),
-                onPressed: _presenze.isEmpty ? null : _generateMatches,
-              ),
-            ),
-          ),
         ],
       ),
     );

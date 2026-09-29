@@ -84,12 +84,41 @@ class _LezioniScreenState extends State<LezioniScreen> {
     return DateTime(today.year, today.month, today.day + diff, 12, 0);
   }
 
+  String _calcolaTitoloNuovaLezione(String corsoId, DateTime dataLezione) {
+    final lezioniCorso = _lezioni.where((l) => l.corsoId == corsoId).toList();
+    
+    String trimestre = '';
+    if (dataLezione.month >= 10 && dataLezione.month <= 12) trimestre = '1° Trimestre';
+    else if (dataLezione.month >= 1 && dataLezione.month <= 3) trimestre = '2° Trimestre';
+    else if (dataLezione.month >= 4 && dataLezione.month <= 6) trimestre = '3° Trimestre';
+    else trimestre = '4° Trimestre';
+
+    final lezioniTrimestre = lezioniCorso.where((l) => _extractTrimestre(l) == trimestre).toList();
+    
+    List<DateTime> date = lezioniTrimestre.map((l) => DateTime.tryParse(l.data) ?? DateTime.now()).toList();
+    date.add(dataLezione);
+    date.sort();
+
+    int index = date.indexOf(dataLezione) + 1;
+    int total = date.length;
+    
+    return '$index/$total - $trimestre';
+  }
+
   // ─── DIALOG NUOVA LEZIONE SINGOLA ─────────────────────────────
   void _showAddLezioneDialog() {
     String? selectedCorsoId = _corsi.isNotEmpty ? _corsi.first.id : null;
     String? selectedArgomentoId;
     DateTime selectedDate = DateTime.now();
     final titoloCtl = TextEditingController();
+
+    void updateTitolo() {
+      if (selectedCorsoId != null) {
+        titoloCtl.text = _calcolaTitoloNuovaLezione(selectedCorsoId!, selectedDate);
+      }
+    }
+    
+    updateTitolo();
 
     showDialog(
       context: context,
@@ -106,14 +135,17 @@ class _LezioniScreenState extends State<LezioniScreen> {
                   items: _corsi.map((c) {
                     return DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.orario})'));
                   }).toList(),
-                  onChanged: (v) => setDlgState(() => selectedCorsoId = v),
+                  onChanged: (v) {
+                    setDlgState(() => selectedCorsoId = v);
+                    updateTitolo();
+                  },
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: titoloCtl,
                   decoration: const InputDecoration(
-                    labelText: 'Titolo / Nomenclatura (opzionale)',
-                    hintText: 'Es. 1/12 - 1° Trimestre o Lezione di Recupero',
+                    labelText: 'Titolo / Nomenclatura',
+                    hintText: 'Es. 1/12 - 1° Trimestre',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -130,6 +162,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
                     );
                     if (picked != null) {
                       setDlgState(() => selectedDate = picked);
+                      updateTitolo();
                     }
                   },
                 ),
@@ -894,17 +927,6 @@ class _LezioniScreenState extends State<LezioniScreen> {
       appBar: AppBar(
         title: const Text('Consultazione Lezioni'),
         actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
-              foregroundColor: Colors.white,
-              elevation: 1,
-            ),
-            icon: const Icon(Icons.date_range, size: 18),
-            label: const Text('Aggiungi Trimestre'),
-            onPressed: _showAddTrimestreWizard,
-          ),
-          const SizedBox(width: 8),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Ricarica', onPressed: _loadAll),
           const SizedBox(width: 8),
         ],
@@ -959,7 +981,8 @@ class _LezioniScreenState extends State<LezioniScreen> {
                         itemCount: displayedScuole.length,
                         itemBuilder: (ctx, sIdx) {
                           final scuola = displayedScuole[sIdx];
-                          final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+                          final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList()
+                            ..sort((a, b) => a.orario.compareTo(b.orario));
                           final lezioniScuola = _lezioni.where((l) => l.scuolaId == scuola.id || corsiScuola.any((c) => c.id == l.corsoId)).toList();
 
                           return Card(

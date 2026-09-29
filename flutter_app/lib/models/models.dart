@@ -76,7 +76,7 @@ class Corso {
       livello: json['livello'] ?? 'principiante',
       livelloDisplay: json['livello_display'] ?? json['livello'] ?? '',
       giornoSettimana: json['giorno_settimana'] ?? 'LUNEDI',
-      orario: json['orario'] ?? '',
+      orario: (json['orario'] != null && json['orario'].toString().length >= 5) ? json['orario'].toString().substring(0, 5) : (json['orario'] ?? ''),
       annoAccademico: json['anno_accademico'] ?? '2025/2026',
       gruppoWhatsapp: json['gruppo_whatsapp'] ?? '',
       allieviCount: json['allievi_count'] ?? 0,
@@ -163,7 +163,7 @@ class Allievo {
     this.note = '',
   });
 
-  String get nomeCompleto => '$cognome $nome';
+  String get nomeCompleto => '$nome $cognome';
 
   factory Allievo.fromJson(Map<String, dynamic> json) {
     return Allievo(

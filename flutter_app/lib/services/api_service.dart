@@ -309,6 +309,10 @@ class ApiService {
   }
 
   // ─── Presenze ─────────────────────────────────────────────
+  Future<void> initPresenze(String lezioneId) async {
+    await http.post(Uri.parse('$baseUrl/api/lezioni/$lezioneId/init_presenze/'), headers: _headers);
+  }
+
   Future<List<Presenza>> getPresenzeForLezione(String lezioneId) async {
     final res = await http.get(Uri.parse('$baseUrl/api/lezioni/$lezioneId/presenze/'), headers: _headers);
     if (res.statusCode == 200) {
