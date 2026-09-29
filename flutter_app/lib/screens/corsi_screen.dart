@@ -842,112 +842,132 @@ class _CorsiScreenState extends State<CorsiScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _corsi.isEmpty
-              ? const Center(child: Text('Nessun corso configurato.'))
+          : _scuole.isEmpty
+              ? const Center(child: Text('Nessuna scuola configurata.'))
               : ListView.builder(
                   padding: const EdgeInsets.all(12),
-                  itemCount: _corsi.length,
+                  itemCount: _scuole.length,
                   itemBuilder: (ctx, i) {
-                    final c = _corsi[i];
+                    final scuola = _scuole[i];
+                    final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+                    corsiScuola.sort((a, b) => a.orario.compareTo(b.orario));
+                    
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       child: Theme(
                         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                         child: ExpansionTile(
-                          onExpansionChanged: (expanded) {
-                            if (expanded) {
-                              _fetchIscritti(c.id);
-                            }
-                          },
+                          initiallyExpanded: true,
                           leading: CircleAvatar(
                             backgroundColor: Colors.indigo.shade100,
                             child: const Icon(Icons.school, color: Colors.indigo),
                           ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${c.scuolaNome} - ${c.livelloDisplay}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                                tooltip: 'Modifica Corso',
-                                onPressed: () => _showAddCorsoDialog(c),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                                tooltip: 'Elimina Corso',
-                                onPressed: () async {
-                                  final confirm = await showDialog<bool>(
-                                    context: context,
-                                    builder: (cCtx) => AlertDialog(
-                                      title: const Text('Elimina Corso'),
-                                      content: Text('Sei sicuro di voler eliminare il corso ${c.scuolaNome} - ${c.livelloDisplay}?'),
-                                      actions: [
-                                        TextButton(onPressed: () => Navigator.pop(cCtx, false), child: const Text('Annulla')),
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                                          onPressed: () => Navigator.pop(cCtx, true),
-                                          child: const Text('Elimina'),
+                          title: Text(
+                            scuola.nome,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
+                          subtitle: Text('${corsiScuola.length} corsi'),
+                          children: corsiScuola.isEmpty
+                              ? [const Padding(padding: EdgeInsets.all(16.0), child: Text('Nessun corso per questa scuola.'))]
+                              : corsiScuola.map((c) => Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                  elevation: 1,
+                                  child: Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      onExpansionChanged: (expanded) {
+                                        if (expanded) {
+                                          _fetchIscritti(c.id);
+                                        }
+                                      },
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '${c.livelloDisplay}',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                            tooltip: 'Modifica Corso',
+                                            onPressed: () => _showAddCorsoDialog(c),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                            tooltip: 'Elimina Corso',
+                                            onPressed: () async {
+                                              final confirm = await showDialog<bool>(
+                                                context: context,
+                                                builder: (cCtx) => AlertDialog(
+                                                  title: const Text('Elimina Corso'),
+                                                  content: Text('Sei sicuro di voler eliminare il corso ${c.scuolaNome} - ${c.livelloDisplay}?'),
+                                                  actions: [
+                                                    TextButton(onPressed: () => Navigator.pop(cCtx, false), child: const Text('Annulla')),
+                                                    ElevatedButton(
+                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                                      onPressed: () => Navigator.pop(cCtx, true),
+                                                      child: const Text('Elimina'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (confirm == true) {
+                                                final messenger = ScaffoldMessenger.of(context);
+                                                final ok = await _api.deleteCorso(c.id);
+                                                if (ok) {
+                                                  _loadAll();
+                                                } else if (mounted) {
+                                                  messenger.showSnackBar(
+                                                    const SnackBar(content: Text('Impossibile eliminare il corso. Verificare se ci sono allievi o lezioni collegate.')),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 4,
+                                          children: [
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                                                const SizedBox(width: 4),
+                                                Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
+                                              ],
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.date_range, size: 14, color: Colors.grey),
+                                                const SizedBox(width: 4),
+                                                Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
+                                              ],
+                                            ),
+                                            if (c.gruppoWhatsapp.isNotEmpty)
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.chat, size: 14, color: Colors.green),
+                                                  const SizedBox(width: 4),
+                                                  Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
+                                                ],
+                                              ),
+                                          ],
                                         ),
+                                      ),
+                                      children: [
+                                        _buildDrillDownContent(c),
                                       ],
                                     ),
-                                  );
-                                  if (confirm == true) {
-                                    final messenger = ScaffoldMessenger.of(context);
-                                    final ok = await _api.deleteCorso(c.id);
-                                    if (ok) {
-                                      _loadAll();
-                                    } else if (mounted) {
-                                      messenger.showSnackBar(
-                                        const SnackBar(content: Text('Impossibile eliminare il corso. Verificare se ci sono allievi o lezioni collegate.')),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                                    const SizedBox(width: 4),
-                                    Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
-                                  ],
-                                ),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.date_range, size: 14, color: Colors.grey),
-                                    const SizedBox(width: 4),
-                                    Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
-                                  ],
-                                ),
-                                if (c.gruppoWhatsapp.isNotEmpty)
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.chat, size: 14, color: Colors.green),
-                                      const SizedBox(width: 4),
-                                      Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
-                                    ],
                                   ),
-                              ],
-                            ),
-                          ),
-                          children: [
-                            _buildDrillDownContent(c),
-                          ],
+                                )).toList(),
                         ),
                       ),
                     );

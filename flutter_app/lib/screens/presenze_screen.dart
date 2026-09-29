@@ -275,6 +275,13 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Ordina: presenti in alto, assenti in basso, a parità in ordine alfabetico
+    _presenze.sort((a, b) {
+      if (a.presente && !b.presente) return -1;
+      if (!a.presente && b.presente) return 1;
+      return a.allievoNome.compareTo(b.allievoNome);
+    });
+
     final presentiList = _presenze.where((p) => p.presente).toList();
     final presentiCount = presentiList.length;
     final whatsappPresentiCount = presentiList.where((p) => p.fonte == 'whatsapp').length;

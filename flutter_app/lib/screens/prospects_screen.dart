@@ -11,10 +11,16 @@ class ProspectsScreen extends StatefulWidget {
 
 class _ProspectsScreenState extends State<ProspectsScreen> {
   final ApiService _api = ApiService();
+  
   List<Allievo> _prospects = [];
   List<Scuola> _scuole = [];
   List<Corso> _corsi = [];
   bool _loading = true;
+
+  String _searchQuery = '';
+  String? _selectedScuolaId;
+  String? _selectedCorsoId;
+
 
   @override
   void initState() {
@@ -24,7 +30,12 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
-    final prospects = await _api.getAllievi(isProspect: true);
+    final prospects = await _api.getAllievi(
+      isProspect: true,
+      search: _searchQuery.isNotEmpty ? _searchQuery : null,
+      scuolaId: _selectedScuolaId,
+      corsoId: _selectedCorsoId,
+    );
     final scuole = await _api.getScuole();
     final corsi = await _api.getCorsi();
     if (mounted) {
@@ -77,7 +88,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: ruolo,
+                    value: ruolo,
                     decoration: const InputDecoration(labelText: 'Ruolo preferito'),
                     items: const [
                       DropdownMenuItem(value: 'leader', child: Text('Leader')),
@@ -88,7 +99,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: livello,
+                    value: livello,
                     decoration: const InputDecoration(labelText: 'Livello esperienza'),
                     items: const [
                       DropdownMenuItem(value: 'principiante', child: Text('Principiante')),
@@ -100,7 +111,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   const SizedBox(height: 12),
                   // ASSEGNAZIONE CORSO DI PROVA OPZIONALE
                   DropdownButtonFormField<String?>(
-                    initialValue: selectedScuolaId,
+                    value: selectedScuolaId,
                     decoration: const InputDecoration(labelText: 'Scuola per lezione di prova (opzionale)'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('-- Tutte le scuole --')),
@@ -115,20 +126,20 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
-                    initialValue: selectedCorsoId,
+                    value: selectedCorsoId,
                     decoration: const InputDecoration(labelText: 'Corso di Prova assegnato (opzionale)'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('-- Nessun corso assegnato --')),
                       ...filteredCorsi.map((c) => DropdownMenuItem(
                             value: c.id,
-                            child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'),
+                            child: Text('${c.scuolaNome} - ${c.livelloDisplay} - ${c.giornoSettimanaDisplay} - ${c.orario}'),
                           )),
                     ],
                     onChanged: (v) => setDlgState(() => selectedCorsoId = v),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: recensione,
+                    value: recensione,
                     decoration: const InputDecoration(labelText: 'Recensione preliminare'),
                     items: const [
                       DropdownMenuItem(value: 'si', child: Text('Sì')),
@@ -245,7 +256,129 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Nuovo Prospect'),
       ),
-      body: _loading
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Cerca prospect per nome, cognome o telefono...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              onChanged: (v) {
+                _searchQuery = v;
+                _loadData();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Card(
+              elevation: 0,
+              color: Colors.grey.shade100,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isCompact = constraints.maxWidth < 600;
+                        final corsiFiltratiPerScuola = _selectedScuolaId == null
+                            ? _corsi
+                            : _corsi.where((c) => c.scuolaId == _selectedScuolaId).toList();
+
+                        final scuolaDropdown = DropdownButtonFormField<String?>(
+                          value: _selectedScuolaId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Filtra per Scuola',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.school, size: 20),
+                          ),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Tutte le scuole')),
+                            ..._scuole.map((s) => DropdownMenuItem(
+                              value: s.id,
+                              child: Text(s.nome, overflow: TextOverflow.ellipsis),
+                            )),
+                          ],
+                          onChanged: (v) {
+                            setState(() {
+                              _selectedScuolaId = v;
+                              if (_selectedCorsoId != null) {
+                                final corsoStillValid = corsiFiltratiPerScuola.any((c) => c.id == _selectedCorsoId && (v == null || c.scuolaId == v));
+                                if (!corsoStillValid) {
+                                  _selectedCorsoId = null;
+                                }
+                              }
+                            });
+                            _loadData();
+                          },
+                        );
+
+                        final corsoDropdown = DropdownButtonFormField<String?>(
+                          value: _selectedCorsoId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Filtra per Corso',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.class_, size: 20),
+                          ),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Tutti i corsi')),
+                            ...corsiFiltratiPerScuola.map((c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text(
+                                _selectedScuolaId == null
+                                    ? '${c.scuolaNome} - ${c.livelloDisplay} - ${c.giornoSettimanaDisplay} - ${c.orario}'
+                                    : '${c.livelloDisplay} - ${c.giornoSettimanaDisplay} - ${c.orario}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _selectedCorsoId = v);
+                            _loadData();
+                          },
+                        );
+
+                        if (isCompact) {
+                          return Column(
+                            children: [
+                              scuolaDropdown,
+                              const SizedBox(height: 8),
+                              corsoDropdown,
+                            ],
+                          );
+                        } else {
+                          return Row(
+                            children: [
+                              Expanded(child: scuolaDropdown),
+                              const SizedBox(width: 12),
+                              Expanded(child: corsoDropdown),
+                            ],
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _prospects.isEmpty
               ? const Center(child: Text('Nessun prospect registrato.'))
@@ -329,6 +462,9 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     );
                   },
                 ),
+          ),
+        ],
+      ),
     );
   }
 }
