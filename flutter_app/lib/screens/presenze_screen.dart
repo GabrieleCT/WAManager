@@ -267,7 +267,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
               child: const Text('Chiudi'),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
   }
