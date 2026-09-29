@@ -13,6 +13,7 @@ import 'pagamenti_screen.dart';
 import 'import_export_screen.dart';
 import 'login_screen.dart';
 import 'wa_screen.dart';
+import 'coppie_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
     LezioniScreen(),
     AllieviScreen(),
     ProspectsScreen(),
+    CoppieScreen(),
     ScuoleScreen(),
     CorsiScreen(),
     ArgomentiScreen(),
@@ -103,6 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           NavigationRailDestination(icon: Icon(Icons.event), label: Text('Lezioni')),
                           NavigationRailDestination(icon: Icon(Icons.people), label: Text('Allievi')),
                           NavigationRailDestination(icon: Icon(Icons.contact_mail), label: Text('Prospect')),
+                          NavigationRailDestination(icon: Icon(Icons.favorite), label: Text('Coppie')),
                           NavigationRailDestination(icon: Icon(Icons.business), label: Text('Scuole')),
                           NavigationRailDestination(icon: Icon(Icons.class_), label: Text('Corsi')),
                           NavigationRailDestination(icon: Icon(Icons.menu_book), label: Text('Argomenti')),
@@ -197,8 +200,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.business),
-              title: const Text('Scuole'),
+              leading: const Icon(Icons.favorite),
+              title: const Text('Coppie'),
               selected: _currentIndex == 6,
               onTap: () {
                 setState(() => _currentIndex = 6);
@@ -206,8 +209,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.class_),
-              title: const Text('Corsi'),
+              leading: const Icon(Icons.business),
+              title: const Text('Scuole'),
               selected: _currentIndex == 7,
               onTap: () {
                 setState(() => _currentIndex = 7);
@@ -215,8 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.menu_book),
-              title: const Text('Argomenti'),
+              leading: const Icon(Icons.class_),
+              title: const Text('Corsi'),
               selected: _currentIndex == 8,
               onTap: () {
                 setState(() => _currentIndex = 8);
@@ -224,8 +227,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.euro),
-              title: const Text('Pagamenti'),
+              leading: const Icon(Icons.menu_book),
+              title: const Text('Argomenti'),
               selected: _currentIndex == 9,
               onTap: () {
                 setState(() => _currentIndex = 9);
@@ -233,8 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.import_export),
-              title: const Text('Import / Export'),
+              leading: const Icon(Icons.euro),
+              title: const Text('Pagamenti'),
               selected: _currentIndex == 10,
               onTap: () {
                 setState(() => _currentIndex = 10);
@@ -242,11 +245,20 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.qr_code_scanner),
-              title: const Text('WhatsApp'),
+              leading: const Icon(Icons.import_export),
+              title: const Text('Import / Export'),
               selected: _currentIndex == 11,
               onTap: () {
                 setState(() => _currentIndex = 11);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: const Text('WhatsApp'),
+              selected: _currentIndex == 12,
+              onTap: () {
+                setState(() => _currentIndex = 12);
                 Navigator.pop(context);
               },
             ),

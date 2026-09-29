@@ -200,6 +200,15 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<bool> setPartner(String allievoId, String? partnerId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/allievi/$allievoId/set_partner/'),
+      headers: _headers,
+      body: jsonEncode({'partner_id': partnerId}),
+    );
+    return res.statusCode == 200;
+  }
+
   // ─── Jolly ────────────────────────────────────────────────
   Future<List<Jolly>> getJolly() async {
     final res = await http.get(Uri.parse('$baseUrl/api/jolly/'), headers: _headers);

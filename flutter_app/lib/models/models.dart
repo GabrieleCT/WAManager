@@ -142,6 +142,9 @@ class Allievo {
   final bool isActive;
   final bool isProspect;
   final String note;
+  final String? partnerId;
+  final String? partnerNome;
+  final String? partnerCognome;
 
   Allievo({
     required this.id,
@@ -161,9 +164,20 @@ class Allievo {
     this.isActive = true,
     this.isProspect = false,
     this.note = '',
+    this.partnerId,
+    this.partnerNome,
+    this.partnerCognome,
   });
 
   String get nomeCompleto => '$nome $cognome';
+  String get partnerNomeCompleto => partnerNome != null ? '$partnerNome $partnerCognome' : '';
+
+  String get sortName {
+    final myName = '$cognome $nome';
+    if (partnerId == null || partnerNome == null) return myName;
+    final pName = '$partnerCognome $partnerNome';
+    return myName.compareTo(pName) < 0 ? myName : pName;
+  }
 
   factory Allievo.fromJson(Map<String, dynamic> json) {
     return Allievo(
@@ -184,6 +198,9 @@ class Allievo {
       isActive: json['is_active'] ?? true,
       isProspect: json['is_prospect'] ?? false,
       note: json['note'] ?? '',
+      partnerId: json['partner'],
+      partnerNome: json['partner_nome'],
+      partnerCognome: json['partner_cognome'],
     );
   }
 
@@ -300,6 +317,13 @@ class Presenza {
   final String allievoRuolo;
   final String allievoTelefono;
   final bool allievoIsProspect;
+  final String? allievoPartnerId;
+  final String? allievoPartnerNome;
+  String get allievoSortName {
+    if (allievoPartnerId == null || allievoPartnerNome == null) return allievoNome;
+    return allievoNome.compareTo(allievoPartnerNome!) < 0 ? allievoNome : allievoPartnerNome!;
+  }
+
   bool presente;
   String fonte;
 
@@ -311,6 +335,8 @@ class Presenza {
     required this.allievoRuolo,
     required this.allievoTelefono,
     this.allievoIsProspect = false,
+    this.allievoPartnerId,
+    this.allievoPartnerNome,
     required this.presente,
     this.fonte = 'manuale',
   });
@@ -324,6 +350,8 @@ class Presenza {
       allievoRuolo: json['allievo_ruolo'] ?? '',
       allievoTelefono: json['allievo_telefono'] ?? '',
       allievoIsProspect: json['allievo_is_prospect'] ?? false,
+      allievoPartnerId: json['allievo_partner_id'],
+      allievoPartnerNome: json['allievo_partner_nome'],
       presente: json['presente'] ?? false,
       fonte: json['fonte'] ?? 'manuale',
     );

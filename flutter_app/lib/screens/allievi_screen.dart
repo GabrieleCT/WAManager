@@ -26,6 +26,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
     _loadInitialData();
   }
 
+  void _sortAllievi(List<Allievo> list) {
+    list.sort((a, b) {
+      int cmp = a.sortName.compareTo(b.sortName);
+      if (cmp != 0) return cmp;
+      return b.ruolo.compareTo(a.ruolo); // leader prima di follower
+    });
+  }
+
   Future<void> _loadInitialData() async {
     setState(() => _loading = true);
     final corsi = await _api.getCorsi();
@@ -36,6 +44,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       scuolaId: _selectedScuolaId,
       corsoId: _selectedCorsoId,
     );
+    _sortAllievi(allievi);
     if (mounted) {
       setState(() {
         _corsi = corsi;
@@ -54,6 +63,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       scuolaId: _selectedScuolaId,
       corsoId: _selectedCorsoId,
     );
+    _sortAllievi(allievi);
     if (mounted) {
       setState(() {
         _allievi = allievi;
@@ -232,13 +242,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
           backgroundColor: a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.purple.shade100,
           child: Text(a.cognome.isNotEmpty ? a.cognome[0] : 'A'),
         ),
-        title: Text(a.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Row(children: [Text(a.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)), if (a.partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 16, color: Colors.pink)]]),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('📞 ${a.telefono}'),
             if (a.corsoDescrizione != null)
-              Text('🏫 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('?? ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)), if (a.partnerId != null) Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
           ],
         ),
         trailing: Wrap(

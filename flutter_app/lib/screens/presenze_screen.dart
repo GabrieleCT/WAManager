@@ -89,6 +89,15 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     }
   }
 
+  void _sortPresenze(List<Presenza> list) {
+    list.sort((a, b) {
+      if (a.presente != b.presente) return a.presente ? -1 : 1; // Presenti in cima
+      int cmp = a.allievoSortName.compareTo(b.allievoSortName);
+      if (cmp != 0) return cmp;
+      return b.allievoRuolo.compareTo(a.allievoRuolo); // Leader prima
+    });
+  }
+
   Future<void> _loadPresenze(String lezioneId) async {
     setState(() => _loading = true);
     // Assicura che i nuovi allievi vengano aggiunti alle presenze
@@ -97,6 +106,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     
     if (mounted) {
       setState(() {
+        _sortPresenze(presenze);
         _presenze = presenze;
         _matchStats = null;
         _loading = false;
@@ -699,7 +709,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
-                                'Ruolo: ${p.allievoRuolo.toUpperCase()} • Tel: ${p.allievoTelefono.isNotEmpty ? p.allievoTelefono : "N/D"}',
+                                'Ruolo: ${p.allievoRuolo.toUpperCase()} • Tel: ${p.allievoTelefono.isNotEmpty ? p.allievoTelefono : "N/D"}${p.allievoPartnerId != null ? ' | Partner: ' + p.allievoPartnerNome! : ''}',
                                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                               ),
                             ),
@@ -707,6 +717,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                               setState(() {
                                 p.presente = val ?? false;
                                 p.fonte = 'manuale'; // Modifica esplicita dall'utente
+                                _sortPresenze(_presenze);
                               });
                             },
                           ),

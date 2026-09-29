@@ -125,6 +125,13 @@ class Allievo(models.Model):
         default='',
         help_text="Note aggiuntive (usato principalmente per prospect)"
     )
+    partner = models.OneToOneField(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Partner di ballo dell'allievo"
+    )
 
     class Meta:
         verbose_name_plural = 'Allievi'

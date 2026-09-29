@@ -141,6 +141,45 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo.save()
         return Response(self.get_serializer(allievo).data)
 
+    @action(detail=True, methods=['post'])
+    def set_partner(self, request, pk=None):
+        """Imposta o rimuove il partner per un allievo in modo simmetrico."""
+        allievo = self.get_object()
+        partner_id = request.data.get('partner_id')
+        
+        # Se c'è già un partner, scollega la vecchia simmetria
+        if allievo.partner:
+            old_partner = allievo.partner
+            old_partner.partner = None
+            old_partner.save(update_fields=['partner'])
+        # Rimuovi l'allievo dai vecchi partner che lo puntano (per sicurezza)
+        Allievo.objects.filter(partner=allievo).update(partner=None)
+        
+        if partner_id:
+            new_partner = Allievo.objects.filter(id=partner_id).first()
+            if not new_partner:
+                return Response({'error': 'Partner non trovato.'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Se il nuovo partner aveva già un partner, scollegalo
+            if new_partner.partner:
+                old_of_new = new_partner.partner
+                old_of_new.partner = None
+                old_of_new.save(update_fields=['partner'])
+            Allievo.objects.filter(partner=new_partner).update(partner=None)
+            
+            # Crea la nuova simmetria
+            allievo.partner = new_partner
+            allievo.save(update_fields=['partner'])
+            new_partner.partner = allievo
+            new_partner.save(update_fields=['partner'])
+            
+            return Response(self.get_serializer(allievo).data)
+        else:
+            # Rimuove il partner
+            allievo.partner = None
+            allievo.save(update_fields=['partner'])
+            return Response(self.get_serializer(allievo).data)
+
 
 class JollyViewSet(viewsets.ModelViewSet):
     queryset = Jolly.objects.select_related('allievo').order_by('priorita')

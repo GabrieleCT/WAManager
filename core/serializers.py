@@ -65,6 +65,8 @@ class AllievoSerializer(serializers.ModelSerializer):
     ruolo_display = serializers.CharField(source='get_ruolo_display', read_only=True)
     livello_display = serializers.CharField(source='get_livello_display', read_only=True)
     recensione_display = serializers.CharField(source='get_recensione_display', read_only=True)
+    partner_nome = serializers.CharField(source='partner.nome', read_only=True)
+    partner_cognome = serializers.CharField(source='partner.cognome', read_only=True)
 
     class Meta:
         model = Allievo
@@ -72,7 +74,7 @@ class AllievoSerializer(serializers.ModelSerializer):
             'id', 'nome', 'cognome', 'ruolo', 'ruolo_display',
             'telefono', 'corso', 'corso_descrizione', 'scuola_id', 'scuola_nome',
             'recensione', 'recensione_display', 'livello', 'livello_display',
-            'is_active', 'is_prospect', 'note'
+            'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome'
         ]
 
     def get_corso_descrizione(self, obj):
@@ -124,13 +126,15 @@ class PresenzaSerializer(serializers.ModelSerializer):
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_telefono = serializers.CharField(source='allievo.telefono', read_only=True)
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
+    allievo_partner_id = serializers.UUIDField(source='allievo.partner.id', read_only=True)
+    allievo_partner_nome = serializers.CharField(source='allievo.partner.__str__', read_only=True)
     lezione_data = serializers.DateField(source='lezione.data', read_only=True)
 
     class Meta:
         model = Presenza
         fields = [
             'id', 'lezione', 'lezione_data', 'allievo',
-            'allievo_nome', 'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect',
+            'allievo_nome', 'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect', 'allievo_partner_id', 'allievo_partner_nome',
             'presente', 'fonte', 'timestamp'
         ]
 
