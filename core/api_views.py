@@ -251,7 +251,7 @@ class LezioneViewSet(viewsets.ModelViewSet):
         presenza, created = Presenza.objects.update_or_create(
             lezione=lezione,
             allievo=allievo,
-            defaults={'presente': True, 'fonte': 'manuale'}
+            defaults={'presente': True, 'fonte': 'manuale', 'is_jolly': True}
         )
         serializer = PresenzaSerializer(presenza)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

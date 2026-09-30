@@ -165,11 +165,11 @@ class Allievo(models.Model):
         Lezione = apps.get_model('core', 'Lezione')
 
         if vecchio_corso_id and self.corso_id and str(vecchio_corso_id) != str(self.corso_id):
-            # Rimuovi le presenze non registrate del vecchio corso
+            # Rimuovi le presenze del vecchio corso (a meno che non siano presenze registrate come jolly)
             Presenza.objects.filter(
                 allievo=self,
                 lezione__corso_id=vecchio_corso_id,
-                presente=False
+                is_jolly=False
             ).delete()
 
             # Inizializza presenze per le lezioni del nuovo corso
@@ -177,20 +177,20 @@ class Allievo(models.Model):
                 Presenza.objects.get_or_create(
                     lezione=lez,
                     allievo=self,
-                    defaults={'presente': False, 'fonte': 'manuale'}
+                    defaults={'presente': False, 'fonte': 'manuale', 'is_jolly': False}
                 )
         elif not vecchio_corso_id and self.corso_id:
             for lez in Lezione.objects.filter(corso_id=self.corso_id):
                 Presenza.objects.get_or_create(
                     lezione=lez,
                     allievo=self,
-                    defaults={'presente': False, 'fonte': 'manuale'}
+                    defaults={'presente': False, 'fonte': 'manuale', 'is_jolly': False}
                 )
         elif vecchio_corso_id and not self.corso_id:
             Presenza.objects.filter(
                 allievo=self,
                 lezione__corso_id=vecchio_corso_id,
-                presente=False
+                is_jolly=False
             ).delete()
 
 
@@ -252,6 +252,7 @@ class Presenza(models.Model):
     allievo = models.ForeignKey(Allievo, on_delete=models.CASCADE, related_name='presenze')
     presente = models.BooleanField(default=False)
     fonte = models.CharField(max_length=20, choices=FONTE_CHOICES, default='manuale')
+    is_jolly = models.BooleanField(default=False, help_text="Se True, è presente alla lezione come Jolly")
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
