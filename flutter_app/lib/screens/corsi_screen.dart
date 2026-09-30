@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
@@ -15,9 +16,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
   List<Scuola> _scuole = [];
   bool _loading = true;
 
-  // Cache degli iscritti e delle lezioni per il drill-down
+  // Cache degli iscritti, lezioni e pagamenti per il drill-down
   final Map<String, List<Allievo>> _iscrittiMap = {};
   final Map<String, List<Lezione>> _lezioniMap = {};
+  final Map<String, List<Pagamento>> _pagamentiMap = {};
   final Set<String> _loadingIscritti = {};
 
   @override
@@ -36,6 +38,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
         _scuole = scuole;
         _iscrittiMap.clear();
         _lezioniMap.clear();
+        _pagamentiMap.clear();
         _loading = false;
       });
     }
@@ -54,13 +57,20 @@ class _CorsiScreenState extends State<CorsiScreen> {
     if (_loadingIscritti.contains(corsoId)) return;
     setState(() => _loadingIscritti.add(corsoId));
     try {
-      final list = await _api.getAllievi(corsoId: corsoId);
-        _sortIscritti(list);
-      final lezioni = await _api.getLezioni(corsoId: corsoId);
+      final results = await Future.wait([
+        _api.getAllievi(corsoId: corsoId),
+        _api.getLezioni(corsoId: corsoId),
+        _api.getPagamenti(corsoId: corsoId),
+      ]);
+      final list = results[0] as List<Allievo>;
+      _sortIscritti(list);
+      final lezioni = results[1] as List<Lezione>;
+      final pagamenti = results[2] as List<Pagamento>;
       if (mounted) {
         setState(() {
           _iscrittiMap[corsoId] = list;
           _lezioniMap[corsoId] = lezioni;
+          _pagamentiMap[corsoId] = pagamenti;
           _loadingIscritti.remove(corsoId);
         });
       }
@@ -465,6 +475,93 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
+  void _showQuickPayDialog(Corso c, Allievo a, String? activeTrimestreCode) {
+    final importoCtl = TextEditingController(text: '150.00');
+    final noteCtl = TextEditingController();
+    String trimestre = activeTrimestreCode ?? 'T1';
+    DateTime selectedDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.payments, color: Colors.green),
+              SizedBox(width: 8),
+              Text('Registra Pagamento'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Allievo: ${a.nomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text('Corso: ${c.scuolaNome} - ${c.livelloDisplay}'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: trimestre,
+                decoration: const InputDecoration(labelText: 'Trimestre', border: OutlineInputBorder()),
+                items: const [
+                  DropdownMenuItem(value: 'T1', child: Text('Primo Trimestre (T1)')),
+                  DropdownMenuItem(value: 'T2', child: Text('Secondo Trimestre (T2)')),
+                  DropdownMenuItem(value: 'T3', child: Text('Terzo Trimestre (T3)')),
+                ],
+                onChanged: (v) => setDlgState(() => trimestre = v!),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: importoCtl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Importo (€)',
+                  prefixText: '€ ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtl,
+                decoration: const InputDecoration(
+                  labelText: 'Note (opzionale)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+              onPressed: () async {
+                final data = {
+                  'allievo': a.id,
+                  'corso': c.id,
+                  'importo': double.tryParse(importoCtl.text.trim()) ?? 150.00,
+                  'trimestre': trimestre,
+                  'data_pagamento': DateFormat('yyyy-MM-dd').format(selectedDate),
+                  'note': noteCtl.text.trim(),
+                };
+                final res = await _api.createPagamento(data);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (res != null) {
+                  _fetchIscritti(c.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Pagamento registrato per ${a.nomeCompleto}!'), backgroundColor: Colors.green.shade700),
+                    );
+                  }
+                }
+              },
+              child: const Text('Salva Pagamento'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatCard(String label, String value, IconData icon, MaterialColor color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -540,7 +637,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final today = DateTime(now.year, now.month, now.day);
 
     int lezioniFatte = 0;
-    int lezioniRimanenti = 0;
     int lezioniTotaliTrimestre = 0;
     String activeTrimestreName = 'Trimestre';
 
@@ -582,12 +678,32 @@ class _CorsiScreenState extends State<CorsiScreen> {
         if (d != null) {
           if (d.isBefore(today)) {
             lezioniFatte++;
-          } else {
-            lezioniRimanenti++;
           }
         }
       }
     }
+
+    final pagamentiCorso = _pagamentiMap[c.id] ?? [];
+
+    String? activeTrimestreCode;
+    if (activeTrimestreName.contains('1')) {
+      activeTrimestreCode = 'T1';
+    } else if (activeTrimestreName.contains('2')) {
+      activeTrimestreCode = 'T2';
+    } else if (activeTrimestreName.contains('3')) {
+      activeTrimestreCode = 'T3';
+    }
+
+    bool allievoHaPagato(Allievo a) {
+      final aPagamenti = pagamentiCorso.where((p) => p.allievoId == a.id).toList();
+      if (aPagamenti.isEmpty) return false;
+      if (activeTrimestreCode != null) {
+        return aPagamenti.any((p) => p.trimestre == activeTrimestreCode);
+      }
+      return true;
+    }
+
+    final numPagati = effettivi.where(allievoHaPagato).length;
 
     final effLeaders = effettivi.where((a) => a.ruolo == 'leader').length;
     final effFollowers = effettivi.where((a) => a.ruolo == 'follower').length;
@@ -722,6 +838,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
               _buildStatCard('Allievi Effettivi', '${effettivi.length}', Icons.groups, Colors.blueGrey),
               _buildStatCard('Prospect in Prova', '${prospects.length}', Icons.contact_mail, Colors.amber),
               _buildStatCard(
+                'Hanno Pagato',
+                '$numPagati / ${effettivi.length}',
+                Icons.payments_outlined,
+                (effettivi.isNotEmpty && numPagati == effettivi.length)
+                    ? Colors.green
+                    : (numPagati == 0 ? Colors.red : Colors.orange),
+              ),
+              _buildStatCard(
                 'Leader',
                 '$effLeaders${prLeaders > 0 ? " (+$prLeaders prova)" : ""}',
                 Icons.man,
@@ -735,20 +859,13 @@ class _CorsiScreenState extends State<CorsiScreen> {
               ),
               if (effBoth > 0)
                 _buildStatCard('Both', '$effBoth', Icons.people, Colors.teal),
-              if (lezioniTotaliTrimestre > 0) ...[
+              if (lezioniTotaliTrimestre > 0)
                 _buildStatCard(
                   'Lezioni Fatte ($activeTrimestreName)',
                   '$lezioniFatte / $lezioniTotaliTrimestre',
                   Icons.task_alt,
                   Colors.teal,
                 ),
-                _buildStatCard(
-                  'Lezioni Rimanenti',
-                  '$lezioniRimanenti',
-                  Icons.hourglass_bottom,
-                  Colors.indigo,
-                ),
-              ],
               if (balanceBadge != const SizedBox.shrink())
                 balanceBadge,
             ],
@@ -761,7 +878,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
               const Icon(Icons.school, size: 18, color: Colors.blueGrey),
               const SizedBox(width: 6),
               Text(
-                'Allievi Iscritti Effettivi (${effettivi.length}):',
+                'Allievi Iscritti Effettivi (${effettivi.length}) - Pagati: $numPagati / ${effettivi.length}:',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87),
               ),
             ],
@@ -779,44 +896,163 @@ class _CorsiScreenState extends State<CorsiScreen> {
             Column(
               children: [
                 for (int idx = 0; idx < effettivi.length; idx++) ...[
-                  if (idx > 0) const Divider(height: 1),
-                  ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    leading: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: effettivi[idx].ruolo == 'leader' ? Colors.blue.shade100 : Colors.purple.shade100,
-                      child: Text(
-                        effettivi[idx].cognome.isNotEmpty
-                            ? effettivi[idx].cognome[0]
-                            : (effettivi[idx].nome.isNotEmpty ? effettivi[idx].nome[0] : 'A'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: effettivi[idx].ruolo == 'leader' ? Colors.blue.shade900 : Colors.purple.shade900,
+                  () {
+                    final a = effettivi[idx];
+                    final haPagato = allievoHaPagato(a);
+                    final aPagamenti = pagamentiCorso.where((p) => p.allievoId == a.id).toList();
+                    final Pagamento? pag = aPagamenti.cast<Pagamento?>().firstWhere(
+                      (p) => activeTrimestreCode == null || p?.trimestre == activeTrimestreCode,
+                      orElse: () => aPagamenti.isNotEmpty ? aPagamenti.first : null,
+                    );
+
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      decoration: BoxDecoration(
+                        color: haPagato ? Colors.white : Colors.red.shade50.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: haPagato ? Colors.grey.shade300 : Colors.red.shade300,
+                          width: haPagato ? 1 : 1.5,
                         ),
                       ),
-                    ),
-                    title: Row(children: [Text(effettivi[idx].nomeCompleto, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), if (effettivi[idx].partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 14, color: Colors.pink)]]),
-                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('📞 ${effettivi[idx].telefono}', style: const TextStyle(fontSize: 12)), if (effettivi[idx].partnerId != null) Text('Partner: ${effettivi[idx].partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))]),
-                    trailing: Wrap(
-                      spacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _buildRuoloBadge(effettivi[idx].ruolo),
-                        Chip(
-                          label: Text(effettivi[idx].livelloDisplay, style: const TextStyle(fontSize: 10)),
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                        ),
-                        if (effettivi[idx].recensione == 'si')
-                          const Tooltip(
-                            message: 'Recensione rilasciata',
-                            child: Icon(Icons.star, color: Colors.amber, size: 16),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        leading: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: haPagato
+                              ? (a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.purple.shade100)
+                              : Colors.red.shade100,
+                          child: Text(
+                            a.cognome.isNotEmpty
+                                ? a.cognome[0]
+                                : (a.nome.isNotEmpty ? a.nome[0] : 'A'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: haPagato
+                                  ? (a.ruolo == 'leader' ? Colors.blue.shade900 : Colors.purple.shade900)
+                                  : Colors.red.shade900,
+                            ),
                           ),
-                      ],
-                    ),
-                  ),
+                        ),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                a.nomeCompleto,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (a.partnerId != null) ...[
+                              const SizedBox(width: 8),
+                              const Icon(Icons.favorite, size: 14, color: Colors.pink),
+                            ],
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Text('📞 ${a.telefono}', style: const TextStyle(fontSize: 12)),
+                                if (a.partnerId != null) ...[
+                                  const SizedBox(width: 8),
+                                  Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink)),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            if (haPagato && pag != null)
+                              Text(
+                                '✓ Quota saldata (€${pag.importo.toStringAsFixed(0)} - ${pag.trimestreDisplay})',
+                                style: TextStyle(fontSize: 11, color: Colors.green.shade800, fontWeight: FontWeight.w600),
+                              )
+                            else
+                              Text(
+                                '⚠️ Quota corso NON saldata',
+                                style: TextStyle(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.bold),
+                              ),
+                          ],
+                        ),
+                        trailing: Wrap(
+                          spacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (haPagato)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.green.shade400),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.check_circle, size: 13, color: Colors.green.shade700),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'PAGATO',
+                                      style: TextStyle(
+                                        color: Colors.green.shade900,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.red.shade600, width: 1.2),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 14, color: Colors.red.shade900),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'NON HA PAGATO',
+                                      style: TextStyle(
+                                        color: Colors.red.shade900,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_card, size: 18, color: Colors.green),
+                                tooltip: 'Registra pagamento per ${a.nomeCompleto}',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
+                              ),
+                            ],
+                            _buildRuoloBadge(a.ruolo),
+                            Chip(
+                              label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 10)),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                            ),
+                            if (a.recensione == 'si')
+                              const Tooltip(
+                                message: 'Recensione rilasciata',
+                                child: Icon(Icons.star, color: Colors.amber, size: 16),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }(),
                 ],
               ],
             ),
