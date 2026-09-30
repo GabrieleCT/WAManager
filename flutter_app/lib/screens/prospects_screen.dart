@@ -64,9 +64,13 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
-          final filteredCorsi = selectedScuolaId == null
-              ? _corsi
-              : _corsi.where((c) => c.scuolaId == selectedScuolaId).toList();
+          final filteredCorsi = (selectedScuolaId == null
+              ? _corsi.where((c) => c.livello == livello)
+              : _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello)).toList();
+
+          if (selectedCorsoId != null && !filteredCorsi.any((c) => c.id == selectedCorsoId)) {
+            selectedCorsoId = filteredCorsi.isNotEmpty ? filteredCorsi.first.id : null;
+          }
 
           return AlertDialog(
             title: Text(editingProspect == null ? 'Nuovo Prospect' : 'Modifica Prospect'),
@@ -106,7 +110,15 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                       DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
                       DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
                     ],
-                    onChanged: (v) => setDlgState(() => livello = v!),
+                    onChanged: (v) => setDlgState(() {
+                      livello = v!;
+                      final matching = (selectedScuolaId == null
+                          ? _corsi.where((c) => c.livello == livello)
+                          : _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello)).toList();
+                      if (selectedCorsoId != null || selectedScuolaId != null) {
+                        selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
+                      }
+                    }),
                   ),
                   const SizedBox(height: 12),
                   // ASSEGNAZIONE CORSO DI PROVA OPZIONALE
@@ -120,14 +132,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     onChanged: (v) {
                       setDlgState(() {
                         selectedScuolaId = v;
-                        selectedCorsoId = null;
+                        final matching = (selectedScuolaId == null
+                            ? _corsi.where((c) => c.livello == livello)
+                            : _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello)).toList();
+                        selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
                       });
                     },
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
                     value: selectedCorsoId,
-                    decoration: const InputDecoration(labelText: 'Corso di Prova assegnato (opzionale)'),
+                    decoration: const InputDecoration(labelText: 'Corso di Prova assegnato (associato al livello)'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('-- Nessun corso assegnato --')),
                       ...filteredCorsi.map((c) => DropdownMenuItem(

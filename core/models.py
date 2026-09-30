@@ -141,6 +141,59 @@ class Allievo(models.Model):
         prefix = "[Prospect] " if self.is_prospect else ""
         return f"{prefix}{self.nome} {self.cognome}"
 
+    def save(self, *args, **kwargs):
+        vecchio_corso_id = None
+        if self.pk:
+            old_inst = Allievo.objects.filter(pk=self.pk).values('corso_id', 'livello').first()
+            if old_inst:
+                vecchio_corso_id = old_inst['corso_id']
+
+        if self.corso:
+            if self.corso.livello != self.livello:
+                matching_corso = Corso.objects.filter(scuola=self.corso.scuola, livello=self.livello).first()
+                if matching_corso:
+                    self.corso = matching_corso
+                else:
+                    self.livello = self.corso.livello
+            else:
+                self.livello = self.corso.livello
+
+        super().save(*args, **kwargs)
+
+        from django.apps import apps
+        Presenza = apps.get_model('core', 'Presenza')
+        Lezione = apps.get_model('core', 'Lezione')
+
+        if vecchio_corso_id and self.corso_id and str(vecchio_corso_id) != str(self.corso_id):
+            # Rimuovi le presenze non registrate del vecchio corso
+            Presenza.objects.filter(
+                allievo=self,
+                lezione__corso_id=vecchio_corso_id,
+                presente=False
+            ).delete()
+
+            # Inizializza presenze per le lezioni del nuovo corso
+            for lez in Lezione.objects.filter(corso_id=self.corso_id):
+                Presenza.objects.get_or_create(
+                    lezione=lez,
+                    allievo=self,
+                    defaults={'presente': False, 'fonte': 'manuale'}
+                )
+        elif not vecchio_corso_id and self.corso_id:
+            for lez in Lezione.objects.filter(corso_id=self.corso_id):
+                Presenza.objects.get_or_create(
+                    lezione=lez,
+                    allievo=self,
+                    defaults={'presente': False, 'fonte': 'manuale'}
+                )
+        elif vecchio_corso_id and not self.corso_id:
+            Presenza.objects.filter(
+                allievo=self,
+                lezione__corso_id=vecchio_corso_id,
+                presente=False
+            ).delete()
+
+
 
 # ─── 1.4 Jolly ──────────────────────────────────────────────────
 

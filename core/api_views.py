@@ -137,6 +137,7 @@ class AllievoViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Corso non trovato.'}, status=status.HTTP_404_NOT_FOUND)
 
         allievo.corso = corso
+        allievo.livello = corso.livello
         allievo.is_prospect = False
         allievo.save()
         return Response(self.get_serializer(allievo).data)

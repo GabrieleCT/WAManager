@@ -294,7 +294,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
               onPressed: () async {
                 if (tabIndex == 0) {
                   if (selectedProspectId == null) return;
-                  await _api.updateAllievo(selectedProspectId!, {'corso': c.id});
+                  await _api.updateAllievo(selectedProspectId!, {'corso': c.id, 'livello': c.livello});
                 } else {
                   if (nomeCtl.text.trim().isEmpty || cognomeCtl.text.trim().isEmpty) return;
                   final data = {

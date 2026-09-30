@@ -91,9 +91,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
-          final corsiFiltrati = _corsi.where((c) => c.scuolaId == selectedScuolaId).toList();
+          final corsiFiltrati = _corsi.where((c) => 
+            c.scuolaId == selectedScuolaId && c.livello == livello
+          ).toList();
+
           if (selectedCorsoId != null && !corsiFiltrati.any((c) => c.id == selectedCorsoId)) {
-            selectedCorsoId = null;
+            selectedCorsoId = corsiFiltrati.isNotEmpty ? corsiFiltrati.first.id : null;
           }
 
           return AlertDialog(
@@ -134,7 +137,11 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
                       DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
                     ],
-                    onChanged: (v) => setDlgState(() => livello = v!),
+                    onChanged: (v) => setDlgState(() {
+                      livello = v!;
+                      final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
+                      selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
+                    }),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -156,18 +163,19 @@ class _AllieviScreenState extends State<AllieviScreen> {
                     )).toList(),
                     onChanged: (v) => setDlgState(() {
                       selectedScuolaId = v;
-                      selectedCorsoId = null; // Resetta il corso quando cambia la scuola
+                      final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
+                      selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
                     }),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
                     value: selectedCorsoId,
-                    decoration: const InputDecoration(labelText: 'Corso'),
+                    decoration: const InputDecoration(labelText: 'Corso (associato al livello)'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('-- Nessun corso --')),
                       ...corsiFiltrati.map((c) => DropdownMenuItem(
                             value: c.id,
-                            child: Text('${c.livelloDisplay} (${c.orario})'),
+                            child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'),
                           )),
                     ],
                     onChanged: (v) => setDlgState(() => selectedCorsoId = v),
