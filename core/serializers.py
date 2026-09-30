@@ -123,6 +123,8 @@ class LezioneSerializer(serializers.ModelSerializer):
 
 class PresenzaSerializer(serializers.ModelSerializer):
     allievo_nome = serializers.SerializerMethodField()
+    allievo_nome_solo = serializers.CharField(source='allievo.nome', read_only=True)
+    allievo_cognome = serializers.CharField(source='allievo.cognome', read_only=True)
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_telefono = serializers.CharField(source='allievo.telefono', read_only=True)
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
@@ -149,7 +151,9 @@ class PresenzaSerializer(serializers.ModelSerializer):
         model = Presenza
         fields = [
             'id', 'lezione', 'lezione_data', 'allievo',
-            'allievo_nome', 'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect', 'allievo_partner_id', 'allievo_partner_nome',
+            'allievo_nome', 'allievo_nome_solo', 'allievo_cognome',
+            'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect',
+            'allievo_partner_id', 'allievo_partner_nome',
             'is_jolly', 'presente', 'fonte', 'timestamp'
         ]
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/pdf_report_service.dart';
 
 class PresenzeScreen extends StatefulWidget {
   final String? initialLezioneId;
@@ -37,6 +38,15 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     const giorni = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
     final giorno = giorni[d.weekday - 1];
     return '$giorno ${DateFormat('dd/MM/yyyy').format(d)}';
+  }
+
+  String? get _currentScuolaNome {
+    if (_selectedLezione == null) return null;
+    if (_selectedLezione!.scuolaNome != null && _selectedLezione!.scuolaNome!.isNotEmpty) {
+      return _selectedLezione!.scuolaNome;
+    }
+    final found = _scuole.where((s) => s.id == _selectedLezione!.scuolaId);
+    return found.isNotEmpty ? found.first.nome : null;
   }
 
   Future<void> _loadAll() async {
@@ -753,8 +763,25 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   ),
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.picture_as_pdf, size: 18),
+                        label: const Text('PDF Appello'),
+                        onPressed: _selectedLezione == null
+                            ? null
+                            : () => PdfReportService.generaFoglioAppello(
+                                  context: context,
+                                  lezione: _selectedLezione!,
+                                  presenze: _presenze,
+                                  scuolaNome: _currentScuolaNome,
+                                ),
+                      ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.amber.shade800,

@@ -314,6 +314,8 @@ class Presenza {
   final String lezioneId;
   final String allievoId;
   final String allievoNome;
+  final String allievoNomeSolo;
+  final String allievoCognome;
   final String allievoRuolo;
   final String allievoTelefono;
   final bool allievoIsProspect;
@@ -322,6 +324,18 @@ class Presenza {
   final String? allievoPartnerNome;
   String get cleanNome => allievoNome.replaceAll(RegExp(r'\[Prospect\]\s*', caseSensitive: false), '').trim();
   String get cleanPartnerNome => (allievoPartnerNome ?? '').replaceAll(RegExp(r'\[Prospect\]\s*', caseSensitive: false), '').trim();
+
+  String get nomeSolo {
+    if (allievoNomeSolo.isNotEmpty) return allievoNomeSolo.trim();
+    final parts = cleanNome.split(' ');
+    return parts.isNotEmpty ? parts.first : '';
+  }
+
+  String get cognomeSolo {
+    if (allievoCognome.isNotEmpty) return allievoCognome.trim();
+    final parts = cleanNome.split(' ');
+    return parts.length > 1 ? parts.sublist(1).join(' ') : '';
+  }
 
   String get allievoSortName {
     final myName = cleanNome.toLowerCase().trim();
@@ -338,6 +352,8 @@ class Presenza {
     required this.lezioneId,
     required this.allievoId,
     required this.allievoNome,
+    this.allievoNomeSolo = '',
+    this.allievoCognome = '',
     required this.allievoRuolo,
     required this.allievoTelefono,
     this.allievoIsProspect = false,
@@ -354,6 +370,8 @@ class Presenza {
       lezioneId: json['lezione'] ?? '',
       allievoId: json['allievo'] ?? '',
       allievoNome: json['allievo_nome'] ?? '',
+      allievoNomeSolo: json['allievo_nome_solo'] ?? '',
+      allievoCognome: json['allievo_cognome'] ?? '',
       allievoRuolo: json['allievo_ruolo'] ?? '',
       allievoTelefono: json['allievo_telefono'] ?? '',
       allievoIsProspect: json['allievo_is_prospect'] ?? false,
