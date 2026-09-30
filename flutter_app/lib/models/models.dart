@@ -317,6 +317,7 @@ class Presenza {
   final String allievoRuolo;
   final String allievoTelefono;
   final bool allievoIsProspect;
+  final bool isJolly;
   final String? allievoPartnerId;
   final String? allievoPartnerNome;
   String get allievoSortName {
@@ -337,6 +338,7 @@ class Presenza {
     required this.allievoRuolo,
     required this.allievoTelefono,
     this.allievoIsProspect = false,
+    this.isJolly = false,
     this.allievoPartnerId,
     this.allievoPartnerNome,
     required this.presente,
@@ -352,6 +354,7 @@ class Presenza {
       allievoRuolo: json['allievo_ruolo'] ?? '',
       allievoTelefono: json['allievo_telefono'] ?? '',
       allievoIsProspect: json['allievo_is_prospect'] ?? false,
+      isJolly: json['is_jolly'] ?? false,
       allievoPartnerId: json['allievo_partner_id'],
       allievoPartnerNome: json['allievo_partner_nome'],
       presente: json['presente'] ?? false,

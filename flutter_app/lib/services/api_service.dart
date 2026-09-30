@@ -340,6 +340,21 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<bool> aggiungiJollyLezione(String lezioneId, String allievoId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/lezioni/$lezioneId/aggiungi-jolly/'),
+      headers: _headers,
+      body: jsonEncode({'allievo_id': allievoId}),
+    );
+    return res.statusCode == 200 || res.statusCode == 201;
+  }
+
+  Future<bool> deletePresenza(String id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/api/presenze/$id/'), headers: _headers);
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
+
   // ─── Pagamenti ────────────────────────────────────────────
   Future<List<Pagamento>> getPagamenti({String? corsoId, String? scuolaId, String? trimestre}) async {
     var params = <String>[];

@@ -236,6 +236,26 @@ class LezioneViewSet(viewsets.ModelViewSet):
             'message': f'Inizializzate {created_count} presenze per {allievi.count()} partecipanti del corso.'
         })
 
+    @action(detail=True, methods=['post'], url_path='aggiungi-jolly')
+    def aggiungi_jolly(self, request, pk=None):
+        """Aggiunge un allievo (jolly) alle presenze della lezione e lo segna presente."""
+        lezione = self.get_object()
+        allievo_id = request.data.get('allievo_id')
+        if not allievo_id:
+            return Response({'error': 'allievo_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        allievo = Allievo.objects.filter(id=allievo_id).first()
+        if not allievo:
+            return Response({'error': 'Allievo non trovato.'}, status=status.HTTP_404_NOT_FOUND)
+
+        presenza, created = Presenza.objects.update_or_create(
+            lezione=lezione,
+            allievo=allievo,
+            defaults={'presente': True, 'fonte': 'manuale'}
+        )
+        serializer = PresenzaSerializer(presenza)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
     @action(detail=False, methods=['post'], url_path='crea-trimestre')
     def crea_trimestre(self, request):
         """

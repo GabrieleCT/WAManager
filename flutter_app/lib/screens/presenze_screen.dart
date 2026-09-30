@@ -283,19 +283,258 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     );
   }
 
+  void _showAddJollyDialog() {
+    if (_selectedLezione == null) return;
+
+    final presentiLeader = _presenze.where((p) => p.presente && p.allievoRuolo == 'leader').length;
+    final presentiFollower = _presenze.where((p) => p.presente && p.allievoRuolo == 'follower').length;
+    String infoBilanciamento;
+    if (presentiLeader > presentiFollower) {
+      infoBilanciamento = 'Attualmente servono ${presentiLeader - presentiFollower} Follower per pareggiare i ruoli.';
+    } else if (presentiFollower > presentiLeader) {
+      infoBilanciamento = 'Attualmente servono ${presentiFollower - presentiLeader} Leader per pareggiare i ruoli.';
+    } else {
+      infoBilanciamento = 'I ruoli sono attualmente in parità ($presentiLeader Leader e $presentiFollower Follower).';
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        bool loading = true;
+        List<Jolly> jollyList = [];
+        List<Allievo> allieviList = [];
+        String? selectedAllievoId;
+        bool adding = false;
+        String? errorMsg;
+
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            if (loading) {
+              Future.wait([
+                _api.getJolly(),
+                _api.getAllievi(isProspect: false),
+              ]).then((results) {
+                if (ctx.mounted) {
+                  final jList = results[0] as List<Jolly>;
+                  jList.sort((a, b) => a.priorita.compareTo(b.priorita));
+                  final aList = results[1] as List<Allievo>;
+                  setDlgState(() {
+                    jollyList = jList;
+                    allieviList = aList;
+                    loading = false;
+                    final candidateJolly = jList.where(
+                      (j) => !_presenze.any((p) => p.allievoId == j.allievoId && p.presente)
+                    ).toList();
+                    if (candidateJolly.isNotEmpty) {
+                      selectedAllievoId = candidateJolly.first.allievoId;
+                    } else if (jList.isNotEmpty) {
+                      selectedAllievoId = jList.first.allievoId;
+                    } else if (aList.isNotEmpty) {
+                      selectedAllievoId = aList.first.id;
+                    }
+                  });
+                }
+              }).catchError((err) {
+                if (ctx.mounted) {
+                  setDlgState(() {
+                    loading = false;
+                    errorMsg = 'Errore nel caricamento: $err';
+                  });
+                }
+              });
+            }
+
+            final items = <DropdownMenuItem<String>>[];
+            if (jollyList.isNotEmpty) {
+              for (final j in jollyList) {
+                final giaPresente = _presenze.any((p) => p.allievoId == j.allievoId && p.presente);
+                items.add(DropdownMenuItem(
+                  value: j.allievoId,
+                  child: Text(
+                    '⭐ [P${j.priorita}] ${j.allievoNome} (${j.allievoRuolo.toUpperCase()})${giaPresente ? " - Già Presente" : ""}',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: giaPresente ? Colors.grey : Colors.purple.shade900,
+                    ),
+                  ),
+                ));
+              }
+            }
+
+            final altriAllievi = allieviList.where((a) => !jollyList.any((j) => j.allievoId == a.id)).toList();
+            for (final a in altriAllievi) {
+              final giaPresente = _presenze.any((p) => p.allievoId == a.id && p.presente);
+              items.add(DropdownMenuItem(
+                value: a.id,
+                child: Text(
+                  '👤 ${a.nomeCompleto} (${a.ruolo.toUpperCase()})${giaPresente ? " - Già Presente" : ""}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: giaPresente ? Colors.grey : Colors.black87,
+                  ),
+                ),
+              ));
+            }
+
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.star, color: Colors.amber),
+                  SizedBox(width: 8),
+                  Text('Aggiungi Jolly alla Lezione'),
+                ],
+              ),
+              content: SizedBox(
+                width: 500,
+                child: loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : errorMsg != null
+                        ? Text(errorMsg!, style: const TextStyle(color: Colors.red))
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.amber.shade300),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.lightbulb_outline, size: 20, color: Colors.amber.shade900),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        infoBilanciamento,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.amber.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              DropdownButtonFormField<String>(
+                                value: selectedAllievoId,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  labelText: 'Seleziona Allievo / Jolly da aggiungere *',
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  helperText: 'I Jolly registrati hanno la precedenza (⭐)',
+                                ),
+                                items: items,
+                                onChanged: (val) {
+                                  setDlgState(() => selectedAllievoId = val);
+                                },
+                              ),
+                            ],
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Annulla'),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.shade800,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: adding
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.add_task, size: 18),
+                  label: const Text('Aggiungi e Segna Presente'),
+                  onPressed: (adding || loading || selectedAllievoId == null)
+                      ? null
+                      : () async {
+                          setDlgState(() => adding = true);
+                          final ok = await _api.aggiungiJollyLezione(_selectedLezione!.id, selectedAllievoId!);
+                          if (ctx.mounted) {
+                            Navigator.pop(ctx);
+                          }
+                          if (ok) {
+                            await _loadPresenze(_selectedLezione!.id);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Jolly aggiunto alla lezione e conteggiato tra i presenti!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } else {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Errore durante l\'aggiunta del Jolly.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _removeJollyPresenza(Presenza p) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rimuovi Jolly'),
+        content: Text('Vuoi rimuovere ${p.allievoNome} dalle presenze di questa lezione?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Rimuovi'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final ok = await _api.deletePresenza(p.id);
+      if (ok) {
+        if (_selectedLezione != null) {
+          _loadPresenze(_selectedLezione!.id);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${p.allievoNome} rimosso dalla lezione.'),
+              backgroundColor: Colors.orange.shade800,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Ordina: presenti in alto, assenti in basso, a parità in ordine alfabetico
-    _presenze.sort((a, b) {
-      if (a.presente && !b.presente) return -1;
-      if (!a.presente && b.presente) return 1;
-      return a.allievoNome.compareTo(b.allievoNome);
-    });
+    _sortPresenze(_presenze);
 
     final presentiList = _presenze.where((p) => p.presente).toList();
     final presentiCount = presentiList.length;
     final whatsappPresentiCount = presentiList.where((p) => p.fonte == 'whatsapp').length;
     final manualePresentiCount = presentiList.where((p) => p.fonte == 'manuale').length;
+    final jollyPresentiCount = presentiList.where((p) => p.isJolly).length;
 
     final leaderCount = _presenze.where((p) => p.presente && p.allievoRuolo == 'leader').length;
     final followerCount = _presenze.where((p) => p.presente && p.allievoRuolo == 'follower').length;
@@ -458,6 +697,28 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.deepPurple.shade900),
                           ),
                           const SizedBox(width: 10),
+                          if (jollyPresentiCount > 0) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.purple.shade300),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.star, size: 12, color: Colors.purple.shade900),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '$jollyPresentiCount Jolly',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                           if (whatsappPresentiCount > 0)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -494,7 +755,17 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   ),
                   Wrap(
                     spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber.shade800,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.star, size: 18),
+                        label: const Text('Aggiungi Jolly'),
+                        onPressed: _showAddJollyDialog,
+                      ),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.people_alt, size: 18),
                         label: const Text('Re-inizializza'),
@@ -589,6 +860,22 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             color: jollyNecessari > 0 ? Colors.deepOrange.shade800 : Colors.green.shade800,
                           ),
                         ),
+                        if (jollyPresentiCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.purple.shade300),
+                            ),
+                            child: Text(
+                              '⭐ Jolly presenti: $jollyPresentiCount',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade900,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -618,11 +905,11 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             activeColor: isWa ? Colors.green.shade700 : Colors.deepPurple,
                             secondary: CircleAvatar(
                               backgroundColor: p.presente
-                                  ? (isWa ? Colors.green.shade600 : Colors.indigo.shade600)
+                                  ? (isWa ? Colors.green.shade600 : (p.isJolly ? Colors.purple.shade600 : Colors.indigo.shade600))
                                   : Colors.red.shade100,
                               child: Icon(
                                 p.presente
-                                    ? (isWa ? Icons.smart_toy : Icons.check)
+                                    ? (isWa ? Icons.smart_toy : (p.isJolly ? Icons.star : Icons.check))
                                     : Icons.close,
                                 color: p.presente ? Colors.white : Colors.red.shade800,
                                 size: 20,
@@ -646,6 +933,32 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                         fontWeight: FontWeight.bold,
                                         color: Colors.amber.shade900,
                                       ),
+                                    ),
+                                  ),
+                                ],
+                                if (p.isJolly) ...[
+                                  Container(
+                                    margin: const EdgeInsets.only(right: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade100,
+                                      border: Border.all(color: Colors.purple.shade600),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.star, size: 10, color: Colors.purple.shade900),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          'JOLLY',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.purple.shade900,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -704,6 +1017,22 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                       ],
                                     ),
                                   ),
+                                if (p.isJolly) ...[
+                                  const SizedBox(width: 6),
+                                  InkWell(
+                                    onTap: () => _removeJollyPresenza(p),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade50,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.red.shade200),
+                                      ),
+                                      child: Icon(Icons.close, size: 14, color: Colors.red.shade700),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             subtitle: Padding(

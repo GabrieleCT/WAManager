@@ -128,11 +128,19 @@ class PresenzaSerializer(serializers.ModelSerializer):
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
     allievo_partner_id = serializers.UUIDField(source='allievo.partner.id', read_only=True)
     allievo_partner_nome = serializers.SerializerMethodField()
+    is_jolly = serializers.SerializerMethodField()
 
     def get_allievo_partner_nome(self, obj):
-        if obj.allievo.partner:
+        if obj.allievo and obj.allievo.partner:
             return str(obj.allievo.partner)
         return None
+
+    def get_is_jolly(self, obj):
+        if hasattr(obj, 'allievo') and obj.allievo:
+            if obj.allievo.jolly_entries.exists() or (obj.lezione and obj.allievo.corso_id != obj.lezione.corso_id):
+                return True
+        return False
+
     lezione_data = serializers.DateField(source='lezione.data', read_only=True)
 
     class Meta:
@@ -140,7 +148,7 @@ class PresenzaSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'lezione', 'lezione_data', 'allievo',
             'allievo_nome', 'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect', 'allievo_partner_id', 'allievo_partner_nome',
-            'presente', 'fonte', 'timestamp'
+            'is_jolly', 'presente', 'fonte', 'timestamp'
         ]
 
 
