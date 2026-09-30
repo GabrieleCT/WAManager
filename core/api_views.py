@@ -230,6 +230,12 @@ class AllievoViewSet(viewsets.ModelViewSet):
             group_jid = s.gruppo_whatsapp.strip()
             res = get_group_participants(group_jid)
             if res.get('success'):
+                # Salva automaticamente il JID reale se era stato inserito un codice d'invito
+                resolved = res.get('resolvedJid')
+                if resolved and resolved != s.gruppo_whatsapp:
+                    s.gruppo_whatsapp = resolved
+                    s.save(update_fields=['gruppo_whatsapp'])
+
                 participants = res.get('participants', [])
                 group_keys = set()
                 for p in participants:

@@ -331,7 +331,38 @@ app.get('/api/status', (req, res) => {
     });
 });
 
-// Endpoint per recuperare partecipanti di un gruppo WhatsApp
+// Endpoint per elencare tutti i gruppi WhatsApp a cui partecipa l'account
+app.get('/api/groups', async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+        logToFile('Recupero elenco gruppi partecipanti...');
+        const allGroups = await sock.groupFetchAllParticipating();
+        const list = Object.values(allGroups).map(g => ({
+            id: g.id,
+            subject: g.subject || 'Senza nome',
+            participantsCount: g.participants ? g.participants.length : 0,
+            creation: g.creation,
+            owner: g.owner
+        }));
+        // Ordina alfabeticamente per nome gruppo
+        list.sort((a, b) => a.subject.localeCompare(b.subject));
+        res.json({
+            success: true,
+            count: list.length,
+            groups: list
+        });
+    } catch (e) {
+        logToFile(`Errore recupero elenco gruppi: ${e.message || e}`);
+        res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+});
+
+// Endpoint per recuperare partecipanti di un gruppo WhatsApp (supporta JID @g.us e codici/link d'invito)
 app.get('/api/groups/:groupId/participants', async (req, res) => {
     try {
         if (!sock || currentStatus !== 'CONNECTED') {
@@ -341,14 +372,62 @@ app.get('/api/groups/:groupId/participants', async (req, res) => {
             });
         }
 
-        let groupId = req.params.groupId;
-        if (!groupId.endsWith('@g.us')) {
-            groupId = `${groupId}@g.us`;
-        }
-        groupId = groupId.replace('+', '');
+        let inputParam = (req.params.groupId || '').trim();
+        let targetJid = inputParam;
+        let inviteCode = null;
 
-        logToFile(`Recupero partecipanti per gruppo: ${groupId}...`);
-        const groupMeta = await sock.groupMetadata(groupId);
+        // Estrai l'eventuale codice d'invito (anche se terminante con @g.us o prefissato da URL)
+        let clean = inputParam.replace('https://chat.whatsapp.com/', '').replace('http://chat.whatsapp.com/', '').replace('@g.us', '').trim();
+        const isRealJid = clean.startsWith('120363') || clean.includes('-');
+        if (!isRealJid && clean.length >= 18 && clean.length <= 32) {
+            inviteCode = clean;
+        }
+
+        // Se abbiamo individuato un codice d'invito, proviamo a risolverlo nel JID reale
+        if (inviteCode) {
+            logToFile(`Risoluzione codice di invito ${inviteCode}...`);
+            try {
+                const inviteInfo = await sock.groupGetInviteInfo(inviteCode);
+                if (inviteInfo && inviteInfo.id) {
+                    targetJid = inviteInfo.id;
+                    logToFile(`Codice d'invito ${inviteCode} risolto in JID reale: ${targetJid} (${inviteInfo.subject})`);
+                }
+            } catch (invErr) {
+                logToFile(`Tentativo groupGetInviteInfo fallito per ${inviteCode}: ${invErr.message}`);
+            }
+        }
+
+        if (!targetJid.endsWith('@g.us')) {
+            targetJid = `${targetJid}@g.us`;
+        }
+        targetJid = targetJid.replace('+', '');
+
+        logToFile(`Recupero partecipanti per gruppo: ${targetJid}...`);
+        let groupMeta = null;
+        try {
+            groupMeta = await sock.groupMetadata(targetJid);
+        } catch (metaErr) {
+            // Se fallisce, cerchiamo tra tutti i gruppi a cui partecipa l'account
+            logToFile(`groupMetadata fallito per ${targetJid}, cerco tra i gruppi partecipanti...`);
+            try {
+                const participating = await sock.groupFetchAllParticipating();
+                const found = Object.values(participating).find(g => 
+                    g.id === targetJid ||
+                    (inviteCode && g.id.includes(inviteCode)) ||
+                    g.subject.toLowerCase() === inputParam.toLowerCase()
+                );
+                if (found) {
+                    groupMeta = found;
+                    targetJid = found.id;
+                    logToFile(`Gruppo trovato tra i partecipanti: ${found.subject} (${found.id})`);
+                } else {
+                    throw metaErr;
+                }
+            } catch (pErr) {
+                throw metaErr;
+            }
+        }
+
         if (!groupMeta || !groupMeta.participants) {
             return res.status(404).json({
                 success: false,
@@ -369,7 +448,8 @@ app.get('/api/groups/:groupId/participants', async (req, res) => {
 
         res.json({
             success: true,
-            groupId: groupId,
+            groupId: targetJid,
+            resolvedJid: targetJid,
             subject: groupMeta.subject || '',
             participantsCount: participants.length,
             participants: participants
