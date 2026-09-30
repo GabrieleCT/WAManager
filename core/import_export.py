@@ -555,9 +555,9 @@ def export_global(request):
 
     # 1. Scuole
     ws = wb.create_sheet("Scuole")
-    ws.append(["ID", "Nome"])
+    ws.append(["ID", "Nome", "Sede", "Gruppo WhatsApp"])
     for s in Scuola.objects.all():
-        ws.append([str(s.id), s.nome])
+        ws.append([str(s.id), s.nome, s.sede, s.gruppo_whatsapp])
 
     # 2. Corsi
     ws = wb.create_sheet("Corsi")
@@ -568,8 +568,8 @@ def export_global(request):
             str(c.id),
             str(c.scuola.id),
             c.scuola.nome,
-            c.get_livello_display(),
-            c.get_giorno_settimana_display(),
+            c.livello,
+            c.giorno_settimana,
             orario_str,
             c.anno_accademico,
             c.gruppo_whatsapp
@@ -579,22 +579,23 @@ def export_global(request):
     ws = wb.create_sheet("Argomenti")
     ws.append(["ID", "Livello", "Titolo", "Descrizione"])
     for a in Argomento.objects.all():
-        ws.append([str(a.id), a.get_livello_display(), a.titolo, a.descrizione])
+        ws.append([str(a.id), a.livello, a.titolo, a.descrizione])
 
     # 4. Allievi
     ws = wb.create_sheet("Allievi")
-    ws.append(["ID", "Nome", "Cognome", "Telefono", "Ruolo", "Livello", "Corso ID", "Prospect", "Recensione", "Attivo", "Note"])
-    for a in Allievo.objects.select_related('corso').all():
+    ws.append(["ID", "Nome", "Cognome", "Telefono", "Ruolo", "Livello", "Corso ID", "Partner ID", "Prospect", "Recensione", "Attivo", "Note"])
+    for a in Allievo.objects.select_related('corso', 'partner').all():
         ws.append([
             str(a.id),
             a.nome,
             a.cognome,
             a.telefono,
-            a.get_ruolo_display(),
-            a.get_livello_display(),
+            a.ruolo,
+            a.livello,
             str(a.corso.id) if a.corso else "",
+            str(a.partner_id) if a.partner_id else "",
             "Sì" if a.is_prospect else "No",
-            a.get_recensione_display(),
+            a.recensione,
             "Sì" if a.is_active else "No",
             a.note
         ])
@@ -618,20 +619,21 @@ def export_global(request):
             str(l.id),
             str(l.corso.id),
             l.data.strftime('%Y-%m-%d'),
-            getattr(l, 'titolo', ''),
+            l.titolo,
             str(l.argomento.id) if l.argomento else ""
         ])
 
     # 7. Presenze
     ws = wb.create_sheet("Presenze")
-    ws.append(["ID", "Allievo ID", "Lezione ID", "Presente", "Fonte", "Data Registrazione"])
+    ws.append(["ID", "Allievo ID", "Lezione ID", "Presente", "Fonte", "Jolly", "Data Registrazione"])
     for p in Presenza.objects.all():
         ws.append([
             str(p.id),
             str(p.allievo_id),
             str(p.lezione_id),
             "Sì" if p.presente else "No",
-            p.get_fonte_display(),
+            p.fonte,
+            "Sì" if p.is_jolly else "No",
             p.timestamp.strftime('%Y-%m-%d %H:%M') if p.timestamp else ""
         ])
 
@@ -642,9 +644,9 @@ def export_global(request):
         ws.append([
             str(p.id),
             str(p.allievo_id),
-            str(p.corso_id),
+            str(p.corso_id) if p.corso_id else "",
             float(p.importo),
-            p.get_trimestre_display(),
+            p.trimestre,
             p.data_pagamento.strftime('%Y-%m-%d') if p.data_pagamento else "",
             p.note
         ])
@@ -728,12 +730,25 @@ def import_global(request):
                     pass
             return datetime.time(20, 0)
 
+        def normalize_level(val):
+            val_str = str(val or '').strip().lower()
+            if 'inter' in val_str:
+                return 'intermedio'
+            elif 'avanz' in val_str or 'adv' in val_str:
+                return 'avanzato'
+            return 'principiante'
+
         # 1. Scuole
         scuole_count = 0
         for r in get_rows("Scuole"):
             if not r or len(r) < 2 or not r[1]:
                 continue
-            Scuola.objects.update_or_create(id=r[0], defaults={'nome': str(r[1]).strip()})
+            scuola_defaults = {'nome': str(r[1]).strip()}
+            if len(r) > 2 and r[2]:
+                scuola_defaults['sede'] = str(r[2]).strip()
+            if len(r) > 3 and r[3]:
+                scuola_defaults['gruppo_whatsapp'] = str(r[3]).strip()
+            Scuola.objects.update_or_create(id=r[0], defaults=scuola_defaults)
             scuole_count += 1
         stats['scuole'] = scuole_count
 
@@ -743,17 +758,7 @@ def import_global(request):
             if not r or len(r) < 2 or not r[1]:
                 continue
             try:
-                # [ID, Scuola ID, Scuola Nome, Livello, Giorno, Orario, Anno Accademico, Gruppo WhatsApp]
-                livello_str = str(r[3]).strip().lower() if len(r) > 3 and r[3] else ''
-                if 'principiante' in livello_str or 'beg' in livello_str:
-                    livello_val = 'beginner'
-                elif 'intermedio' in livello_str or 'inter' in livello_str:
-                    livello_val = 'intermediate'
-                elif 'avanzato' in livello_str or 'adv' in livello_str:
-                    livello_val = 'advanced'
-                else:
-                    livello_val = 'beginner'
-
+                livello_val = normalize_level(r[3] if len(r) > 3 else None)
                 giorno_val = str(r[4]).strip().upper() if len(r) > 4 and r[4] else 'LUNEDI'
                 giorno_map = {
                     'LUNEDÌ': 'LUNEDI', 'LUNEDI': 'LUNEDI',
@@ -787,14 +792,7 @@ def import_global(request):
         for r in get_rows("Argomenti"):
             if not r or len(r) < 3 or not r[2]:
                 continue
-            livello_str = str(r[1]).strip().lower() if len(r) > 1 and r[1] else ''
-            if 'intermedio' in livello_str or 'inter' in livello_str:
-                livello_val = 'intermediate'
-            elif 'avanzato' in livello_str or 'adv' in livello_str:
-                livello_val = 'advanced'
-            else:
-                livello_val = 'beginner'
-
+            livello_val = normalize_level(r[1] if len(r) > 1 else None)
             Argomento.objects.update_or_create(id=r[0], defaults={
                 'livello': livello_val,
                 'titolo': str(r[2]).strip(),
@@ -805,11 +803,12 @@ def import_global(request):
 
         # 4. Allievi
         allievi_count = 0
+        partner_pairs = []  # (allievo_id, partner_id)
         for r in get_rows("Allievi"):
-            if not r or len(r) < 4 or not r[3]:
+            if not r or len(r) < 4 or not r[1]:
                 continue
             try:
-                # [ID, Nome, Cognome, Telefono, Ruolo, Livello, Corso ID, Prospect, Recensione, Attivo, Note]
+                # Colonne: [ID, Nome, Cognome, Telefono, Ruolo, Livello, Corso ID, (Partner ID), Prospect, Recensione, Attivo, Note]
                 ruolo_str = str(r[4]).strip().lower() if len(r) > 4 and r[4] else 'leader'
                 if 'foll' in ruolo_str:
                     ruolo_val = 'follower'
@@ -818,32 +817,39 @@ def import_global(request):
                 else:
                     ruolo_val = 'leader'
 
-                livello_str = str(r[5]).strip().lower() if len(r) > 5 and r[5] else 'beginner'
-                if 'intermedio' in livello_str or 'inter' in livello_str:
-                    livello_val = 'intermediate'
-                elif 'avanzato' in livello_str or 'adv' in livello_str:
-                    livello_val = 'advanced'
-                else:
-                    livello_val = 'beginner'
-
+                livello_val = normalize_level(r[5] if len(r) > 5 else None)
                 corso_id = str(r[6]).strip() if len(r) > 6 and r[6] else None
-                is_prosp = str(r[7]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 7 and r[7] else False
+                if corso_id == "" or corso_id == "None":
+                    corso_id = None
 
-                rec_str = str(r[8]).strip().lower() if len(r) > 8 and r[8] else 'no'
+                # Verifica se la colonna 7 è Partner ID o Prospect
+                col7 = str(r[7]).strip() if len(r) > 7 and r[7] is not None else ""
+                has_partner_col = False
+                partner_id = None
+                if len(r) > 11 or (len(col7) > 10 and '-' in col7):
+                    has_partner_col = True
+                    partner_id = col7 if col7 and col7 != "None" else None
+
+                offset = 1 if has_partner_col else 0
+                prospect_idx = 7 + offset
+                recensione_idx = 8 + offset
+                attivo_idx = 9 + offset
+                note_idx = 10 + offset
+
+                is_prosp = str(r[prospect_idx]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > prospect_idx and r[prospect_idx] is not None else False
+                rec_str = str(r[recensione_idx]).strip().lower() if len(r) > recensione_idx and r[recensione_idx] else 'no'
                 if rec_str in ['si', 'sì', 'true', '1']:
-                    rec_val = 'SI'
-                elif 'richied' in rec_str:
-                    rec_val = 'DR'
+                    rec_val = 'si'
                 else:
-                    rec_val = 'NO'
+                    rec_val = 'no'
 
-                is_act = str(r[9]).strip().lower() not in ['no', 'false', '0'] if len(r) > 9 and r[9] is not None else True
-                note_val = str(r[10]).strip() if len(r) > 10 and r[10] else ""
+                is_act = str(r[attivo_idx]).strip().lower() not in ['no', 'false', '0'] if len(r) > attivo_idx and r[attivo_idx] is not None else True
+                note_val = str(r[note_idx]).strip() if len(r) > note_idx and r[note_idx] else ""
 
                 Allievo.objects.update_or_create(id=r[0], defaults={
                     'nome': str(r[1]).strip(),
                     'cognome': str(r[2]).strip() if len(r) > 2 and r[2] else "",
-                    'telefono': str(r[3]).strip(),
+                    'telefono': str(r[3]).strip() if len(r) > 3 and r[3] else "",
                     'ruolo': ruolo_val,
                     'livello': livello_val,
                     'corso_id': corso_id,
@@ -853,9 +859,18 @@ def import_global(request):
                     'note': note_val
                 })
                 allievi_count += 1
+                if partner_id:
+                    partner_pairs.append((str(r[0]), partner_id))
             except Exception:
                 pass
         stats['allievi'] = allievi_count
+
+        # Second pass per ripristinare i partner
+        for a_id, p_id in partner_pairs:
+            try:
+                Allievo.objects.filter(id=a_id).update(partner_id=p_id)
+            except Exception:
+                pass
 
         # 5. Jolly
         jolly_count = 0
@@ -863,7 +878,6 @@ def import_global(request):
             if not r or len(r) < 2 or not r[1]:
                 continue
             try:
-                # [ID, Allievo ID, Allievo Nome, Priorità]
                 prio = int(r[3]) if len(r) > 3 and r[3] else 1
                 Jolly.objects.update_or_create(id=r[0], defaults={
                     'allievo_id': r[1],
@@ -880,14 +894,15 @@ def import_global(request):
             if not r or len(r) < 3 or not r[1]:
                 continue
             try:
-                # [ID, Corso ID, Data, Argomento ID]
                 data_obj = parse_date(r[2])
                 if not data_obj:
                     continue
-                arg_id = str(r[3]).strip() if len(r) > 3 and r[3] else None
+                titolo_val = str(r[3]).strip() if len(r) > 3 and r[3] else ''
+                arg_id = str(r[4]).strip() if len(r) > 4 and r[4] and str(r[4]).strip() != "None" else None
                 Lezione.objects.update_or_create(id=r[0], defaults={
                     'corso_id': r[1],
                     'data': data_obj,
+                    'titolo': titolo_val,
                     'argomento_id': arg_id,
                 })
                 lezioni_count += 1
@@ -901,18 +916,17 @@ def import_global(request):
             if not r or len(r) < 3 or not r[1] or not r[2]:
                 continue
             try:
-                # [ID, Allievo ID, Lezione ID, Presente, Fonte, Data Registrazione]
                 pres_val = str(r[3]).strip().lower() in ['si', 'sì', 'true', '1', 'presente'] if len(r) > 3 and r[3] else False
                 fonte_val = 'whatsapp' if len(r) > 4 and 'what' in str(r[4]).lower() else 'manuale'
-                pres_defaults = {
-                    'presente': pres_val,
-                    'fonte': fonte_val,
-                }
-                # Presenza has unique_together ('lezione', 'allievo')
+                is_jolly_val = str(r[5]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 5 and r[5] else False
                 Presenza.objects.update_or_create(
                     lezione_id=r[2],
                     allievo_id=r[1],
-                    defaults=pres_defaults
+                    defaults={
+                        'presente': pres_val,
+                        'fonte': fonte_val,
+                        'is_jolly': is_jolly_val,
+                    }
                 )
                 presenze_count += 1
             except Exception:
@@ -922,17 +936,15 @@ def import_global(request):
         # 8. Pagamenti
         pag_count = 0
         for r in get_rows("Pagamenti"):
-            if not r or len(r) < 3 or not r[1] or not r[2]:
+            if not r or len(r) < 3 or not r[1]:
                 continue
             try:
-                # [ID, Allievo ID, Corso ID, Importo, Trimestre, Data Pagamento, Note]
+                corso_id = str(r[2]).strip() if len(r) > 2 and r[2] and str(r[2]).strip() != "None" else None
                 importo_val = float(str(r[3]).replace(',', '.')) if len(r) > 3 and r[3] else 150.0
                 trim_str = str(r[4]).strip().upper() if len(r) > 4 and r[4] else 'T1'
-                if 'PRIMO' in trim_str or 'T1' in trim_str or '1' in trim_str:
-                    trim_val = 'T1'
-                elif 'SECONDO' in trim_str or 'T2' in trim_str or '2' in trim_str:
+                if 'T2' in trim_str or 'SECONDO' in trim_str or '2' in trim_str:
                     trim_val = 'T2'
-                elif 'TERZO' in trim_str or 'T3' in trim_str or '3' in trim_str:
+                elif 'T3' in trim_str or 'TERZO' in trim_str or '3' in trim_str:
                     trim_val = 'T3'
                 else:
                     trim_val = 'T1'
@@ -942,7 +954,7 @@ def import_global(request):
 
                 Pagamento.objects.update_or_create(id=r[0], defaults={
                     'allievo_id': r[1],
-                    'corso_id': r[2],
+                    'corso_id': corso_id,
                     'importo': importo_val,
                     'trimestre': trim_val,
                     'data_pagamento': data_obj or datetime.date.today(),
@@ -959,7 +971,6 @@ def import_global(request):
             if not r or len(r) < 3 or not r[1]:
                 continue
             try:
-                # [ID, Corso ID, Testo, Attivo]
                 is_act = str(r[3]).strip().lower() not in ['no', 'false', '0'] if len(r) > 3 and r[3] is not None else True
                 SondaggioMattutinoConfig.objects.update_or_create(id=r[0], defaults={
                     'corso_id': r[1],
@@ -973,7 +984,7 @@ def import_global(request):
 
         return JsonResponse({
             'success': True,
-            'messaggio': 'Importazione globale completata',
+            'messaggio': 'Importazione globale completata con successo!',
             'statistiche': stats
         })
 
