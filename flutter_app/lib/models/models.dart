@@ -146,6 +146,9 @@ class Allievo {
   final String? partnerNome;
   final String? partnerCognome;
   final bool inGruppoScuolaWhatsapp;
+  final bool inGruppoCorsoWhatsapp;
+  final String? corsoGruppoWhatsapp;
+  final bool corsoHasWhatsapp;
 
   Allievo({
     required this.id,
@@ -169,6 +172,9 @@ class Allievo {
     this.partnerNome,
     this.partnerCognome,
     this.inGruppoScuolaWhatsapp = false,
+    this.inGruppoCorsoWhatsapp = false,
+    this.corsoGruppoWhatsapp,
+    this.corsoHasWhatsapp = false,
   });
 
   String get nomeCompleto => '$nome $cognome';
@@ -204,6 +210,9 @@ class Allievo {
       partnerNome: json['partner_nome'],
       partnerCognome: json['partner_cognome'],
       inGruppoScuolaWhatsapp: json['in_gruppo_scuola_whatsapp'] ?? false,
+      inGruppoCorsoWhatsapp: json['in_gruppo_corso_whatsapp'] ?? false,
+      corsoGruppoWhatsapp: json['corso_gruppo_whatsapp'],
+      corsoHasWhatsapp: json['corso_has_whatsapp'] ?? false,
     );
   }
 

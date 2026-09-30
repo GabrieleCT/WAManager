@@ -261,6 +261,31 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> addStudentToCourseGroup(String allievoId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/add-to-whatsapp-corso/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } else {
+        try {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          return {
+            'success': false,
+            'error': data['error'] ?? 'Errore aggiunta gruppo corso (HTTP ${res.statusCode})',
+            'invite_link': data['invite_link'],
+          };
+        } catch (_) {
+          return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+        }
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   Future<Map<String, dynamic>> resolveWhatsappGroup(String link) async {
     try {
       final res = await http.post(

@@ -136,6 +136,10 @@ class Allievo(models.Model):
         default=False,
         help_text="Indica se l'allievo è presente nel gruppo WhatsApp della Scuola"
     )
+    in_gruppo_corso_whatsapp = models.BooleanField(
+        default=False,
+        help_text="Indica se l'allievo è presente nel gruppo WhatsApp del Corso"
+    )
 
     class Meta:
         verbose_name_plural = 'Allievi'

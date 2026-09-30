@@ -19,7 +19,19 @@ class _AllieviScreenState extends State<AllieviScreen> {
   String _searchQuery = '';
   String? _selectedScuolaId;
   String? _selectedCorsoId;
+  String _filterWaScuola = 'tutti'; // 'tutti', 'si', 'no'
+  String _filterWaCorso = 'tutti';  // 'tutti', 'si', 'no'
   bool _syncingWhatsapp = false;
+
+  List<Allievo> get _filteredAllievi {
+    return _allievi.where((a) {
+      if (_filterWaScuola == 'si' && !a.inGruppoScuolaWhatsapp) return false;
+      if (_filterWaScuola == 'no' && a.inGruppoScuolaWhatsapp) return false;
+      if (_filterWaCorso == 'si' && !a.inGruppoCorsoWhatsapp) return false;
+      if (_filterWaCorso == 'no' && a.inGruppoCorsoWhatsapp) return false;
+      return true;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -73,7 +85,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
     }
   }
 
-  Future<void> _syncWhatsappScuola() async {
+  Future<void> _syncWhatsapp() async {
     setState(() => _syncingWhatsapp = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -85,10 +97,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
             ),
             SizedBox(width: 12),
-            Text('Verifica presenza allievi nei gruppi WhatsApp Scuola in corso...'),
+            Expanded(
+              child: Text('Verifica presenza allievi nei gruppi WhatsApp (Scuola e Corsi) in corso...'),
+            ),
           ],
         ),
-        duration: Duration(seconds: 4),
+        duration: Duration(seconds: 5),
       ),
     );
 
@@ -97,13 +111,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
       setState(() => _syncingWhatsapp = false);
       if (res['success'] == true) {
         final total = res['total_allievi'] ?? 0;
-        final inGroup = res['in_gruppo_scuola'] ?? 0;
-        final notInGroup = res['non_in_gruppo'] ?? 0;
+        final inScuola = res['in_gruppo_scuola'] ?? 0;
+        final inCorso = res['in_gruppo_corso'] ?? 0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green.shade800,
             content: Text(
-              'Verifica completata su $total allievi: $inGroup presenti nel gruppo WhatsApp Scuola, $notInGroup assenti.',
+              'Verifica completata su $total allievi: $inScuola presenti nel gruppo Scuola, $inCorso nel gruppo Corso.',
             ),
             duration: const Duration(seconds: 5),
           ),
@@ -113,7 +127,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.red.shade800,
-            content: Text(res['error'] ?? 'Errore durante la verifica WhatsApp Scuola'),
+            content: Text(res['error'] ?? 'Errore durante la verifica WhatsApp'),
             duration: const Duration(seconds: 6),
           ),
         );
@@ -121,7 +135,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
     }
   }
 
-  Future<void> _confirmAndAddToWhatsapp(Allievo a) async {
+
+  Future<void> _confirmAndAddToWhatsappScuola(Allievo a) async {
     if (a.telefono.isEmpty || a.telefono.toUpperCase() == 'TBD') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -149,9 +164,22 @@ class _AllieviScreenState extends State<AllieviScreen> {
           children: [
             Text('Vuoi aggiungere questo allievo al gruppo WhatsApp di $scuolaNome?'),
             const SizedBox(height: 12),
-            Text('Allievo: ${a.nomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('Telefono: ${a.telefono}'),
-            if (a.corsoDescrizione != null) Text('Corso: ${a.corsoDescrizione!}'),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• Allievo: ${a.nomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('• Telefono: ${a.telefono}'),
+                  if (a.scuolaNome != null) Text('• Scuola: ${a.scuolaNome!}'),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
@@ -165,7 +193,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               foregroundColor: Colors.white,
             ),
             icon: const Icon(Icons.check, size: 18),
-            label: const Text('Aggiungi al Gruppo'),
+            label: const Text('Aggiungi a Scuola'),
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -181,7 +209,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
           children: [
             const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
             const SizedBox(width: 12),
-            Text('Aggiunta di ${a.nomeCompleto} al gruppo in corso...'),
+            Text('Aggiunta di ${a.nomeCompleto} al gruppo scuola in corso...'),
           ],
         ),
         duration: const Duration(seconds: 4),
@@ -194,7 +222,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(res['message'] ?? '${a.nomeCompleto} aggiunto con successo al gruppo WhatsApp!'),
+          content: Text(res['message'] ?? '${a.nomeCompleto} aggiunto con successo al gruppo WhatsApp Scuola!'),
           backgroundColor: Colors.green.shade800,
           duration: const Duration(seconds: 4),
         ),
@@ -218,7 +246,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                 const Text('Puoi inviare manualmente il link d\'invito all\'allievo:'),
                 const SizedBox(height: 8),
                 SelectableText(
-                  inviteLink,
+                  inviteLink.toString(),
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
                 ),
               ],
@@ -239,6 +267,149 @@ class _AllieviScreenState extends State<AllieviScreen> {
       }
     }
   }
+
+  Future<void> _confirmAndAddToWhatsappCorso(Allievo a) async {
+    if (a.telefono.isEmpty || a.telefono.toUpperCase() == 'TBD') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("L'allievo ${a.nomeCompleto} non ha un numero di telefono valido registrato."),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
+
+    if (a.corsoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("L'allievo ${a.nomeCompleto} non è associato ad alcun corso."),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
+
+    final corsoDesc = a.corsoDescrizione ?? 'del corso';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.group_add, color: Colors.teal.shade700),
+            const SizedBox(width: 8),
+            const Text('Aggiungi a WhatsApp Corso'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Vuoi aggiungere questo allievo al gruppo WhatsApp del corso?'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• Allievo: ${a.nomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('• Telefono: ${a.telefono}'),
+                  Text('• Corso: $corsoDesc'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Aggiungi a Corso'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            const SizedBox(width: 12),
+            Text('Aggiunta di ${a.nomeCompleto} al gruppo corso in corso...'),
+          ],
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    final res = await _api.addStudentToCourseGroup(a.id);
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message'] ?? '${a.nomeCompleto} aggiunto con successo al gruppo WhatsApp del corso!'),
+          backgroundColor: Colors.green.shade800,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      _loadAllievi();
+    } else {
+      final err = res['error'] ?? 'Impossibile aggiungere l\'allievo al gruppo del corso.';
+      final inviteLink = res['invite_link'];
+
+      if (inviteLink != null) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Restrizioni Privacy WhatsApp'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(err),
+                const SizedBox(height: 12),
+                const Text('Puoi inviare manualmente il link d\'invito all\'allievo:'),
+                const SizedBox(height: 8),
+                SelectableText(
+                  inviteLink.toString(),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi')),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: Colors.red.shade800,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
 
   void _showAddEditDialog([Allievo? allievo]) {
     final nomeController = TextEditingController(text: allievo?.nome ?? '');
@@ -466,7 +637,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
         ),
         const SizedBox(width: 6),
         InkWell(
-          onTap: () => _confirmAndAddToWhatsapp(a),
+          onTap: () => _confirmAndAddToWhatsappScuola(a),
           borderRadius: BorderRadius.circular(6),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -480,13 +651,98 @@ class _AllieviScreenState extends State<AllieviScreen> {
                 Icon(Icons.group_add, size: 13, color: Colors.white),
                 SizedBox(width: 4),
                 Text(
-                  'Aggiungi al gruppo',
+                  '+ Scuola',
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ],
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildWhatsappCorsoBadge(Allievo a) {
+    final bool inGruppo = a.inGruppoCorsoWhatsapp;
+    if (inGruppo) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.teal.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.teal.shade600, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 14, color: Colors.teal.shade700),
+            const SizedBox(width: 4),
+            Text(
+              'WhatsApp Corso: Sì',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.teal.shade900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final hasCorsoGroup = a.corsoId != null && (a.corsoHasWhatsapp || (a.corsoGruppoWhatsapp != null && a.corsoGruppoWhatsapp!.isNotEmpty));
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade400, width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cancel_outlined, size: 14, color: Colors.grey.shade600),
+              const SizedBox(width: 4),
+              Text(
+                'WhatsApp Corso: No',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (hasCorsoGroup) ...[
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: () => _confirmAndAddToWhatsappCorso(a),
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade700,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.group_add, size: 13, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    '+ Corso',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -505,11 +761,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
           children: [
             Text('📞 ${a.telefono}'),
             if (a.corsoDescrizione != null)
-              Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)), if (a.partnerId != null) Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
+              Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            if (a.partnerId != null)
+              Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
           ],
         ),
         trailing: Wrap(
           spacing: 6,
+          runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _buildRuoloBadge(a.ruolo),
@@ -518,6 +777,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               visualDensity: VisualDensity.compact,
             ),
             _buildWhatsappScuolaBadge(a),
+            _buildWhatsappCorsoBadge(a),
             if (a.recensione == 'si')
               const Tooltip(message: 'Recensione rilasciata', child: Icon(Icons.star, color: Colors.amber, size: 18)),
             IconButton(
@@ -556,9 +816,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final int leadersCount = _allievi.where((a) => a.ruolo == 'leader').length;
-    final int followersCount = _allievi.where((a) => a.ruolo == 'follower').length;
-    final int bothCount = _allievi.where((a) => a.ruolo == 'both').length;
+    final allieviVisualizzati = _filteredAllievi;
+    final int leadersCount = allieviVisualizzati.where((a) => a.ruolo == 'leader').length;
+    final int followersCount = allieviVisualizzati.where((a) => a.ruolo == 'follower').length;
+    final int bothCount = allieviVisualizzati.where((a) => a.ruolo == 'both').length;
 
     final corsiFiltratiPerScuola = _selectedScuolaId == null
         ? _corsi
@@ -584,10 +845,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
                   )
                 : const Icon(Icons.sync, size: 18),
             label: const Text(
-              'Verifica WhatsApp Scuola',
+              'Verifica WhatsApp',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
-            onPressed: _syncingWhatsapp ? null : _syncWhatsappScuola,
+            onPressed: _syncingWhatsapp ? null : _syncWhatsapp,
           ),
           const SizedBox(width: 8),
           PopupMenuButton<String>(
@@ -629,7 +890,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               },
             ),
           ),
-          // Sezione Filtri Scuola & Corso
+          // Sezione Filtri Scuola, Corso e WhatsApp
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Card(
@@ -646,7 +907,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                   children: [
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final isCompact = constraints.maxWidth < 600;
+                        final isCompact = constraints.maxWidth < 650;
 
                         final scuolaDropdown = DropdownButtonFormField<String?>(
                           value: _selectedScuolaId,
@@ -707,20 +968,76 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           },
                         );
 
+                        final waScuolaDropdown = DropdownButtonFormField<String>(
+                          value: _filterWaScuola,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'WhatsApp Scuola',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.check_circle_outline, size: 20, color: Colors.green),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'tutti', child: Text('Tutti')),
+                            DropdownMenuItem(value: 'si', child: Text('Solo nel gruppo (Sì)')),
+                            DropdownMenuItem(value: 'no', child: Text('Solo assenti (No)')),
+                          ],
+                          onChanged: (v) => setState(() => _filterWaScuola = v!),
+                        );
+
+                        final waCorsoDropdown = DropdownButtonFormField<String>(
+                          value: _filterWaCorso,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'WhatsApp Corso',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.chat_outlined, size: 20, color: Colors.teal),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'tutti', child: Text('Tutti')),
+                            DropdownMenuItem(value: 'si', child: Text('Solo nel gruppo (Sì)')),
+                            DropdownMenuItem(value: 'no', child: Text('Solo assenti (No)')),
+                          ],
+                          onChanged: (v) => setState(() => _filterWaCorso = v!),
+                        );
+
                         if (isCompact) {
                           return Column(
                             children: [
                               scuolaDropdown,
                               const SizedBox(height: 8),
                               corsoDropdown,
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(child: waScuolaDropdown),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: waCorsoDropdown),
+                                ],
+                              ),
                             ],
                           );
                         } else {
-                          return Row(
+                          return Column(
                             children: [
-                              Expanded(child: scuolaDropdown),
-                              const SizedBox(width: 12),
-                              Expanded(child: corsoDropdown),
+                              Row(
+                                children: [
+                                  Expanded(child: scuolaDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: corsoDropdown),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(child: waScuolaDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: waCorsoDropdown),
+                                ],
+                              ),
                             ],
                           );
                         }
@@ -736,7 +1053,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         Chip(
                           visualDensity: VisualDensity.compact,
                           avatar: const Icon(Icons.people, size: 16),
-                          label: Text('Totale: ${_allievi.length}'),
+                          label: Text('Visualizzati: ${allieviVisualizzati.length} / ${_allievi.length}'),
                         ),
                         Chip(
                           visualDensity: VisualDensity.compact,
@@ -762,11 +1079,20 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           backgroundColor: Colors.green.shade50,
                           avatar: Icon(Icons.check_circle, size: 16, color: Colors.green.shade800),
                           label: Text(
-                            'WhatsApp Scuola: ${_allievi.where((a) => a.inGruppoScuolaWhatsapp).length}',
+                            'WA Scuola: ${allieviVisualizzati.where((a) => a.inGruppoScuolaWhatsapp).length}',
                             style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
                           ),
                         ),
-                        if (_selectedScuolaId != null || _selectedCorsoId != null)
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Colors.teal.shade50,
+                          avatar: Icon(Icons.chat, size: 16, color: Colors.teal.shade800),
+                          label: Text(
+                            'WA Corso: ${allieviVisualizzati.where((a) => a.inGruppoCorsoWhatsapp).length}',
+                            style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        if (_selectedScuolaId != null || _selectedCorsoId != null || _filterWaScuola != 'tutti' || _filterWaCorso != 'tutti')
                           TextButton.icon(
                             icon: const Icon(Icons.filter_alt_off, size: 18),
                             label: const Text('Azzera filtri'),
@@ -774,6 +1100,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                               setState(() {
                                 _selectedScuolaId = null;
                                 _selectedCorsoId = null;
+                                _filterWaScuola = 'tutti';
+                                _filterWaCorso = 'tutti';
                               });
                               _loadAllievi();
                             },
@@ -787,25 +1115,25 @@ class _AllieviScreenState extends State<AllieviScreen> {
           ),
           if (_loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_allievi.isEmpty)
+          else if (allieviVisualizzati.isEmpty)
             const Expanded(child: Center(child: Text('Nessun allievo trovato per i filtri selezionati.')))
           else
             Expanded(
               child: _groupBy == 'nessuno'
                   ? ListView.builder(
-                      itemCount: _allievi.length,
-                      itemBuilder: (_, i) => _buildAllievoTile(_allievi[i]),
+                      itemCount: allieviVisualizzati.length,
+                      itemBuilder: (_, i) => _buildAllievoTile(allieviVisualizzati[i]),
                     )
-                  : _buildGroupedList(),
+                  : _buildGroupedList(allieviVisualizzati),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildGroupedList() {
+  Widget _buildGroupedList(List<Allievo> list) {
     final Map<String, List<Allievo>> groups = {};
-    for (final a in _allievi) {
+    for (final a in list) {
       String key = 'Non assegnato';
       if (_groupBy == 'corso') {
         key = a.corsoDescrizione ?? 'Nessun corso';
@@ -826,3 +1154,4 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 }
+

@@ -181,12 +181,19 @@ class AllievoViewSet(viewsets.ModelViewSet):
             allievo.save(update_fields=['partner'])
             return Response(self.get_serializer(allievo).data)
 
+    @action(detail=False, methods=['post'], url_path='sync-whatsapp')
+    def sync_whatsapp(self, request):
+        return self._do_sync_whatsapp(request)
+
     @action(detail=False, methods=['post'], url_path='sync-whatsapp-scuola')
     def sync_whatsapp_scuola(self, request):
+        return self._do_sync_whatsapp(request)
+
+    def _do_sync_whatsapp(self, request):
         """
         Verifica per TUTTI gli allievi presenti a sistema se fanno parte del gruppo WhatsApp
-        della scuola (allievo.corso.scuola.gruppo_whatsapp) interrogando il Gateway WhatsApp
-        e aggiorna il flag in_gruppo_scuola_whatsapp nel database.
+        della scuola E del gruppo WhatsApp del corso, interrogando il Gateway WhatsApp
+        e aggiorna sia in_gruppo_scuola_whatsapp che in_gruppo_corso_whatsapp nel database.
         """
         import re
 
@@ -201,9 +208,12 @@ class AllievoViewSet(viewsets.ModelViewSet):
 
         # 2. Scuole con gruppo WhatsApp impostato
         scuole = Scuola.objects.exclude(gruppo_whatsapp__isnull=True).exclude(gruppo_whatsapp__exact='')
-        if not scuole.exists():
+        # Corsi con gruppo WhatsApp impostato
+        corsi = Corso.objects.exclude(gruppo_whatsapp__isnull=True).exclude(gruppo_whatsapp__exact='')
+
+        if not scuole.exists() and not corsi.exists():
             return Response({
-                'error': "Nessuna scuola ha un gruppo WhatsApp configurato a sistema."
+                'error': "Nessuna scuola né corso ha un gruppo WhatsApp configurato a sistema."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         def get_phone_keys(ph):
@@ -223,14 +233,14 @@ class AllievoViewSet(viewsets.ModelViewSet):
                 keys.add('39' + d)
             return keys
 
-        scuola_participants_map = {} # str(scuola.id) -> set of phone keys
-        warning_scuole = []
+        warnings = []
 
+        # Recupera partecipanti per ogni scuola
+        scuola_participants_map = {} # str(scuola.id) -> set of phone keys
         for s in scuole:
             group_jid = s.gruppo_whatsapp.strip()
             res = get_group_participants(group_jid)
             if res.get('success'):
-                # Salva automaticamente il JID reale se era stato inserito un codice d'invito
                 resolved = res.get('resolvedJid')
                 if resolved and resolved != s.gruppo_whatsapp:
                     s.gruppo_whatsapp = resolved
@@ -243,42 +253,78 @@ class AllievoViewSet(viewsets.ModelViewSet):
                     group_keys.update(get_phone_keys(p_phone))
                 scuola_participants_map[str(s.id)] = group_keys
             else:
-                warning_scuole.append(f"{s.nome}: {res.get('error', 'Errore sconosciuto')}")
+                warnings.append(f"Scuola '{s.nome}': {res.get('error', 'Errore sconosciuto')}")
+
+        # Recupera partecipanti per ogni corso
+        corso_participants_map = {} # str(corso.id) -> set of phone keys
+        for c in corsi:
+            group_jid = c.gruppo_whatsapp.strip()
+            res = get_group_participants(group_jid)
+            if res.get('success'):
+                resolved = res.get('resolvedJid')
+                if resolved and resolved != c.gruppo_whatsapp:
+                    c.gruppo_whatsapp = resolved
+                    c.save(update_fields=['gruppo_whatsapp'])
+
+                participants = res.get('participants', [])
+                group_keys = set()
+                for p in participants:
+                    p_phone = p.get('phone', '')
+                    group_keys.update(get_phone_keys(p_phone))
+                corso_participants_map[str(c.id)] = group_keys
+            else:
+                warnings.append(f"Corso '{c}': {res.get('error', 'Errore sconosciuto')}")
 
         # 3. Aggiorna TUTTI gli allievi presenti nel sistema (senza filtri)
         allievi = list(Allievo.objects.select_related('corso', 'corso__scuola').all())
-        in_group_count = 0
-        not_in_group_count = 0
+        in_scuola_count = 0
+        in_corso_count = 0
         to_update = []
 
         for a in allievi:
-            new_val = False
+            # Controllo gruppo scuola
+            new_scuola_val = False
             if a.corso and a.corso.scuola:
                 scuola_id_str = str(a.corso.scuola.id)
-                group_keys = scuola_participants_map.get(scuola_id_str)
-                if group_keys:
+                scuola_keys = scuola_participants_map.get(scuola_id_str)
+                if scuola_keys:
                     student_keys = get_phone_keys(a.telefono)
-                    if student_keys.intersection(group_keys):
-                        new_val = True
+                    if student_keys.intersection(scuola_keys):
+                        new_scuola_val = True
 
-            a.in_gruppo_scuola_whatsapp = new_val
+            # Controllo gruppo corso
+            new_corso_val = False
+            if a.corso:
+                corso_id_str = str(a.corso.id)
+                corso_keys = corso_participants_map.get(corso_id_str)
+                if corso_keys:
+                    student_keys = get_phone_keys(a.telefono)
+                    if student_keys.intersection(corso_keys):
+                        new_corso_val = True
+
+            a.in_gruppo_scuola_whatsapp = new_scuola_val
+            a.in_gruppo_corso_whatsapp = new_corso_val
             to_update.append(a)
-            if new_val:
-                in_group_count += 1
-            else:
-                not_in_group_count += 1
+
+            if new_scuola_val:
+                in_scuola_count += 1
+            if new_corso_val:
+                in_corso_count += 1
 
         if to_update:
-            Allievo.objects.bulk_update(to_update, ['in_gruppo_scuola_whatsapp'])
+            Allievo.objects.bulk_update(to_update, ['in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp'])
 
         return Response({
             'success': True,
             'message': f"Controllo completato con successo su {len(allievi)} allievi.",
             'total_allievi': len(allievi),
-            'in_gruppo_scuola': in_group_count,
-            'non_in_gruppo': not_in_group_count,
+            'in_gruppo_scuola': in_scuola_count,
+            'non_in_gruppo_scuola': len(allievi) - in_scuola_count,
+            'in_gruppo_corso': in_corso_count,
+            'non_in_gruppo_corso': len(allievi) - in_corso_count,
             'scuole_verificate': len(scuola_participants_map),
-            'warnings': warning_scuole
+            'corsi_verificati': len(corso_participants_map),
+            'warnings': warnings
         })
 
     @action(detail=True, methods=['post'], url_path='add-to-whatsapp-scuola')
@@ -331,6 +377,58 @@ class AllievoViewSet(viewsets.ModelViewSet):
                 'error': res.get('error', "Impossibile aggiungere l'allievo al gruppo."),
                 'invite_link': res.get('inviteLink')
             }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='add-to-whatsapp-corso')
+    def add_to_whatsapp_corso(self, request, pk=None):
+        """
+        Aggiunge il singolo allievo al gruppo WhatsApp del corso a cui è iscritto.
+        """
+        allievo = self.get_object()
+
+        if not allievo.telefono or allievo.telefono.strip().upper() == 'TBD':
+            return Response(
+                {'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono valido registrato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not allievo.corso:
+            return Response(
+                {'error': f"L'allievo {allievo.nome} {allievo.cognome} non è assegnato ad alcun corso."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        corso = allievo.corso
+        if not corso.gruppo_whatsapp:
+            return Response(
+                {'error': f"Il corso '{corso}' non ha un gruppo WhatsApp configurato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. Controlla lo stato del gateway WhatsApp
+        status_info = get_whatsapp_status()
+        if status_info.get('status') != 'CONNECTED':
+            return Response({
+                'error': f"Client WhatsApp non connesso (Stato attuale: {status_info.get('status')}). "
+                         "Accedi alla sezione WhatsApp per verificare la connessione."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # 2. Richiedi aggiunta al gruppo tramite Gateway
+        res = add_group_participant(corso.gruppo_whatsapp, allievo.telefono)
+        if res.get('success'):
+            allievo.in_gruppo_corso_whatsapp = True
+            allievo.save(update_fields=['in_gruppo_corso_whatsapp'])
+            return Response({
+                'success': True,
+                'message': res.get('message', f"{allievo.nome} {allievo.cognome} aggiunto al gruppo del corso!"),
+                'allievo': self.get_serializer(allievo).data
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': res.get('error', "Impossibile aggiungere l'allievo al gruppo del corso."),
+                'invite_link': res.get('inviteLink')
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 

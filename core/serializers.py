@@ -105,6 +105,8 @@ class AllievoSerializer(serializers.ModelSerializer):
     recensione_display = serializers.CharField(source='get_recensione_display', read_only=True)
     partner_nome = serializers.CharField(source='partner.nome', read_only=True)
     partner_cognome = serializers.CharField(source='partner.cognome', read_only=True)
+    corso_gruppo_whatsapp = serializers.CharField(source='corso.gruppo_whatsapp', read_only=True)
+    corso_has_whatsapp = serializers.SerializerMethodField()
 
     class Meta:
         model = Allievo
@@ -113,13 +115,18 @@ class AllievoSerializer(serializers.ModelSerializer):
             'telefono', 'corso', 'corso_descrizione', 'scuola_id', 'scuola_nome',
             'recensione', 'recensione_display', 'livello', 'livello_display',
             'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
-            'in_gruppo_scuola_whatsapp'
+            'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
+            'corso_gruppo_whatsapp', 'corso_has_whatsapp'
         ]
 
     def get_corso_descrizione(self, obj):
         if obj.corso:
             return f"{obj.corso.scuola.nome} - {obj.corso.get_livello_display()} ({obj.corso.orario.strftime('%H:%M')})"
         return None
+
+    def get_corso_has_whatsapp(self, obj):
+        return bool(obj.corso and obj.corso.gruppo_whatsapp and obj.corso.gruppo_whatsapp.strip())
+
 
 
 class JollySerializer(serializers.ModelSerializer):
