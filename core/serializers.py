@@ -122,7 +122,7 @@ class LezioneSerializer(serializers.ModelSerializer):
 
 
 class PresenzaSerializer(serializers.ModelSerializer):
-    allievo_nome = serializers.CharField(source='allievo.__str__', read_only=True)
+    allievo_nome = serializers.SerializerMethodField()
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_telefono = serializers.CharField(source='allievo.telefono', read_only=True)
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
@@ -130,9 +130,14 @@ class PresenzaSerializer(serializers.ModelSerializer):
     allievo_partner_nome = serializers.SerializerMethodField()
     is_jolly = serializers.SerializerMethodField()
 
+    def get_allievo_nome(self, obj):
+        if obj.allievo:
+            return f"{obj.allievo.nome} {obj.allievo.cognome}".strip()
+        return ""
+
     def get_allievo_partner_nome(self, obj):
         if obj.allievo and obj.allievo.partner:
-            return str(obj.allievo.partner)
+            return f"{obj.allievo.partner.nome} {obj.allievo.partner.cognome}".strip()
         return None
 
     def get_is_jolly(self, obj):

@@ -100,8 +100,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
   Future<void> _loadPresenze(String lezioneId) async {
     setState(() => _loading = true);
-    // Assicura che i nuovi allievi vengano aggiunti alle presenze
-    await _api.initPresenze(lezioneId);
     var presenze = await _api.getPresenzeForLezione(lezioneId);
     
     if (mounted) {
@@ -496,7 +494,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Rimuovi Jolly'),
-        content: Text('Vuoi rimuovere ${p.allievoNome} dalle presenze di questa lezione?'),
+        content: Text('Vuoi rimuovere ${p.cleanNome} dalle presenze di questa lezione?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
           ElevatedButton(
@@ -517,7 +515,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${p.allievoNome} rimosso dalla lezione.'),
+              content: Text('${p.cleanNome} rimosso dalla lezione.'),
               backgroundColor: Colors.orange.shade800,
             ),
           );
@@ -766,14 +764,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                         label: const Text('Aggiungi Jolly'),
                         onPressed: _showAddJollyDialog,
                       ),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.people_alt, size: 18),
-                        label: const Text('Re-inizializza'),
-                        onPressed: () async {
-                          await _api.initPresenzeLezione(_selectedLezione!.id);
-                          _loadPresenze(_selectedLezione!.id);
-                        },
-                      ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.deepPurple,
@@ -819,23 +809,14 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
               ),
             )
           else if (_presenze.isEmpty)
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.people_outline, size: 48, color: Colors.grey),
-                    const SizedBox(height: 12),
-                    const Text('Nessun partecipante registrato per questa lezione.', style: TextStyle(fontSize: 15)),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.sync),
-                      onPressed: () async {
-                        await _api.initPresenzeLezione(_selectedLezione!.id);
-                        _loadPresenze(_selectedLezione!.id);
-                      },
-                      label: const Text('Carica tutti gli allievi del corso'),
-                    ),
+                    Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                    SizedBox(height: 12),
+                    Text('Nessun partecipante registrato per questa lezione.', style: TextStyle(fontSize: 15)),
                   ],
                 ),
               ),
@@ -964,7 +945,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                 ],
                                 Expanded(
                                   child: Text(
-                                    p.allievoNome,
+                                    p.cleanNome,
                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                   ),
                                 ),
@@ -1038,7 +1019,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
-                                'Ruolo: ${p.allievoRuolo.toUpperCase()} • Tel: ${p.allievoTelefono.isNotEmpty ? p.allievoTelefono : "N/D"}${p.allievoPartnerId != null ? ' | Partner: ' + p.allievoPartnerNome! : ''}',
+                                'Ruolo: ${p.allievoRuolo.toUpperCase()}${p.allievoPartnerId != null && p.cleanPartnerNome.isNotEmpty ? " • Coppia: ${p.cleanPartnerNome}" : ""}',
                                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                               ),
                             ),

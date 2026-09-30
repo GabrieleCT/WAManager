@@ -320,10 +320,13 @@ class Presenza {
   final bool isJolly;
   final String? allievoPartnerId;
   final String? allievoPartnerNome;
+  String get cleanNome => allievoNome.replaceAll(RegExp(r'\[Prospect\]\s*', caseSensitive: false), '').trim();
+  String get cleanPartnerNome => (allievoPartnerNome ?? '').replaceAll(RegExp(r'\[Prospect\]\s*', caseSensitive: false), '').trim();
+
   String get allievoSortName {
-    final myName = allievoNome.toLowerCase().trim();
+    final myName = cleanNome.toLowerCase().trim();
     if (allievoPartnerId == null || allievoPartnerNome == null) return myName;
-    final pName = allievoPartnerNome!.toLowerCase().trim();
+    final pName = cleanPartnerNome.toLowerCase().trim();
     return myName.compareTo(pName) < 0 ? myName : pName;
   }
 
