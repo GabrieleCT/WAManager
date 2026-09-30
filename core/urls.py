@@ -20,6 +20,8 @@ router.register(r'templates', api_views.MessageTemplateViewSet, basename='templa
 router.register(r'logs', api_views.MessageLogViewSet, basename='log')
 router.register(r'matches', api_views.MatchViewSet, basename='match')
 router.register(r'schedules', api_views.RecurringScheduleViewSet, basename='schedule')
+router.register(r'sondaggio-mattutino', api_views.SondaggioMattutinoViewSet, basename='sondaggio-mattutino')
+
 
 urlpatterns = [
     # 2.1 Autenticazione API

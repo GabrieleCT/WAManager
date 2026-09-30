@@ -2,7 +2,8 @@ import datetime
 from django.utils import timezone
 from django.template import Template, Context
 from .models import (
-    Lezione, Corso, Allievo, Presenza, Match, MessageTemplate, MessageLog, RecurringSchedule
+    Lezione, Corso, Allievo, Presenza, Match, MessageTemplate, MessageLog, RecurringSchedule,
+    SondaggioMattutinoConfig
 )
 from .wa_client import send_whatsapp_message
 from .services import generate_matches
@@ -193,3 +194,210 @@ def auto_generate_events():
                 if not existing:
                     Lezione.objects.create(corso=corso, data=next_date)
                     print(f"Creata automaticamente lezione per {corso} in data {next_date}")
+
+
+def invia_sondaggio_mattutino_giornaliero():
+    """
+    Task demone giornaliero: verifica se il giorno odierno è compreso nei giorni abilitati,
+    cerca le lezioni previste per oggi e invia il sondaggio (o messaggio) WhatsApp al gruppo del corso.
+    """
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    current_weekday = today.weekday()  # 0=Lun ... 6=Dom
+
+    global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+    if not global_config:
+        global_config = SondaggioMattutinoConfig.objects.create(
+            corso=None,
+            orario='08:00',
+            giorni_settimana='0,1,2,3,4,5,6',
+            testo="Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\nChi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!",
+            is_poll=True,
+            poll_opzione_1="Ci sono! 🕺💃",
+            poll_opzione_2="Non ci sono 🚫",
+            is_active=True
+        )
+
+    if not global_config.is_active:
+        print("[Sondaggio Mattutino] Demone disattivato a livello globale.")
+        return
+
+    giorni_globali = [int(x.strip()) for x in global_config.giorni_settimana.split(',') if x.strip().isdigit()]
+    if current_weekday not in giorni_globali:
+        print(f"[Sondaggio Mattutino] Oggi (weekday {current_weekday}) non è tra i giorni abilitati ({giorni_globali}).")
+        return
+
+    # Trova le lezioni di oggi
+    lezioni_oggi = Lezione.objects.filter(data=today).select_related('corso', 'corso__scuola', 'argomento')
+    if not lezioni_oggi.exists():
+        print(f"[Sondaggio Mattutino] Nessuna lezione prevista per oggi {today.strftime('%d/%m/%Y')}.")
+        return
+
+    inviati = 0
+    for lezione in lezioni_oggi:
+        corso = lezione.corso
+        cfg = SondaggioMattutinoConfig.objects.filter(corso=corso).first() or global_config
+        if not cfg.is_active:
+            print(f"[Sondaggio Mattutino] Configurazione disattiva per il corso {corso}.")
+            continue
+
+        group_target = corso.gruppo_whatsapp or (corso.scuola.gruppo_whatsapp if corso.scuola else '')
+        if not group_target:
+            print(f"[Sondaggio Mattutino] Nessun gruppo WhatsApp impostato per il corso {corso}.")
+            continue
+
+        orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
+        data_str = lezione.data.strftime('%d/%m/%Y')
+        scuola_str = corso.scuola.nome if corso.scuola else ''
+        argomento_str = lezione.argomento.titolo if lezione.argomento else 'Da definire'
+
+        testo_renderizzato = (cfg.testo or '')\
+            .replace('{corso}', str(corso.nome))\
+            .replace('{orario}', orario_str)\
+            .replace('{data}', data_str)\
+            .replace('{scuola}', scuola_str)\
+            .replace('{argomento}', argomento_str)
+
+        try:
+            if cfg.is_poll:
+                opzioni = [cfg.poll_opzione_1, cfg.poll_opzione_2]
+                res = send_whatsapp_message(
+                    to=group_target,
+                    message=testo_renderizzato,
+                    is_group=True,
+                    is_poll=True,
+                    poll_options=opzioni
+                )
+            else:
+                res = send_whatsapp_message(
+                    to=group_target,
+                    message=testo_renderizzato,
+                    is_group=True
+                )
+
+            tmpl, _ = MessageTemplate.objects.get_or_create(
+                name='SONDAGGIO_MATTUTINO',
+                defaults={'body': cfg.testo}
+            )
+            status_log = 'Inviato' if res.get('success') else 'Errore'
+            err_msg = res.get('error', '')
+            MessageLog.objects.create(
+                lezione=lezione,
+                template=tmpl,
+                rendered_text=testo_renderizzato,
+                status=status_log,
+                error_message=err_msg
+            )
+            if res.get('success'):
+                inviati += 1
+                print(f"[Sondaggio Mattutino] Inviato con successo a {group_target} per {corso}")
+            else:
+                print(f"[Sondaggio Mattutino] Errore invio a {group_target}: {err_msg}")
+        except Exception as e:
+            print(f"[Sondaggio Mattutino] Eccezione invio per {corso}: {e}")
+
+    print(f"[Sondaggio Mattutino] Completato. Inviati {inviati} su {lezioni_oggi.count()} lezioni.")
+
+
+def invia_sondaggio_manuale_corsi(corso_ids, testo_custom=None, is_poll=True, poll_opzioni=None):
+    """
+    Invia manualmente il sondaggio a una lista di ID corsi.
+    Utilizza i placeholder dinamici ({corso}, {orario}, {data}, {scuola}, {argomento}).
+    Restituisce la lista degli esiti per ciascun corso.
+    """
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+
+    global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+    default_testo = global_config.testo if global_config else (
+        "Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\n"
+        "Chi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!"
+    )
+    base_testo = testo_custom if (testo_custom and testo_custom.strip()) else default_testo
+
+    corsi = Corso.objects.filter(id__in=corso_ids).select_related('scuola')
+    results = []
+
+    for corso in corsi:
+        group_target = corso.gruppo_whatsapp or (corso.scuola.gruppo_whatsapp if corso.scuola else '')
+        if not group_target:
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': '',
+                'success': False,
+                'error': "Nessun gruppo WhatsApp configurato per questo corso o scuola."
+            })
+            continue
+
+        # Cerca la lezione di oggi o la prossima lezione programmata
+        lezione = Lezione.objects.filter(corso=corso, data=today).first()
+        if not lezione:
+            lezione = Lezione.objects.filter(corso=corso, data__gte=today).order_by('data').first()
+
+        orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
+        data_str = lezione.data.strftime('%d/%m/%Y') if lezione else today.strftime('%d/%m/%Y')
+        scuola_str = corso.scuola.nome if corso.scuola else ''
+        argomento_str = (lezione.argomento.titolo if (lezione and lezione.argomento) else 'Da definire')
+
+        testo_renderizzato = base_testo\
+            .replace('{corso}', str(corso.nome))\
+            .replace('{orario}', orario_str)\
+            .replace('{data}', data_str)\
+            .replace('{scuola}', scuola_str)\
+            .replace('{argomento}', argomento_str)
+
+        try:
+            if is_poll:
+                opts = poll_opzioni if (poll_opzioni and len(poll_opzioni) >= 2) else ["Ci sono! 🕺💃", "Non ci sono 🚫"]
+                res = send_whatsapp_message(
+                    to=group_target,
+                    message=testo_renderizzato,
+                    is_group=True,
+                    is_poll=True,
+                    poll_options=opts
+                )
+            else:
+                res = send_whatsapp_message(
+                    to=group_target,
+                    message=testo_renderizzato,
+                    is_group=True
+                )
+
+            is_ok = bool(res.get('success'))
+            err_msg = res.get('error', '')
+
+            if lezione:
+                tmpl, _ = MessageTemplate.objects.get_or_create(
+                    name='SONDAGGIO_MANUALE',
+                    defaults={'body': base_testo}
+                )
+                MessageLog.objects.create(
+                    lezione=lezione,
+                    template=tmpl,
+                    rendered_text=testo_renderizzato,
+                    status='Inviato' if is_ok else 'Errore',
+                    error_message=err_msg
+                )
+
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': group_target,
+                'success': is_ok,
+                'error': err_msg
+            })
+        except Exception as e:
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': group_target,
+                'success': False,
+                'error': str(e)
+            })
+
+    return results
+

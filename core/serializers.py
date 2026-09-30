@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
-    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule
+    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
+    SondaggioMattutinoConfig
 )
 from .wa_client import resolve_group_link
 
@@ -261,3 +262,18 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'match_days_before', 'match_time', 'rsvp_mode',
             'gemini_api_key', 'debug_mode'
         ]
+
+
+class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
+    corso_nome = serializers.CharField(source='corso.__str__', read_only=True)
+    scuola_nome = serializers.CharField(source='corso.scuola.nome', read_only=True)
+
+    class Meta:
+        model = SondaggioMattutinoConfig
+        fields = [
+            'id', 'corso', 'corso_nome', 'scuola_nome',
+            'orario', 'giorni_settimana', 'testo',
+            'is_poll', 'poll_opzione_1', 'poll_opzione_2',
+            'is_active', 'created_at', 'updated_at'
+        ]
+

@@ -584,6 +584,65 @@ class ApiService {
     }
     return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
+
+  Future<SondaggioMattutinoConfig?> getDaemonConfig() async {
+    final res = await http.get(Uri.parse('$baseUrl/api/sondaggio-mattutino/daemon-config/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return SondaggioMattutinoConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<SondaggioMattutinoConfig?> saveDaemonConfig(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sondaggio-mattutino/daemon-config/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return SondaggioMattutinoConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> inviaSondaggioManuale(
+    List<String> corsoIds, {
+    String? testo,
+    bool isPoll = true,
+    List<String>? pollOpzioni,
+  }) async {
+    final body = {
+      'corso_ids': corsoIds,
+      if (testo != null && testo.trim().isNotEmpty) 'testo': testo,
+      'is_poll': isPoll,
+      if (pollOpzioni != null) 'poll_opzioni': pollOpzioni,
+    };
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sondaggio-mattutino/invia-manuale/'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> eseguiDemoneOra() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sondaggio-mattutino/esegui-demone-ora/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
 }
+
 
 

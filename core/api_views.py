@@ -6,18 +6,25 @@ from django.contrib.auth import authenticate
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
+import datetime
+from django.utils import timezone
+
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
-    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule
+    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
+    SondaggioMattutinoConfig
 )
 from .serializers import (
     ScuolaSerializer, CorsoSerializer, ArgomentoSerializer,
     AllievoSerializer, JollySerializer, LezioneSerializer,
     PresenzaSerializer, PagamentoSerializer, MessageTemplateSerializer,
-    MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer
+    MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer,
+    SondaggioMattutinoConfigSerializer
 )
 from .services import generate_matches
 from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
+from .tasks import invia_sondaggio_manuale_corsi, invia_sondaggio_mattutino_giornaliero
+
 
 
 # ─── 2.1 Autenticazione Token per Client Flutter ────────────────
@@ -734,4 +741,120 @@ def api_resolve_whatsapp_group(request):
         return Response(res, status=status.HTTP_200_OK)
     else:
         return Response(res, status=status.HTTP_400_BAD_REQUEST)
+
+
+def sync_daemon_schedule(orario_str):
+    """
+    Sincronizza o aggiorna l'orario del task pianificato in Django-Q
+    in base alla configurazione impostata dall'utente.
+    """
+    try:
+        from django_q.models import Schedule
+        parts = (orario_str or '08:00').split(':')
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+
+        now = timezone.localtime(timezone.now())
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time <= now:
+            target_time += datetime.timedelta(days=1)
+
+        sched = Schedule.objects.filter(func='core.tasks.invia_sondaggio_mattutino_giornaliero').first()
+        if sched:
+            sched.next_run = target_time
+            sched.save()
+        else:
+            Schedule.objects.create(
+                name='Sondaggio Mattutino Giornaliero',
+                func='core.tasks.invia_sondaggio_mattutino_giornaliero',
+                schedule_type=Schedule.DAILY,
+                next_run=target_time
+            )
+    except Exception as e:
+        print(f"Errore sincronizzazione schedule Django-Q: {e}")
+
+
+class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
+    """
+    CRUD configurazione sondaggio mattutino, impostazione orario/giorni demone e invio manuale.
+    """
+    queryset = SondaggioMattutinoConfig.objects.all().select_related('corso', 'corso__scuola')
+    serializer_class = SondaggioMattutinoConfigSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(detail=False, methods=['get', 'post'], url_path='daemon-config')
+    def daemon_config(self, request):
+        config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+        if not config:
+            config = SondaggioMattutinoConfig.objects.create(
+                corso=None,
+                orario='08:00',
+                giorni_settimana='0,1,2,3,4,5,6',
+                testo="Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\nChi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!",
+                is_poll=True,
+                poll_opzione_1="Ci sono! 🕺💃",
+                poll_opzione_2="Non ci sono 🚫",
+                is_active=True
+            )
+
+        if request.method == 'POST':
+            data = request.data
+            if 'orario' in data:
+                config.orario = data['orario']
+            if 'giorni_settimana' in data:
+                config.giorni_settimana = data['giorni_settimana']
+            if 'testo' in data:
+                config.testo = data['testo']
+            if 'is_poll' in data:
+                config.is_poll = bool(data['is_poll'])
+            if 'poll_opzione_1' in data:
+                config.poll_opzione_1 = data['poll_opzione_1']
+            if 'poll_opzione_2' in data:
+                config.poll_opzione_2 = data['poll_opzione_2']
+            if 'is_active' in data:
+                config.is_active = bool(data['is_active'])
+
+            config.save()
+            sync_daemon_schedule(config.orario)
+
+        serializer = self.get_serializer(config)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='invia-manuale')
+    def invia_manuale(self, request):
+        corso_ids = request.data.get('corso_ids', [])
+        testo = request.data.get('testo', '')
+        is_poll = request.data.get('is_poll', True)
+        poll_opzioni = request.data.get('poll_opzioni', None)
+
+        if not corso_ids:
+            return Response(
+                {'success': False, 'error': "Seleziona almeno un corso a cui inviare il sondaggio."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        results = invia_sondaggio_manuale_corsi(
+            corso_ids=corso_ids,
+            testo_custom=testo,
+            is_poll=is_poll,
+            poll_opzioni=poll_opzioni
+        )
+
+        success_count = sum(1 for r in results if r.get('success'))
+        return Response({
+            'success': True,
+            'totale_corsi': len(results),
+            'inviati_con_successo': success_count,
+            'dettagli': results
+        })
+
+    @action(detail=False, methods=['post'], url_path='esegui-demone-ora')
+    def esegui_demone_ora(self, request):
+        """Esegue immediatamente il controllo del demone per oggi."""
+        try:
+            invia_sondaggio_mattutino_giornaliero()
+            return Response({'success': True, 'message': 'Esecuzione demone avviata con successo.'})
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 

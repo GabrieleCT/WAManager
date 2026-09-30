@@ -384,10 +384,43 @@ class RecurringSchedule(models.Model):
 
 class SondaggioMattutinoConfig(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    corso = models.ForeignKey(Corso, on_delete=models.CASCADE, related_name='sondaggi')
-    testo = models.TextField()
-    is_active = models.BooleanField(default=True)
+    corso = models.ForeignKey(
+        Corso,
+        on_delete=models.CASCADE,
+        related_name='sondaggi',
+        null=True,
+        blank=True,
+        help_text="Corso specifico, oppure vuoto per impostazione globale predefinita"
+    )
+    orario = models.CharField(
+        max_length=5,
+        default='08:00',
+        help_text="Orario invio demone nel formato HH:MM (es. 08:00)"
+    )
+    giorni_settimana = models.CharField(
+        max_length=50,
+        default='0,1,2,3,4,5,6',
+        help_text="Giorni della settimana (0=Lun, 1=Mar, 2=Mer, 3=Gio, 4=Ven, 5=Sab, 6=Dom) separati da virgola"
+    )
+    testo = models.TextField(
+        default="Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\nChi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!"
+    )
+    is_poll = models.BooleanField(
+        default=True,
+        help_text="Se True invia un sondaggio nativo WhatsApp con opzioni Sì/No, altrimenti messaggio di testo."
+    )
+    poll_opzione_1 = models.CharField(max_length=100, default="Ci sono! 🕺💃")
+    poll_opzione_2 = models.CharField(max_length=100, default="Non ci sono 🚫")
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Se attivo, il demone invierà automaticamente il sondaggio secondo la schedulazione."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
 
     def __str__(self):
-        return f'Sondaggio {self.corso} - {self.is_active}'
+        c_str = str(self.corso) if self.corso else "Globale"
+        return f"Sondaggio {c_str} ({self.orario}) - Attivo: {self.is_active}"

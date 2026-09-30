@@ -452,43 +452,64 @@ class Pagamento {
 
 class SondaggioMattutinoConfig {
   final String id;
-  final String corsoId;
+  final String? corsoId;
   final String corsoDescrizione;
   final String scuolaNome;
-  final String gruppoWhatsapp;
+  final String orario;
+  final String giorniSettimana;
   final String testo;
+  final bool isPoll;
+  final String pollOpzione1;
+  final String pollOpzione2;
   final bool isActive;
   final String createdAt;
+  final String updatedAt;
 
   SondaggioMattutinoConfig({
     required this.id,
-    required this.corsoId,
-    required this.corsoDescrizione,
-    required this.scuolaNome,
-    required this.gruppoWhatsapp,
-    required this.testo,
-    required this.isActive,
-    required this.createdAt,
+    this.corsoId,
+    this.corsoDescrizione = '',
+    this.scuolaNome = '',
+    this.orario = '08:00',
+    this.giorniSettimana = '0,1,2,3,4,5,6',
+    this.testo = '',
+    this.isPoll = true,
+    this.pollOpzione1 = 'Ci sono! 🕺💃',
+    this.pollOpzione2 = 'Non ci sono 🚫',
+    this.isActive = true,
+    this.createdAt = '',
+    this.updatedAt = '',
   });
 
   factory SondaggioMattutinoConfig.fromJson(Map<String, dynamic> json) {
     return SondaggioMattutinoConfig(
       id: json['id'] ?? '',
-      corsoId: json['corso'] ?? '',
-      corsoDescrizione: json['corso_descrizione'] ?? '',
+      corsoId: json['corso'],
+      corsoDescrizione: json['corso_nome'] ?? json['corso_descrizione'] ?? '',
       scuolaNome: json['scuola_nome'] ?? '',
-      gruppoWhatsapp: json['gruppo_whatsapp'] ?? '',
+      orario: json['orario'] ?? '08:00',
+      giorniSettimana: json['giorni_settimana'] ?? '0,1,2,3,4,5,6',
       testo: json['testo'] ?? '',
+      isPoll: json['is_poll'] ?? true,
+      pollOpzione1: json['poll_opzione_1'] ?? 'Ci sono! 🕺💃',
+      pollOpzione2: json['poll_opzione_2'] ?? 'Non ci sono 🚫',
       isActive: json['is_active'] ?? true,
       createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'corso': corsoId,
+    if (corsoId != null && corsoId!.isNotEmpty) 'corso': corsoId,
+    'orario': orario,
+    'giorni_settimana': giorniSettimana,
     'testo': testo,
+    'is_poll': isPoll,
+    'poll_opzione_1': pollOpzione1,
+    'poll_opzione_2': pollOpzione2,
     'is_active': isActive,
   };
 }
+
 
 
