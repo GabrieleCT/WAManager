@@ -330,3 +330,55 @@ app.get('/api/status', (req, res) => {
         qr: currentQrDataUrl
     });
 });
+
+// Endpoint per recuperare partecipanti di un gruppo WhatsApp
+app.get('/api/groups/:groupId/participants', async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+
+        let groupId = req.params.groupId;
+        if (!groupId.endsWith('@g.us')) {
+            groupId = `${groupId}@g.us`;
+        }
+        groupId = groupId.replace('+', '');
+
+        logToFile(`Recupero partecipanti per gruppo: ${groupId}...`);
+        const groupMeta = await sock.groupMetadata(groupId);
+        if (!groupMeta || !groupMeta.participants) {
+            return res.status(404).json({
+                success: false,
+                error: 'Gruppo non trovato o nessun partecipante disponibile'
+            });
+        }
+
+        const participants = groupMeta.participants.map(p => {
+            const rawId = p.phoneNumber || p.id || '';
+            const phone = rawId.split('@')[0].replace('+', '');
+            return {
+                id: p.id,
+                lid: p.lid || null,
+                phone: phone,
+                admin: p.admin || null
+            };
+        });
+
+        res.json({
+            success: true,
+            groupId: groupId,
+            subject: groupMeta.subject || '',
+            participantsCount: participants.length,
+            participants: participants
+        });
+    } catch (error) {
+        logToFile(`Errore recupero partecipanti gruppo: ${error.message || error}`);
+        res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});

@@ -19,6 +19,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
   String _searchQuery = '';
   String? _selectedScuolaId;
   String? _selectedCorsoId;
+  bool _syncingWhatsapp = false;
 
   @override
   void initState() {
@@ -69,6 +70,54 @@ class _AllieviScreenState extends State<AllieviScreen> {
         _allievi = allievi;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _syncWhatsappScuola() async {
+    setState(() => _syncingWhatsapp = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Verifica presenza allievi nei gruppi WhatsApp Scuola in corso...'),
+          ],
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+
+    final res = await _api.syncWhatsappScuola();
+    if (mounted) {
+      setState(() => _syncingWhatsapp = false);
+      if (res['success'] == true) {
+        final total = res['total_allievi'] ?? 0;
+        final inGroup = res['in_gruppo_scuola'] ?? 0;
+        final notInGroup = res['non_in_gruppo'] ?? 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade800,
+            content: Text(
+              'Verifica completata su $total allievi: $inGroup presenti nel gruppo WhatsApp Scuola, $notInGroup assenti.',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        _loadAllievi();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade800,
+            content: Text(res['error'] ?? 'Errore durante la verifica WhatsApp Scuola'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     }
   }
 
@@ -242,6 +291,39 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 
+  Widget _buildWhatsappScuolaBadge(bool inGruppo) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: inGruppo ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: inGruppo ? Colors.green.shade600 : Colors.grey.shade400,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            inGruppo ? Icons.check_circle : Icons.cancel_outlined,
+            size: 14,
+            color: inGruppo ? Colors.green.shade700 : Colors.grey.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            inGruppo ? 'WhatsApp Scuola: Sì' : 'WhatsApp Scuola: No',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: inGruppo ? Colors.green.shade900 : Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAllievoTile(Allievo a) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -268,6 +350,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 11)),
               visualDensity: VisualDensity.compact,
             ),
+            _buildWhatsappScuolaBadge(a.inGruppoScuolaWhatsapp),
             if (a.recensione == 'si')
               const Tooltip(message: 'Recensione rilasciata', child: Icon(Icons.star, color: Colors.amber, size: 18)),
             IconButton(
@@ -318,6 +401,28 @@ class _AllieviScreenState extends State<AllieviScreen> {
       appBar: AppBar(
         title: const Text('Elenco Allievi'),
         actions: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: _syncingWhatsapp
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.sync, size: 18),
+            label: const Text(
+              'Verifica WhatsApp Scuola',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            onPressed: _syncingWhatsapp ? null : _syncWhatsappScuola,
+          ),
+          const SizedBox(width: 8),
           PopupMenuButton<String>(
             tooltip: 'Raggruppa per',
             icon: const Icon(Icons.group_work),
@@ -485,6 +590,15 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             avatar: Icon(Icons.people_outline, size: 16, color: Colors.teal.shade800),
                             label: Text('Both: $bothCount', style: TextStyle(color: Colors.teal.shade900)),
                           ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Colors.green.shade50,
+                          avatar: Icon(Icons.check_circle, size: 16, color: Colors.green.shade800),
+                          label: Text(
+                            'WhatsApp Scuola: ${_allievi.where((a) => a.inGruppoScuolaWhatsapp).length}',
+                            style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                          ),
+                        ),
                         if (_selectedScuolaId != null || _selectedCorsoId != null)
                           TextButton.icon(
                             icon: const Icon(Icons.filter_alt_off, size: 18),

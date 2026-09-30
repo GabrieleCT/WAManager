@@ -209,6 +209,33 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  Future<Map<String, dynamic>> syncWhatsappScuola() async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/sync-whatsapp-scuola/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } else {
+        try {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          return {
+            'success': false,
+            'error': data['error'] ?? 'Errore sincronizzazione (HTTP ${res.statusCode})',
+          };
+        } catch (_) {
+          return {
+            'success': false,
+            'error': 'Errore HTTP ${res.statusCode}: ${res.body}',
+          };
+        }
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   // ─── Jolly ────────────────────────────────────────────────
   Future<List<Jolly>> getJolly() async {
     final res = await http.get(Uri.parse('$baseUrl/api/jolly/'), headers: _headers);

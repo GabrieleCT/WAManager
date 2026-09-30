@@ -132,6 +132,10 @@ class Allievo(models.Model):
         blank=True,
         help_text="Partner di ballo dell'allievo"
     )
+    in_gruppo_scuola_whatsapp = models.BooleanField(
+        default=False,
+        help_text="Indica se l'allievo è presente nel gruppo WhatsApp della Scuola"
+    )
 
     class Meta:
         verbose_name_plural = 'Allievi'

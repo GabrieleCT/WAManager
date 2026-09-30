@@ -74,7 +74,8 @@ class AllievoSerializer(serializers.ModelSerializer):
             'id', 'nome', 'cognome', 'ruolo', 'ruolo_display',
             'telefono', 'corso', 'corso_descrizione', 'scuola_id', 'scuola_nome',
             'recensione', 'recensione_display', 'livello', 'livello_display',
-            'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome'
+            'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
+            'in_gruppo_scuola_whatsapp'
         ]
 
     def get_corso_descrizione(self, obj):

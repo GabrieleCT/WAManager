@@ -583,7 +583,7 @@ def export_global(request):
 
     # 4. Allievi
     ws = wb.create_sheet("Allievi")
-    ws.append(["ID", "Nome", "Cognome", "Telefono", "Ruolo", "Livello", "Corso ID", "Partner ID", "Prospect", "Recensione", "Attivo", "Note"])
+    ws.append(["ID", "Nome", "Cognome", "Telefono", "Ruolo", "Livello", "Corso ID", "Partner ID", "Prospect", "Recensione", "Attivo", "Note", "WhatsApp Scuola"])
     for a in Allievo.objects.select_related('corso', 'partner').all():
         ws.append([
             str(a.id),
@@ -597,7 +597,8 @@ def export_global(request):
             "Sì" if a.is_prospect else "No",
             a.recensione,
             "Sì" if a.is_active else "No",
-            a.note
+            a.note,
+            "Sì" if a.in_gruppo_scuola_whatsapp else "No"
         ])
 
     # 5. Jolly
@@ -845,6 +846,8 @@ def import_global(request):
 
                 is_act = str(r[attivo_idx]).strip().lower() not in ['no', 'false', '0'] if len(r) > attivo_idx and r[attivo_idx] is not None else True
                 note_val = str(r[note_idx]).strip() if len(r) > note_idx and r[note_idx] else ""
+                wa_idx = 11 + offset
+                in_wa = str(r[wa_idx]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > wa_idx and r[wa_idx] is not None else False
 
                 Allievo.objects.update_or_create(id=r[0], defaults={
                     'nome': str(r[1]).strip(),
@@ -856,7 +859,8 @@ def import_global(request):
                     'is_prospect': is_prosp,
                     'recensione': rec_val,
                     'is_active': is_act,
-                    'note': note_val
+                    'note': note_val,
+                    'in_gruppo_scuola_whatsapp': in_wa
                 })
                 allievi_count += 1
                 if partner_id:

@@ -17,7 +17,7 @@ from .serializers import (
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer
 )
 from .services import generate_matches
-from .wa_client import send_whatsapp_message
+from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants
 
 
 # ─── 2.1 Autenticazione Token per Client Flutter ────────────────
@@ -180,6 +180,100 @@ class AllievoViewSet(viewsets.ModelViewSet):
             allievo.partner = None
             allievo.save(update_fields=['partner'])
             return Response(self.get_serializer(allievo).data)
+
+    @action(detail=False, methods=['post'], url_path='sync-whatsapp-scuola')
+    def sync_whatsapp_scuola(self, request):
+        """
+        Verifica per TUTTI gli allievi presenti a sistema se fanno parte del gruppo WhatsApp
+        della scuola (allievo.corso.scuola.gruppo_whatsapp) interrogando il Gateway WhatsApp
+        e aggiorna il flag in_gruppo_scuola_whatsapp nel database.
+        """
+        import re
+
+        # 1. Controlla lo stato del gateway WhatsApp
+        status_info = get_whatsapp_status()
+        current_status = status_info.get('status')
+        if current_status != 'CONNECTED':
+            return Response({
+                'error': f"Client WhatsApp non connesso (Stato attuale: {current_status}). "
+                         "Accedi alla sezione WhatsApp per scansionare il QR code o connettere il client."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # 2. Scuole con gruppo WhatsApp impostato
+        scuole = Scuola.objects.exclude(gruppo_whatsapp__isnull=True).exclude(gruppo_whatsapp__exact='')
+        if not scuole.exists():
+            return Response({
+                'error': "Nessuna scuola ha un gruppo WhatsApp configurato a sistema."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        def get_phone_keys(ph):
+            if not ph:
+                return set()
+            d = re.sub(r'\D', '', str(ph))
+            if not d:
+                return set()
+            keys = {d}
+            if len(d) >= 9:
+                keys.add(d[-9:])
+            if len(d) >= 10:
+                keys.add(d[-10:])
+            if d.startswith('39') and len(d) > 2:
+                keys.add(d[2:])
+            elif len(d) == 10 and d.startswith('3'):
+                keys.add('39' + d)
+            return keys
+
+        scuola_participants_map = {} # str(scuola.id) -> set of phone keys
+        warning_scuole = []
+
+        for s in scuole:
+            group_jid = s.gruppo_whatsapp.strip()
+            res = get_group_participants(group_jid)
+            if res.get('success'):
+                participants = res.get('participants', [])
+                group_keys = set()
+                for p in participants:
+                    p_phone = p.get('phone', '')
+                    group_keys.update(get_phone_keys(p_phone))
+                scuola_participants_map[str(s.id)] = group_keys
+            else:
+                warning_scuole.append(f"{s.nome}: {res.get('error', 'Errore sconosciuto')}")
+
+        # 3. Aggiorna TUTTI gli allievi presenti nel sistema (senza filtri)
+        allievi = list(Allievo.objects.select_related('corso', 'corso__scuola').all())
+        in_group_count = 0
+        not_in_group_count = 0
+        to_update = []
+
+        for a in allievi:
+            new_val = False
+            if a.corso and a.corso.scuola:
+                scuola_id_str = str(a.corso.scuola.id)
+                group_keys = scuola_participants_map.get(scuola_id_str)
+                if group_keys:
+                    student_keys = get_phone_keys(a.telefono)
+                    if student_keys.intersection(group_keys):
+                        new_val = True
+
+            a.in_gruppo_scuola_whatsapp = new_val
+            to_update.append(a)
+            if new_val:
+                in_group_count += 1
+            else:
+                not_in_group_count += 1
+
+        if to_update:
+            Allievo.objects.bulk_update(to_update, ['in_gruppo_scuola_whatsapp'])
+
+        return Response({
+            'success': True,
+            'message': f"Controllo completato con successo su {len(allievi)} allievi.",
+            'total_allievi': len(allievi),
+            'in_gruppo_scuola': in_group_count,
+            'non_in_gruppo': not_in_group_count,
+            'scuole_verificate': len(scuola_participants_map),
+            'warnings': warning_scuole
+        })
 
 
 class JollyViewSet(viewsets.ModelViewSet):
