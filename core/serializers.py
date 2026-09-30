@@ -136,12 +136,7 @@ class PresenzaSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_jolly(self, obj):
-        if getattr(obj, 'is_jolly', False):
-            return True
-        if hasattr(obj, 'allievo') and obj.allievo:
-            if obj.allievo.jolly_entries.exists():
-                return True
-        return False
+        return bool(getattr(obj, 'is_jolly', False))
 
     lezione_data = serializers.DateField(source='lezione.data', read_only=True)
 
