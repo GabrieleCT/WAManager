@@ -462,3 +462,101 @@ app.get('/api/groups/:groupId/participants', async (req, res) => {
         });
     }
 });
+
+// Endpoint per aggiungere un partecipante a un gruppo WhatsApp
+app.post('/api/groups/:groupId/participants/add', async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+
+        const { phone } = req.body;
+        if (!phone) {
+            return res.status(400).json({ success: false, error: 'Numero di telefono mancante.' });
+        }
+
+        let inputParam = (req.params.groupId || '').trim();
+        let targetJid = inputParam;
+
+        let clean = inputParam.replace('https://chat.whatsapp.com/', '').replace('http://chat.whatsapp.com/', '').replace('@g.us', '').trim();
+        const isRealJid = clean.startsWith('120363') || clean.includes('-');
+        if (!isRealJid && clean.length >= 18 && clean.length <= 32) {
+            try {
+                const inviteInfo = await sock.groupGetInviteInfo(clean);
+                if (inviteInfo && inviteInfo.id) {
+                    targetJid = inviteInfo.id;
+                }
+            } catch (invErr) {
+                logToFile(`Tentativo groupGetInviteInfo fallito per ${clean}: ${invErr.message}`);
+            }
+        }
+
+        if (!targetJid.endsWith('@g.us')) {
+            targetJid = `${targetJid}@g.us`;
+        }
+        targetJid = targetJid.replace('+', '');
+
+        // Normalizza il numero di telefono per WhatsApp JID
+        let phoneDigits = String(phone).replace(/\D/g, '');
+        if (!phoneDigits.startsWith('39') && phoneDigits.length === 10) {
+            phoneDigits = '39' + phoneDigits;
+        }
+        const userJid = `${phoneDigits}@s.whatsapp.net`;
+
+        logToFile(`Aggiunta utente ${userJid} al gruppo ${targetJid}...`);
+        const result = await sock.groupParticipantsUpdate(targetJid, [userJid], 'add');
+        logToFile(`Risultato groupParticipantsUpdate: ${JSON.stringify(result)}`);
+
+        const item = result && result[0] ? result[0] : null;
+        const statusCode = item ? String(item.status) : '200';
+
+        if (statusCode === '200') {
+            return res.json({
+                success: true,
+                message: 'Allievo aggiunto con successo al gruppo WhatsApp!',
+                status: '200',
+                userJid: userJid
+            });
+        } else if (statusCode === '403') {
+            let inviteLink = null;
+            try {
+                const code = await sock.groupInviteCode(targetJid);
+                if (code) inviteLink = `https://chat.whatsapp.com/${code}`;
+            } catch (_) {}
+            return res.status(200).json({
+                success: false,
+                status: '403',
+                error: "L'allievo ha impostazioni di privacy su WhatsApp che impediscono l'aggiunta diretta.",
+                inviteLink: inviteLink
+            });
+        } else if (statusCode === '408') {
+            return res.status(200).json({
+                success: false,
+                status: '408',
+                error: "L'allievo ha lasciato il gruppo di recente. Riprova più tardi o inviagli il link."
+            });
+        } else if (statusCode === '409') {
+            return res.json({
+                success: true,
+                message: "L'allievo fa già parte del gruppo WhatsApp.",
+                status: '409',
+                userJid: userJid
+            });
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: `Errore aggiunta partecipante (Codice WhatsApp: ${statusCode})`,
+                status: statusCode
+            });
+        }
+    } catch (error) {
+        logToFile(`Errore aggiunta partecipante gruppo: ${error.message || error}`);
+        res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});

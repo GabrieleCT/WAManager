@@ -121,6 +121,125 @@ class _AllieviScreenState extends State<AllieviScreen> {
     }
   }
 
+  Future<void> _confirmAndAddToWhatsapp(Allievo a) async {
+    if (a.telefono.isEmpty || a.telefono.toUpperCase() == 'TBD') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("L'allievo ${a.nomeCompleto} non ha un numero di telefono valido registrato."),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
+
+    final scuolaNome = a.scuolaNome ?? 'della scuola';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.group_add, color: Colors.green.shade700),
+            const SizedBox(width: 8),
+            const Text('Aggiungi a WhatsApp Scuola'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Vuoi aggiungere questo allievo al gruppo WhatsApp di $scuolaNome?'),
+            const SizedBox(height: 12),
+            Text('Allievo: ${a.nomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('Telefono: ${a.telefono}'),
+            if (a.corsoDescrizione != null) Text('Corso: ${a.corsoDescrizione!}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Aggiungi al Gruppo'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            const SizedBox(width: 12),
+            Text('Aggiunta di ${a.nomeCompleto} al gruppo in corso...'),
+          ],
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    final res = await _api.addStudentToSchoolGroup(a.id);
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message'] ?? '${a.nomeCompleto} aggiunto con successo al gruppo WhatsApp!'),
+          backgroundColor: Colors.green.shade800,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      _loadAllievi();
+    } else {
+      final err = res['error'] ?? 'Impossibile aggiungere l\'allievo al gruppo.';
+      final inviteLink = res['invite_link'];
+
+      if (inviteLink != null) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Restrizioni Privacy WhatsApp'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(err),
+                const SizedBox(height: 12),
+                const Text('Puoi inviare manualmente il link d\'invito all\'allievo:'),
+                const SizedBox(height: 8),
+                SelectableText(
+                  inviteLink,
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi')),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: Colors.red.shade800,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
   void _showAddEditDialog([Allievo? allievo]) {
     final nomeController = TextEditingController(text: allievo?.nome ?? '');
     final cognomeController = TextEditingController(text: allievo?.cognome ?? '');
@@ -291,36 +410,84 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 
-  Widget _buildWhatsappScuolaBadge(bool inGruppo) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: inGruppo ? Colors.green.shade50 : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: inGruppo ? Colors.green.shade600 : Colors.grey.shade400,
-          width: 1,
+  Widget _buildWhatsappScuolaBadge(Allievo a) {
+    final bool inGruppo = a.inGruppoScuolaWhatsapp;
+    if (inGruppo) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green.shade600, width: 1),
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            inGruppo ? Icons.check_circle : Icons.cancel_outlined,
-            size: 14,
-            color: inGruppo ? Colors.green.shade700 : Colors.grey.shade600,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 14, color: Colors.green.shade700),
+            const SizedBox(width: 4),
+            Text(
+              'WhatsApp Scuola: Sì',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.green.shade900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade400, width: 1),
           ),
-          const SizedBox(width: 4),
-          Text(
-            inGruppo ? 'WhatsApp Scuola: Sì' : 'WhatsApp Scuola: No',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: inGruppo ? Colors.green.shade900 : Colors.grey.shade700,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cancel_outlined, size: 14, color: Colors.grey.shade600),
+              const SizedBox(width: 4),
+              Text(
+                'WhatsApp Scuola: No',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 6),
+        InkWell(
+          onTap: () => _confirmAndAddToWhatsapp(a),
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.green.shade700,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.group_add, size: 13, color: Colors.white),
+                SizedBox(width: 4),
+                Text(
+                  'Aggiungi al gruppo',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -350,7 +517,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 11)),
               visualDensity: VisualDensity.compact,
             ),
-            _buildWhatsappScuolaBadge(a.inGruppoScuolaWhatsapp),
+            _buildWhatsappScuolaBadge(a),
             if (a.recensione == 'si')
               const Tooltip(message: 'Recensione rilasciata', child: Icon(Icons.star, color: Colors.amber, size: 18)),
             IconButton(

@@ -17,7 +17,7 @@ from .serializers import (
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer
 )
 from .services import generate_matches
-from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants
+from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant
 
 
 # ─── 2.1 Autenticazione Token per Client Flutter ────────────────
@@ -280,6 +280,58 @@ class AllievoViewSet(viewsets.ModelViewSet):
             'scuole_verificate': len(scuola_participants_map),
             'warnings': warning_scuole
         })
+
+    @action(detail=True, methods=['post'], url_path='add-to-whatsapp-scuola')
+    def add_to_whatsapp_scuola(self, request, pk=None):
+        """
+        Aggiunge il singolo allievo al gruppo WhatsApp della scuola associata al suo corso.
+        """
+        allievo = self.get_object()
+
+        if not allievo.telefono or allievo.telefono.strip().upper() == 'TBD':
+            return Response(
+                {'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono valido registrato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not allievo.corso or not allievo.corso.scuola:
+            return Response(
+                {'error': f"L'allievo {allievo.nome} {allievo.cognome} non è assegnato a un corso con scuola associata."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        scuola = allievo.corso.scuola
+        if not scuola.gruppo_whatsapp:
+            return Response(
+                {'error': f"La scuola '{scuola.nome}' non ha un gruppo WhatsApp configurato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. Controlla lo stato del gateway WhatsApp
+        status_info = get_whatsapp_status()
+        if status_info.get('status') != 'CONNECTED':
+            return Response({
+                'error': f"Client WhatsApp non connesso (Stato attuale: {status_info.get('status')}). "
+                         "Accedi alla sezione WhatsApp per verificare la connessione."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # 2. Richiedi aggiunta al gruppo tramite Gateway
+        res = add_group_participant(scuola.gruppo_whatsapp, allievo.telefono)
+        if res.get('success'):
+            allievo.in_gruppo_scuola_whatsapp = True
+            allievo.save(update_fields=['in_gruppo_scuola_whatsapp'])
+            return Response({
+                'success': True,
+                'message': res.get('message', f"{allievo.nome} {allievo.cognome} aggiunto al gruppo '{scuola.nome}'!"),
+                'allievo': self.get_serializer(allievo).data
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': res.get('error', "Impossibile aggiungere l'allievo al gruppo."),
+                'invite_link': res.get('inviteLink')
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class JollyViewSet(viewsets.ModelViewSet):

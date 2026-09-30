@@ -52,3 +52,23 @@ def get_group_participants(group_id: str) -> dict:
         return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def add_group_participant(group_id: str, phone: str) -> dict:
+    """
+    Aggiunge un partecipante a un gruppo WhatsApp tramite il Gateway.
+    """
+    try:
+        gid = group_id.strip()
+        r = requests.post(
+            f"{GATEWAY_BASE}/api/groups/{gid}/participants/add",
+            json={"phone": phone},
+            timeout=15
+        )
+        if r.status_code in (200, 201):
+            return r.json()
+        data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+        return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
