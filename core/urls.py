@@ -30,6 +30,9 @@ urlpatterns = [
     # 2.4 Invio messaggi Jolly
     path('api/jolly/send-message/', api_views.send_jolly_message, name='api_send_jolly_message'),
 
+    # Risoluzione link invito WhatsApp
+    path('api/whatsapp/resolve-group/', api_views.api_resolve_whatsapp_group, name='api_resolve_whatsapp_group'),
+
     # 5.1 Export API
     path('api/export/global/', import_export.export_global, name='export_global'),
     path('api/export/allievi/', import_export.export_allievi, name='export_allievi'),

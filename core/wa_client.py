@@ -72,3 +72,26 @@ def add_group_participant(group_id: str, phone: str) -> dict:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+def resolve_group_link(link_or_code: str) -> dict:
+    """
+    Risolve un link di invito (o codice) di un gruppo WhatsApp
+    nel suo JID reale (es. 120363... @g.us) e ne ricava il nome (subject).
+    """
+    try:
+        clean = (link_or_code or "").strip()
+        if not clean:
+            return {"success": False, "error": "Link o codice d'invito mancante"}
+        r = requests.post(
+            f"{GATEWAY_BASE}/api/groups/resolve",
+            json={"link": clean},
+            timeout=10
+        )
+        if r.status_code in (200, 201):
+            return r.json()
+        data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+        return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+

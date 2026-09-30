@@ -560,3 +560,120 @@ app.post('/api/groups/:groupId/participants/add', async (req, res) => {
         });
     }
 });
+
+// Endpoint per risolvere un link o codice d'invito WhatsApp in JID reale del gruppo
+app.all(['/api/groups/resolve', '/api/groups/resolve/'], async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+
+        let input = (req.body?.link || req.body?.input || req.body?.groupId || req.query?.link || req.query?.input || '').trim();
+        if (!input) {
+            return res.status(400).json({ success: false, error: 'Link o codice d\'invito mancante.' });
+        }
+
+        // Rimuovi parametri query come ?mode=...
+        if (input.includes('?')) {
+            input = input.split('?')[0].trim();
+        }
+
+        // Rimuovi prefissi chat.whatsapp.com
+        let clean = input
+            .replace('https://chat.whatsapp.com/', '')
+            .replace('http://chat.whatsapp.com/', '')
+            .replace('chat.whatsapp.com/', '')
+            .trim();
+
+        // Se l'utente ha inserito codice con @g.us (es. FkagJ8VC0Qt0OqzybhfJjq@g.us)
+        // e NON è un JID numerico (120363... o con trattino -)
+        const isLikelyRealJid = (clean.startsWith('120363') && /^\d+(@g\.us)?$/.test(clean)) || clean.includes('-');
+        if (!isLikelyRealJid && clean.endsWith('@g.us')) {
+            clean = clean.replace('@g.us', '').trim();
+        }
+
+        // Caso 1: È già un JID reale (es. 120363421055382619@g.us)
+        if (isLikelyRealJid) {
+            let targetJid = clean.endsWith('@g.us') ? clean : `${clean}@g.us`;
+            let subject = '';
+            let size = 0;
+            try {
+                const meta = await sock.groupMetadata(targetJid);
+                subject = meta.subject || '';
+                size = meta.participants ? meta.participants.length : 0;
+            } catch (_) {
+                try {
+                    const participating = await sock.groupFetchAllParticipating();
+                    const found = participating[targetJid];
+                    if (found) {
+                        subject = found.subject || '';
+                        size = found.participants ? found.participants.length : 0;
+                    }
+                } catch (_) {}
+            }
+            return res.json({
+                success: true,
+                groupId: targetJid,
+                subject: subject || targetJid,
+                size: size,
+                type: 'jid'
+            });
+        }
+
+        // Caso 2: È un codice d'invito (es. FkagJ8VC0Qt0OqzybhfJjq)
+        const inviteCode = clean;
+        logToFile(`Risoluzione link/codice d'invito: ${inviteCode}...`);
+        try {
+            const inviteInfo = await sock.groupGetInviteInfo(inviteCode);
+            if (inviteInfo && inviteInfo.id) {
+                logToFile(`Codice ${inviteCode} risolto con successo: ${inviteInfo.id} (${inviteInfo.subject})`);
+                return res.json({
+                    success: true,
+                    groupId: inviteInfo.id,
+                    subject: inviteInfo.subject || '',
+                    size: inviteInfo.size || 0,
+                    desc: inviteInfo.desc || '',
+                    creation: inviteInfo.creation || null,
+                    owner: inviteInfo.owner || null,
+                    type: 'invite_code'
+                });
+            }
+        } catch (err) {
+            logToFile(`groupGetInviteInfo fallito per ${inviteCode}: ${err.message || err}`);
+        }
+
+        // Fallback: cerca tra i gruppi partecipanti del bot
+        try {
+            const participating = await sock.groupFetchAllParticipating();
+            const found = Object.values(participating).find(g => 
+                g.id.includes(inviteCode) || 
+                (g.subject && g.subject.toLowerCase() === inviteCode.toLowerCase())
+            );
+            if (found) {
+                logToFile(`Gruppo trovato tra i partecipanti: ${found.id} (${found.subject})`);
+                return res.json({
+                    success: true,
+                    groupId: found.id,
+                    subject: found.subject || '',
+                    size: found.participants ? found.participants.length : 0,
+                    type: 'participating'
+                });
+            }
+        } catch (_) {}
+
+        return res.status(404).json({
+            success: false,
+            error: "Impossibile risalire al gruppo WhatsApp. Verifica che il link d'invito sia corretto, valido e attivo."
+        });
+    } catch (error) {
+        logToFile(`Errore durante risoluzione gruppo: ${error.message || error}`);
+        res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});
+

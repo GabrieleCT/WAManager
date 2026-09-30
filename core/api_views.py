@@ -17,7 +17,7 @@ from .serializers import (
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer
 )
 from .services import generate_matches
-from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant
+from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
 
 
 # ─── 2.1 Autenticazione Token per Client Flutter ────────────────
@@ -617,3 +617,23 @@ def send_jolly_message(request):
         'inviati_con_successo': success_count,
         'dettagli': results
     })
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def api_resolve_whatsapp_group(request):
+    """
+    Risolve un link di invito o codice WhatsApp nel JID reale e metadati del gruppo.
+    """
+    link = request.data.get('link') or request.data.get('input') or ''
+    if not link:
+        return Response(
+            {'success': False, 'error': "Link d'invito o codice WhatsApp mancante."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    res = resolve_group_link(link)
+    if res.get('success'):
+        return Response(res, status=status.HTTP_200_OK)
+    else:
+        return Response(res, status=status.HTTP_400_BAD_REQUEST)
+

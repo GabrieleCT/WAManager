@@ -3,6 +3,36 @@ from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule
 )
+from .wa_client import resolve_group_link
+
+
+def normalize_and_resolve_whatsapp_group(value: str) -> str:
+    """
+    Se l'utente fornisce un link di invito (es. https://chat.whatsapp.com/...)
+    o un codice d'invito WhatsApp, interroga il Gateway per risalire al JID reale
+    del gruppo (es. 120363... @g.us) prima del salvataggio.
+    """
+    val = (value or '').strip()
+    if not val:
+        return ''
+
+    # Rimuovi query parameter se presenti (es. ?mode=...)
+    if '?' in val:
+        val = val.split('?')[0].trim()
+
+    # Se è già un JID reale numerico (es. 120363421055382619@g.us o con trattino -)
+    clean_val = val.replace('@g.us', '').strip()
+    is_real_jid = (clean_val.startswith('120363') and clean_val.isdigit()) or ('-' in clean_val and not clean_val.startswith('http'))
+    if is_real_jid:
+        return val if val.endswith('@g.us') else f"{clean_val}@g.us"
+
+    # Altrimenti risali al gruppo tramite link o codice d'invito
+    res = resolve_group_link(val)
+    if res.get('success') and res.get('groupId'):
+        return res['groupId']
+
+    err_msg = res.get('error') or "Impossibile risalire al gruppo WhatsApp dal link d'invito fornito. Verifica che sia valido e attivo."
+    raise serializers.ValidationError(err_msg)
 
 
 class ScuolaSerializer(serializers.ModelSerializer):
@@ -11,6 +41,10 @@ class ScuolaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Scuola
         fields = ['id', 'nome', 'sede', 'gruppo_whatsapp', 'corsi_count']
+
+    def validate_gruppo_whatsapp(self, value):
+        return normalize_and_resolve_whatsapp_group(value)
+
 
 
 class CorsoSerializer(serializers.ModelSerializer):
@@ -48,6 +82,10 @@ class CorsoSerializer(serializers.ModelSerializer):
             data = data.copy()
             data['giorno_settimana'] = mapping.get(val, val)
         return super().to_internal_value(data)
+
+    def validate_gruppo_whatsapp(self, value):
+        return normalize_and_resolve_whatsapp_group(value)
+
 
 
 class ArgomentoSerializer(serializers.ModelSerializer):

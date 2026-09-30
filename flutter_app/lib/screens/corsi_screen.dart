@@ -92,20 +92,27 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final annoCtl = TextEditingController(text: corso?.annoAccademico ?? '2025/2026');
     final waCtl = TextEditingController(text: corso?.gruppoWhatsapp ?? '');
 
+    bool isSaving = false;
+    bool isVerifyingWa = false;
+    String? waResolvedInfo;
+    String? waResolvedError;
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
           title: Text(corso == null ? 'Nuovo Corso' : 'Modifica Corso'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: scuolaId,
                   decoration: const InputDecoration(labelText: 'Scuola *'),
                   items: _scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))).toList(),
-                  onChanged: (v) => setDState(() => scuolaId = v),
+                  onChanged: isSaving ? null : (v) => setDState(() => scuolaId = v),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -116,7 +123,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
                     DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
                   ],
-                  onChanged: (v) => setDState(() => livello = v!),
+                  onChanged: isSaving ? null : (v) => setDState(() => livello = v!),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -131,36 +138,173 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     DropdownMenuItem(value: 'SABATO', child: Text('Sabato')),
                     DropdownMenuItem(value: 'DOMENICA', child: Text('Domenica')),
                   ],
-                  onChanged: (v) => setDState(() => giornoSettimana = v!),
+                  onChanged: isSaving ? null : (v) => setDState(() => giornoSettimana = v!),
                 ),
-                TextField(controller: orarioCtl, decoration: const InputDecoration(labelText: 'Orario (HH:MM) *')),
-                TextField(controller: annoCtl, decoration: const InputDecoration(labelText: 'Anno Accademico *')),
-                TextField(controller: waCtl, decoration: const InputDecoration(labelText: 'Gruppo WhatsApp Corso')),
+                TextField(
+                  controller: orarioCtl,
+                  enabled: !isSaving,
+                  decoration: const InputDecoration(labelText: 'Orario (HH:MM) *'),
+                ),
+                TextField(
+                  controller: annoCtl,
+                  enabled: !isSaving,
+                  decoration: const InputDecoration(labelText: 'Anno Accademico *'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: waCtl,
+                  enabled: !isSaving,
+                  decoration: InputDecoration(
+                    labelText: 'Gruppo WhatsApp Corso',
+                    hintText: 'Link invito (es. https://chat.whatsapp.com/...) o ID',
+                    helperText: 'Incolla il link d\'invito: verrà convertito automaticamente nel gruppo WhatsApp',
+                    prefixIcon: const Icon(Icons.chat, color: Colors.green),
+                    suffixIcon: isVerifyingWa
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.link_outlined, color: Colors.green),
+                            tooltip: 'Verifica link invito',
+                            onPressed: () async {
+                              final text = waCtl.text.trim();
+                              if (text.isEmpty) return;
+                              setDState(() {
+                                isVerifyingWa = true;
+                                waResolvedInfo = null;
+                                waResolvedError = null;
+                              });
+                              final res = await _api.resolveWhatsappGroup(text);
+                              setDState(() {
+                                isVerifyingWa = false;
+                                if (res['success'] == true && res['groupId'] != null) {
+                                  waResolvedInfo = '✓ Gruppo: ${res['subject']} (${res['size'] ?? 0} part.)';
+                                  waCtl.text = res['groupId'];
+                                } else {
+                                  waResolvedError = res['error'] ?? 'Impossibile risalire al gruppo dal link';
+                                }
+                              });
+                            },
+                          ),
+                  ),
+                ),
+                if (waResolvedInfo != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.green.shade300),
+                      ),
+                      child: Text(
+                        waResolvedInfo!,
+                        style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                if (waResolvedError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.red.shade300),
+                      ),
+                      child: Text(
+                        waResolvedError!,
+                        style: TextStyle(color: Colors.red.shade800, fontSize: 12),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
             ElevatedButton(
-              onPressed: () async {
-                if (scuolaId == null || orarioCtl.text.isEmpty) return;
-                final data = {
-                  'scuola': scuolaId,
-                  'livello': livello,
-                  'giorno_settimana': giornoSettimana,
-                  'orario': orarioCtl.text.trim(),
-                  'anno_accademico': annoCtl.text.trim(),
-                  'gruppo_whatsapp': waCtl.text.trim(),
-                };
-                if (corso == null) {
-                  await _api.createCorso(data);
-                } else {
-                  await _api.updateCorso(corso.id, data);
-                }
-                if (ctx.mounted) Navigator.pop(ctx);
-                _loadAll();
-              },
-              child: const Text('Salva Corso'),
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (scuolaId == null || orarioCtl.text.trim().isEmpty) return;
+                      String waValue = waCtl.text.trim();
+
+                      setDState(() {
+                        isSaving = true;
+                        waResolvedError = null;
+                      });
+
+                      // Se l'utente ha inserito un link d'invito o un codice, risali al gruppo WhatsApp
+                      if (waValue.isNotEmpty && (waValue.contains('chat.whatsapp.com') || !waValue.contains('@g.us'))) {
+                        final res = await _api.resolveWhatsappGroup(waValue);
+                        if (res['success'] == true && res['groupId'] != null) {
+                          waValue = res['groupId'];
+                        } else {
+                          setDState(() {
+                            isSaving = false;
+                            waResolvedError = res['error'] ?? 'Impossibile risalire al gruppo WhatsApp. Verifica il link.';
+                          });
+                          return;
+                        }
+                      }
+
+                      final data = {
+                        'scuola': scuolaId,
+                        'livello': livello,
+                        'giorno_settimana': giornoSettimana,
+                        'orario': orarioCtl.text.trim(),
+                        'anno_accademico': annoCtl.text.trim(),
+                        'gruppo_whatsapp': waValue,
+                      };
+
+                      bool ok = false;
+                      if (corso == null) {
+                        final created = await _api.createCorso(data);
+                        ok = created != null;
+                      } else {
+                        final updated = await _api.updateCorso(corso.id, data);
+                        ok = updated != null;
+                      }
+
+                      setDState(() => isSaving = false);
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
+                      if (mounted) {
+                        if (ok) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(waValue.isNotEmpty
+                                  ? 'Corso salvato! Gruppo WhatsApp collegato: $waValue'
+                                  : 'Corso salvato con successo!'),
+                              backgroundColor: Colors.green.shade700,
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Errore durante il salvataggio del corso.'),
+                              backgroundColor: Colors.red.shade700,
+                            ),
+                          );
+                        }
+                      }
+                      _loadAll();
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Salva Corso'),
             ),
           ],
         ),
