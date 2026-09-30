@@ -1,5 +1,6 @@
 import datetime
 from django.utils import timezone
+from django.db.models import Q
 from django.template import Template, Context
 from .models import (
     Lezione, Corso, Allievo, Presenza, Match, MessageTemplate, MessageLog, RecurringSchedule,
@@ -199,11 +200,23 @@ def auto_generate_events():
 def invia_sondaggio_mattutino_giornaliero():
     """
     Task demone giornaliero: verifica se il giorno odierno è compreso nei giorni abilitati,
-    cerca le lezioni previste per oggi e invia il sondaggio (o messaggio) WhatsApp al gruppo del corso.
+    individua tutti i corsi attivi quel giorno (in base al giorno della settimana del corso o lezione prevista oggi)
+    e invia il sondaggio (o messaggio) WhatsApp al rispettivo gruppo.
     """
     now = timezone.localtime(timezone.now())
     today = now.date()
     current_weekday = today.weekday()  # 0=Lun ... 6=Dom
+
+    WEEKDAY_TO_GIORNO = {
+        0: 'LUNEDI',
+        1: 'MARTEDI',
+        2: 'MERCOLEDI',
+        3: 'GIOVEDI',
+        4: 'VENERDI',
+        5: 'SABATO',
+        6: 'DOMENICA',
+    }
+    current_giorno = WEEKDAY_TO_GIORNO.get(current_weekday)
 
     global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
     if not global_config:
@@ -224,35 +237,59 @@ def invia_sondaggio_mattutino_giornaliero():
 
     giorni_globali = [int(x.strip()) for x in global_config.giorni_settimana.split(',') if x.strip().isdigit()]
     if current_weekday not in giorni_globali:
-        print(f"[Sondaggio Mattutino] Oggi (weekday {current_weekday}) non è tra i giorni abilitati ({giorni_globali}).")
+        print(f"[Sondaggio Mattutino] Oggi (weekday {current_weekday}, {current_giorno}) non è tra i giorni abilitati ({giorni_globali}).")
         return
 
-    # Trova le lezioni di oggi
-    lezioni_oggi = Lezione.objects.filter(data=today).select_related('corso', 'corso__scuola', 'argomento')
-    if not lezioni_oggi.exists():
-        print(f"[Sondaggio Mattutino] Nessuna lezione prevista per oggi {today.strftime('%d/%m/%Y')}.")
+    # Trova i corsi attivi quel giorno:
+    # 1) Corsi che hanno giorno_settimana corrispondente al giorno odierno (es. MERCOLEDI)
+    # 2) Oppure corsi che hanno esplicitamente una Lezione registrata per oggi
+    corsi_attivi_oggi = Corso.objects.filter(
+        Q(giorno_settimana=current_giorno) | Q(lezioni__data=today)
+    ).select_related('scuola').distinct()
+
+    if not corsi_attivi_oggi.exists():
+        print(f"[Sondaggio Mattutino] Nessun corso attivo per il giorno {current_giorno} in data {today.strftime('%d/%m/%Y')}.")
         return
+
+    print(f"[Sondaggio Mattutino] Trovati {corsi_attivi_oggi.count()} corsi attivi per oggi ({current_giorno}): {[c.nome for c in corsi_attivi_oggi]}")
 
     inviati = 0
-    for lezione in lezioni_oggi:
-        corso = lezione.corso
+    for corso in corsi_attivi_oggi:
+        # Configurazione specifica per il corso o globale
         cfg = SondaggioMattutinoConfig.objects.filter(corso=corso).first() or global_config
         if not cfg.is_active:
-            print(f"[Sondaggio Mattutino] Configurazione disattiva per il corso {corso}.")
+            print(f"[Sondaggio Mattutino] Configurazione disattiva per il corso {corso.nome}.")
             continue
 
         group_target = corso.gruppo_whatsapp or (corso.scuola.gruppo_whatsapp if corso.scuola else '')
         if not group_target:
-            print(f"[Sondaggio Mattutino] Nessun gruppo WhatsApp impostato per il corso {corso}.")
+            print(f"[Sondaggio Mattutino] Nessun gruppo WhatsApp impostato per il corso {corso.nome}.")
             continue
 
+        # Recupera o crea la Lezione odierna per il corso attivo
+        lezione, created = Lezione.objects.get_or_create(
+            corso=corso,
+            data=today,
+            defaults={'titolo': f"Lezione {today.strftime('%d/%m/%Y')}"}
+        )
+
+        # Se la lezione è stata appena creata, inizializza le presenze per gli allievi del corso
+        if created:
+            for allievo in Allievo.objects.filter(corso=corso, is_active=True):
+                Presenza.objects.get_or_create(
+                    lezione=lezione,
+                    allievo=allievo,
+                    defaults={'presente': False, 'fonte': 'whatsapp', 'is_jolly': False}
+                )
+
         orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
-        data_str = lezione.data.strftime('%d/%m/%Y')
+        data_str = today.strftime('%d/%m/%Y')
         scuola_str = corso.scuola.nome if corso.scuola else ''
-        argomento_str = lezione.argomento.titolo if lezione.argomento else 'Da definire'
+        argomento_str = (lezione.argomento.titolo if (lezione and lezione.argomento) else 'Da definire')
+        corso_str = corso.nome
 
         testo_renderizzato = (cfg.testo or '')\
-            .replace('{corso}', str(corso.nome))\
+            .replace('{corso}', corso_str)\
             .replace('{orario}', orario_str)\
             .replace('{data}', data_str)\
             .replace('{scuola}', scuola_str)\
@@ -290,13 +327,14 @@ def invia_sondaggio_mattutino_giornaliero():
             )
             if res.get('success'):
                 inviati += 1
-                print(f"[Sondaggio Mattutino] Inviato con successo a {group_target} per {corso}")
+                print(f"[Sondaggio Mattutino] Inviato con successo a {group_target} per {corso.nome}")
             else:
                 print(f"[Sondaggio Mattutino] Errore invio a {group_target}: {err_msg}")
         except Exception as e:
-            print(f"[Sondaggio Mattutino] Eccezione invio per {corso}: {e}")
+            print(f"[Sondaggio Mattutino] Eccezione invio per {corso.nome}: {e}")
 
-    print(f"[Sondaggio Mattutino] Completato. Inviati {inviati} su {lezioni_oggi.count()} lezioni.")
+    print(f"[Sondaggio Mattutino] Completato. Inviati con successo {inviati} su {corsi_attivi_oggi.count()} corsi attivi.")
+
 
 
 def invia_sondaggio_manuale_corsi(corso_ids, testo_custom=None, is_poll=True, poll_opzioni=None):

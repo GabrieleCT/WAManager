@@ -206,7 +206,7 @@ class _SondaggioMattutinoScreenState extends State<SondaggioMattutinoScreen> {
         title: const Text('Esegui Controllo Demone Adesso'),
         content: const Text(
           'Verrà eseguito immediatamente il controllo per la giornata odierna.\n'
-          'Se per oggi ci sono lezioni previste, il sondaggio verrà inviato ai rispettivi gruppi WhatsApp dei corsi.\n'
+          'Il demone individuerà tutti i corsi attivi oggi (in base al giorno della settimana del corso o a lezioni in programma) e invierà il messaggio/sondaggio ai rispettivi gruppi WhatsApp.\n\n'
           'Vuoi procedere?',
         ),
         actions: [
@@ -473,9 +473,9 @@ class _SondaggioMattutinoScreenState extends State<SondaggioMattutinoScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Nei giorni selezionati, all\'orario stabilito (${_formatTimeOfDay(_daemonTime)}), il sistema '
-                              'cerca in automatico i corsi che hanno una lezione in giornata e invia il sondaggio o messaggio '
-                              'al rispettivo gruppo WhatsApp.',
+                              'Nei giorni selezionati, all\'orario stabilito (${_formatTimeOfDay(_daemonTime)}), il demone '
+                              'individua in automatico tutti i corsi attivi quel giorno (in base al giorno della settimana del corso o lezioni pianificate) '
+                              'e invia il sondaggio o messaggio al rispettivo gruppo WhatsApp.',
                               style: const TextStyle(fontSize: 13, height: 1.3),
                             ),
                           ],

@@ -77,8 +77,13 @@ class Corso(models.Model):
         verbose_name_plural = 'Corsi'
         ordering = ['scuola__nome', 'livello']
 
+    @property
+    def nome(self):
+        return f"{self.scuola.nome} - {self.get_livello_display()}"
+
     def __str__(self):
         return f"{self.scuola.nome} - {self.get_livello_display()} ({self.orario.strftime('%H:%M')}) [{self.anno_accademico}]"
+
 
 
 # ─── 1.5 Argomento ──────────────────────────────────────────────
