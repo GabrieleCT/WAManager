@@ -109,7 +109,7 @@ class Allievo(models.Model):
     nome = models.CharField(max_length=100)
     cognome = models.CharField(max_length=100)
     ruolo = models.CharField(max_length=10, choices=Role.choices, default=Role.LEADER)
-    telefono = models.CharField(max_length=20)
+    telefono = models.CharField(max_length=20, blank=True, default='')
     corso = models.ForeignKey(
         Corso,
         on_delete=models.SET_NULL,
@@ -145,6 +145,31 @@ class Allievo(models.Model):
         default=False,
         help_text="Indica se l'allievo è presente nel gruppo WhatsApp del Corso"
     )
+    numero_tessera = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        help_text="Numero della tessera dell'allievo"
+    )
+    data_emissione_tessera = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Data di emissione della tessera"
+    )
+
+    @property
+    def stato_tessera(self):
+        if not self.numero_tessera or not self.numero_tessera.strip() or not self.data_emissione_tessera:
+            return 'NON TESSERATO'
+        from datetime import date, timedelta
+        today = date.today()
+        try:
+            scadenza = self.data_emissione_tessera.replace(year=self.data_emissione_tessera.year + 1)
+        except ValueError:
+            scadenza = self.data_emissione_tessera + timedelta(days=365)
+        if today > scadenza:
+            return 'TESSERA SCADUTA'
+        return 'TESSERA OK'
 
     class Meta:
         verbose_name_plural = 'Allievi'
@@ -263,7 +288,7 @@ class Presenza(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lezione = models.ForeignKey(Lezione, on_delete=models.CASCADE, related_name='presenze')
     allievo = models.ForeignKey(Allievo, on_delete=models.CASCADE, related_name='presenze')
-    presente = models.BooleanField(default=False)
+    presente = models.BooleanField(null=True, blank=True, default=None)
     fonte = models.CharField(max_length=20, choices=FONTE_CHOICES, default='manuale')
     is_jolly = models.BooleanField(default=False, help_text="Se True, è presente alla lezione come Jolly")
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -416,9 +441,26 @@ class SondaggioMattutinoConfig(models.Model):
     )
     poll_opzione_1 = models.CharField(max_length=100, default="Ci sono! 🕺💃")
     poll_opzione_2 = models.CharField(max_length=100, default="Non ci sono 🚫")
+    ore_ascolto_risposte = models.IntegerField(
+        default=5,
+        help_text="Ore di ascolto dell'AI (Gemini) dopo l'invio del messaggio"
+    )
     is_active = models.BooleanField(
         default=True,
         help_text="Se attivo, il demone invierà automaticamente il sondaggio secondo la schedulazione."
+    )
+    sollecito_attivo = models.BooleanField(
+        default=False,
+        help_text="Se attivo, invia un messaggio di sollecito nel pomeriggio a ridosso della lezione."
+    )
+    sollecito_orario = models.CharField(
+        max_length=5,
+        default='16:00',
+        help_text="Orario invio sollecito nel formato HH:MM (es. 16:00)"
+    )
+    sollecito_testo = models.TextField(
+        default="Ciao <nome_allievo>, ci sei stasera al corso?",
+        help_text="Testo del messaggio di sollecito risposta inviato all'allievo"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -429,3 +471,59 @@ class SondaggioMattutinoConfig(models.Model):
     def __str__(self):
         c_str = str(self.corso) if self.corso else "Globale"
         return f"Sondaggio {c_str} ({self.orario}) - Attivo: {self.is_active}"
+
+class GeminiLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    allievo = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True)
+    lezione = models.ForeignKey(Lezione, on_delete=models.SET_NULL, null=True, blank=True)
+    testo_originale = models.TextField()
+    risposta_ai = models.CharField(max_length=255)
+    esito_interpretato = models.CharField(max_length=50) # PRESENTE, ASSENTE, IGNOTA
+
+    class Meta:
+        verbose_name = "Log Gemini"
+        verbose_name_plural = "Log Gemini"
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"[{self.timestamp.strftime('%d/%m/%Y %H:%M')}] {self.allievo} -> {self.esito_interpretato}"
+
+
+class DocumentTemplate(models.Model):
+    CHIAVI = [
+        ('ricevuta', 'Template Ricevuta Pagamento'),
+        ('modulo_tesseramento', 'Modulo di Tesseramento'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chiave = models.CharField(max_length=50, unique=True, choices=CHIAVI)
+    nome = models.CharField(max_length=100)
+    descrizione = models.TextField(blank=True, default='')
+    file = models.FileField(upload_to='templates_pdf/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Template Documento"
+        verbose_name_plural = "Template Documenti"
+        ordering = ['chiave']
+
+    def __str__(self):
+        return f"{self.nome} ({self.chiave})"
+
+    @property
+    def filename(self):
+        if self.file and self.file.name:
+            import os
+            return os.path.basename(self.file.name)
+        return ''
+
+    @property
+    def file_size(self):
+        if self.file:
+            try:
+                return self.file.size
+            except Exception:
+                return 0
+        return 0

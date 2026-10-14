@@ -5,7 +5,8 @@ import 'package:http/http.dart' as http;
 import '../services/api_service.dart';
 
 class WhatsAppScreen extends StatefulWidget {
-  const WhatsAppScreen({super.key});
+  final bool embedded;
+  const WhatsAppScreen({super.key, this.embedded = false});
 
   @override
   State<WhatsAppScreen> createState() => _WhatsAppScreenState();
@@ -62,12 +63,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Stato WhatsApp Gateway')),
-      body: Center(
+    final content = Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 24),
         child: Card(
           elevation: 4,
-          margin: const EdgeInsets.all(32),
+          margin: const EdgeInsets.all(24),
           child: Padding(
             padding: const EdgeInsets.all(32.0),
             child: Column(
@@ -75,7 +76,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> {
               children: [
                 const Icon(Icons.chat, size: 64, color: Colors.green),
                 const SizedBox(height: 16),
-                Text('Stato: $_status', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('Stato: $_status', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 const SizedBox(height: 32),
                 if (_status == 'QR' && _qrData != null && _qrData!.startsWith('data:image'))
                   Image.memory(
@@ -99,6 +100,15 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> {
           ),
         ),
       ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Stato WhatsApp Gateway')),
+      body: content,
     );
   }
 }

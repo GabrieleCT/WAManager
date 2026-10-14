@@ -100,7 +100,8 @@ Q_CLUSTER = {
     'queue_limit': 500,
     'cpu_affinity': 1,
     'label': 'Scheduler WhatsApp',
-    'orm': 'default'  # Usa SQLite come broker (perfetto per sviluppo locale senza Redis)
+    'orm': 'default',  # Usa SQLite come broker
+    'catch_up': False,  # Non eseguire i task scaduti all'avvio del demone
 }
 
 
@@ -140,6 +141,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
 # Email

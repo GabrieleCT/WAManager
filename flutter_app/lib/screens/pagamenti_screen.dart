@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/pdf_report_service.dart';
 
 class PagamentiScreen extends StatefulWidget {
   const PagamentiScreen({super.key});
@@ -48,9 +49,39 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     });
   }
 
+  Future<void> _deletePagamento(Pagamento p) async {
+    final conf = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Elimina Pagamento'),
+        content: Text('Vuoi davvero eliminare il pagamento di ${p.allievoNome}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annulla')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (conf == true) {
+      final ok = await _api.deletePagamento(p.id);
+      if (ok) {
+        _loadAll();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore eliminazione.')));
+        }
+      }
+    }
+  }
+
   void _showAddPaymentDialog() {
     String? selectedAllievoId = _allievi.isNotEmpty ? _allievi.first.id : null;
     String? selectedCorsoId = _corsi.isNotEmpty ? _corsi.first.id : null;
+    if (_allievi.isNotEmpty && _allievi.first.corsoId != null) {
+      selectedCorsoId = _allievi.first.corsoId;
+    }
     final importoController = TextEditingController(text: '150.00');
     final noteController = TextEditingController();
     String trimestre = 'T1';
@@ -87,7 +118,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                   value: selectedCorsoId,
                   decoration: const InputDecoration(labelText: 'Corso *'),
                   items: _corsi.map((c) {
-                    return DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay}'));
+                    return DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.orario})'));
                   }).toList(),
                   onChanged: (v) => setDlgState(() => selectedCorsoId = v),
                 ),
@@ -160,6 +191,25 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     );
   }
 
+
+  void _stampaRicevuta(Pagamento p) {
+    PdfReportService.generaRicevutaPagamento(context: context, pagamento: p);
+  }
+
+  void _esportaReportPagamenti() {
+    String filtri = '';
+    if (_filterScuolaId != null) filtri += 'Scuola, ';
+    if (_filterCorsoId != null) filtri += 'Corso, ';
+    if (_filterTrimestre != null) filtri += 'Trimestre $_filterTrimestre, ';
+    if (filtri.isNotEmpty) filtri = filtri.substring(0, filtri.length - 2);
+
+    PdfReportService.generaReportPagamenti(
+      context: context,
+      pagamenti: _pagamenti,
+      filtriAttivi: filtri,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final totaleIncassato = _pagamenti.fold<double>(0.0, (sum, p) => sum + p.importo);
@@ -168,6 +218,11 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
       appBar: AppBar(
         title: const Text('Gestione Pagamenti'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
+            tooltip: 'Esporta lista pagamenti',
+            onPressed: _esportaReportPagamenti,
+          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAll),
         ],
       ),
@@ -203,7 +258,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                   hint: const Text('Tutti i Corsi'),
                   items: [
                     const DropdownMenuItem(value: null, child: Text('Tutti i Corsi')),
-                    ..._corsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay}'))),
+                    ..._corsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.orario})'))),
                   ],
                   onChanged: (val) {
                     setState(() => _filterCorsoId = val);
@@ -266,8 +321,22 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                             style: const TextStyle(fontSize: 12, color: Colors.grey)),
                       ],
                     ),
-                    trailing: Text('€ ${p.importo.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
+                                        trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('€ ${p.importo.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          icon: const Icon(Icons.receipt, color: Colors.indigo),
+                          tooltip: 'Stampa Ricevuta',
+                          onPressed: () => _stampaRicevuta(p),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _deletePagamento(p),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),

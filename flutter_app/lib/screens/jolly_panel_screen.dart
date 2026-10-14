@@ -3,7 +3,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 
 class JollyPanelScreen extends StatefulWidget {
-  const JollyPanelScreen({super.key});
+  final bool embedded;
+  const JollyPanelScreen({super.key, this.embedded = false});
 
   @override
   State<JollyPanelScreen> createState() => _JollyPanelScreenState();
@@ -29,6 +30,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     jolly.sort((a, b) => a.priorita.compareTo(b.priorita));
     final lezioni = await _api.getLezioni();
     final allievi = await _api.getAllievi(isProspect: false);
+    allievi.sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
     setState(() {
       _jollyList = jolly;
       _lezioni = lezioni;
@@ -161,22 +163,55 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pannello Jolly WhatsApp'),
-        actions: [
-          IconButton(icon: const Icon(Icons.send), onPressed: _showSendMessageDialog, tooltip: 'Invia Messaggio'),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
-        ],
+    final actionButtons = [
+      ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.amber.shade800,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        icon: const Icon(Icons.send, size: 16),
+        label: const Text('Invia Messaggio', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        onPressed: _showSendMessageDialog,
       ),
+      const SizedBox(width: 8),
+      IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData, tooltip: 'Ricarica dati'),
+    ];
+
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Pannello Jolly WhatsApp'),
+              actions: [
+                IconButton(icon: const Icon(Icons.send), onPressed: _showSendMessageDialog, tooltip: 'Invia Messaggio'),
+                IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
+              ],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddJollyDialog,
         label: const Text('Nuovo Jolly'),
         icon: const Icon(Icons.add),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView.separated(
+      body: Column(
+        children: [
+          if (widget.embedded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+              child: Row(
+                children: [
+                  actionButtons[0],
+                  const Spacer(),
+                  actionButtons[2],
+                ],
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.separated(
               itemCount: _jollyList.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (_, i) {
@@ -207,6 +242,9 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
                 );
               },
             ),
+          ),
+        ],
+      ),
     );
   }
 }

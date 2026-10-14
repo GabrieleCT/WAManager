@@ -69,6 +69,31 @@ class ApiService {
     await prefs.setString('api_base_url', newUrl);
   }
 
+  // Helper generici
+  Future<dynamic> get(String endpoint) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/$endpoint'), headers: _headers);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    throw Exception('Failed to load: ${res.statusCode} ${res.body}');
+  }
+
+  Future<dynamic> post(String endpoint, Map<String, dynamic> data) async {
+    final res = await http.post(Uri.parse('$baseUrl/api/$endpoint'), headers: _headers, body: jsonEncode(data));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    throw Exception('Failed to post: ${res.statusCode} ${res.body}');
+  }
+
+  Future<dynamic> put(String endpoint, Map<String, dynamic> data) async {
+    final res = await http.patch(Uri.parse('$baseUrl/api/$endpoint'), headers: _headers, body: jsonEncode(data));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    throw Exception('Failed to update: ${res.statusCode} ${res.body}');
+  }
+
   // ─── Scuole ───────────────────────────────────────────────
   Future<List<Scuola>> getScuole() async {
     final res = await http.get(Uri.parse('$baseUrl/api/scuole/'), headers: _headers);
@@ -77,6 +102,14 @@ class ApiService {
       return list.map((e) => Scuola.fromJson(e)).toList();
     }
     return [];
+  }
+
+  Future<Map<String, dynamic>> checkScuolaWhatsapp(String id) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/scuole/$id/check-whatsapp/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    throw Exception('Errore check whatsapp: ${res.body}');
   }
 
   Future<Scuola?> createScuola(Map<String, dynamic> data) async {
@@ -151,13 +184,37 @@ class ApiService {
     return null;
   }
 
+  Future<Argomento?> updateArgomento(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(Uri.parse('$baseUrl/api/argomenti/$id/'), headers: _headers, body: jsonEncode(data));
+    if (res.statusCode == 200) {
+      return Argomento.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<bool> deleteArgomento(String id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/api/argomenti/$id/'), headers: _headers);
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
   // ─── Allievi & Prospects ──────────────────────────────────
-  Future<List<Allievo>> getAllievi({String? corsoId, String? scuolaId, bool? isProspect, String? search}) async {
+  Future<List<Allievo>> getAllievi({
+    String? corsoId,
+    String? scuolaId,
+    bool? isProspect,
+    String? search,
+    bool? corsoIsNull,
+    String? statoTessera,
+  }) async {
     var queryParams = <String>[];
     if (corsoId != null) queryParams.add('corso=$corsoId');
+    if (corsoIsNull != null && corsoIsNull) queryParams.add('corso__isnull=True');
     if (scuolaId != null) queryParams.add('corso__scuola=$scuolaId');
     if (isProspect != null) queryParams.add('is_prospect=$isProspect');
     if (search != null && search.isNotEmpty) queryParams.add('search=${Uri.encodeComponent(search)}');
+    if (statoTessera != null && statoTessera.isNotEmpty && statoTessera != 'tutti') {
+      queryParams.add('stato_tessera=${Uri.encodeComponent(statoTessera)}');
+    }
 
     var urlStr = '$baseUrl/api/allievi/';
     if (queryParams.isNotEmpty) urlStr += '?${queryParams.join('&')}';
@@ -394,6 +451,14 @@ class ApiService {
     return null;
   }
 
+  Future<Lezione?> updateLezione(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(Uri.parse('$baseUrl/api/lezioni/$id/'), headers: _headers, body: jsonEncode(data));
+    if (res.statusCode == 200) {
+      return Lezione.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
   Future<List<Lezione>> creaTrimestre(String corsoId, List<Map<String, dynamic>> lezioni) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/lezioni/crea-trimestre/'),
@@ -431,6 +496,15 @@ class ApiService {
       return list.map((e) => Presenza.fromJson(e)).toList();
     }
     return [];
+  }
+
+  Future<bool> updatePresenza(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/presenze/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    return res.statusCode == 200;
   }
 
   Future<bool> batchUpdatePresenze(String lezioneId, List<Map<String, dynamic>> presenze) async {
@@ -481,6 +555,11 @@ class ApiService {
       return Pagamento.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
     return null;
+  }
+
+  Future<bool> deletePagamento(String id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/api/pagamenti/$id/'), headers: _headers);
+    return res.statusCode == 204 || res.statusCode == 200;
   }
 
   // ─── Matches ──────────────────────────────────────────────
@@ -642,7 +721,94 @@ class ApiService {
     }
     return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
+
+  Future<Map<String, dynamic>> inviaSollecitoOra({List<String>? corsoIds}) async {
+    final body = {
+      if (corsoIds != null && corsoIds.isNotEmpty) 'corso_ids': corsoIds,
+    };
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sondaggio-mattutino/invia-sollecito-ora/'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> inviaSollecitoAllievo(String allievoId, {String? testo}) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/allievi/$allievoId/invia-sollecito/'),
+      headers: _headers,
+      body: jsonEncode({
+        if (testo != null && testo.isNotEmpty) 'testo': testo,
+      }),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    }
+  }
+
+  // ─── Template Documenti (PDF Ricevuta, Modulo Tesseramento) ─────────────
+  Future<List<DocumentTemplate>> getDocumentTemplates() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/document-templates/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      final List list = jsonDecode(utf8.decode(res.bodyBytes));
+      return list.map((e) => DocumentTemplate.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> uploadDocumentTemplate(String chiave, List<int> bytes, String filename) async {
+    final uri = Uri.parse('$baseUrl/api/document-templates/$chiave/upload/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+
+    final multipartFile = http.MultipartFile.fromBytes('file', bytes, filename: filename);
+    request.files.add(multipartFile);
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        return {'success': false, 'error': 'Errore HTTP ${response.statusCode}: ${response.body}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> removeDocumentTemplate(String chiave) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/document-templates/$chiave/remove/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  String getDocumentTemplateDownloadUrl(String chiave) {
+    return '$baseUrl/api/document-templates/$chiave/file/';
+  }
 }
+
 
 
 

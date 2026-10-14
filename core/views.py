@@ -1,6 +1,9 @@
 import json
+import os
 import requests
 from datetime import timedelta, datetime
+
+GATEWAY_URL = os.environ.get("GATEWAY_BASE_URL", "http://127.0.0.1:4002")
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
@@ -27,11 +30,12 @@ def rsvp_view(request, event_id):
         last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
 
         allievo = None
-        for a in Allievo.objects.filter(is_active=True):
-            a_digits = ''.join(filter(str.isdigit, a.telefono))
-            if a_digits.endswith(last_10):
-                allievo = a
-                break
+        if last_10:
+            for a in Allievo.objects.filter(is_active=True):
+                a_digits = ''.join(filter(str.isdigit, a.telefono))
+                if a_digits and a_digits.endswith(last_10):
+                    allievo = a
+                    break
 
         if not allievo:
             return render(request, 'core/rsvp.html', {
@@ -66,7 +70,7 @@ from rest_framework.response import Response
 @permission_classes([IsAuthenticated])
 def wa_status(request):
     try:
-        resp = requests.get('http://127.0.0.1:4002/api/status', timeout=3)
+        resp = requests.get(f'{GATEWAY_URL}/api/status', timeout=3)
         return Response(resp.json())
     except Exception as e:
         return Response({'status': 'OFFLINE', 'error': str(e)})
@@ -76,7 +80,7 @@ def wa_status(request):
 @permission_classes([IsAuthenticated])
 def wa_logout(request):
     try:
-        resp = requests.post('http://127.0.0.1:4002/api/logout', timeout=5)
+        resp = requests.post(f'{GATEWAY_URL}/api/logout', timeout=5)
         data = resp.json()
         return Response({'success': True, 'message': data.get('message', 'Disconnesso')})
     except Exception as e:
@@ -86,7 +90,7 @@ def wa_logout(request):
 @login_required(login_url='/admin/login/')
 def onboarding(request):
     try:
-        resp = requests.get('http://127.0.0.1:4002/api/status', timeout=3)
+        resp = requests.get(f'{GATEWAY_URL}/api/status', timeout=3)
         data = resp.json()
         if data.get('status') == 'CONNECTED':
             return redirect('core:dashboard')
@@ -100,7 +104,7 @@ def onboarding(request):
 @login_required(login_url='/admin/login/')
 def dashboard(request):
     try:
-        resp = requests.get('http://127.0.0.1:4002/api/status', timeout=2)
+        resp = requests.get(f'{GATEWAY_URL}/api/status', timeout=2)
         data = resp.json()
         if data.get('status') != 'CONNECTED':
             return redirect('core:onboarding')
@@ -215,7 +219,7 @@ def update_recurring(request):
             if 'debug_mode' in data:
                 recurring.debug_mode = data.get('debug_mode')
                 try:
-                    requests.post('http://127.0.0.1:4002/api/settings', json={'debug_mode': recurring.debug_mode}, timeout=3)
+                    requests.post(f'{GATEWAY_URL}/api/settings', json={'debug_mode': recurring.debug_mode}, timeout=3)
                 except Exception:
                     pass
 
@@ -278,11 +282,12 @@ def poll_vote_webhook(request):
         last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
 
         allievo = None
-        for a in Allievo.objects.filter(is_active=True):
-            a_digits = ''.join(filter(str.isdigit, a.telefono))
-            if a_digits.endswith(last_10):
-                allievo = a
-                break
+        if last_10:
+            for a in Allievo.objects.filter(is_active=True):
+                a_digits = ''.join(filter(str.isdigit, a.telefono))
+                if a_digits and a_digits.endswith(last_10):
+                    allievo = a
+                    break
 
         if not allievo:
             return JsonResponse({'success': False, 'message': 'Allievo sconosciuto, voto ignorato.'})
@@ -389,4 +394,134 @@ def delete_participant(request):
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)}, status=500)
     return JsonResponse({'success': False}, status=405)
+
+
+@csrf_exempt
+def whatsapp_message_webhook(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        
+        # Estrarre voter_id e text. 
+        voter_id = data.get('voter', data.get('from', data.get('author', '')))
+        text = data.get('text', data.get('body', ''))
+
+        if 'payload' in data:
+            payload = data['payload']
+            voter_id = payload.get('voter', payload.get('author', payload.get('from', voter_id)))
+            if isinstance(voter_id, dict):
+                voter_id = voter_id.get('_serialized', '') or voter_id.get('user', '')
+            text = payload.get('body', payload.get('text', text))
+            
+        with open('webhook_debug.log', 'a') as f:
+            f.write(f"[{timezone.now()}] Ricevuto webhook: voter={voter_id}, text={text}\\n")
+        
+        if not voter_id or not text:
+            return JsonResponse({'success': False, 'message': 'Voter o testo mancante.'})
+
+        phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
+        last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
+
+        allievo = None
+        if last_10:
+            for a in Allievo.objects.filter(is_active=True):
+                a_digits = ''.join(filter(str.isdigit, a.telefono))
+                if a_digits and a_digits.endswith(last_10):
+                    allievo = a
+                    break
+
+        if not allievo:
+            with open('webhook_debug.log', 'a') as f:
+                f.write(f"[{timezone.now()}] Allievo non trovato per voter={voter_id} (last_10={last_10})\\n")
+            return JsonResponse({'success': False, 'message': 'Allievo sconosciuto, messaggio ignorato.'})
+
+        # Cerca la prossima lezione per il corso dell'allievo (o la pi vicina)
+        now = timezone.now()
+        lezione_query = Lezione.objects.filter(data__gte=now.date())
+        if allievo.corso:
+            lezione_query = lezione_query.filter(corso=allievo.corso)
+        prossima_lezione = lezione_query.order_by('data').first()
+
+        if not prossima_lezione:
+            with open('webhook_debug.log', 'a') as f:
+                f.write(f"[{timezone.now()}] Nessuna lezione trovata per {allievo}\\n")
+            return JsonResponse({'success': False, 'message': 'Nessuna lezione imminente trovata per questo allievo.'})
+
+        with open('webhook_debug.log', 'a') as f:
+            f.write(f"[{timezone.now()}] Inizio chiamata Gemini per {allievo} (Lezione: {prossima_lezione})\\n")
+
+        # Usa l'API Key globale
+        sched = RecurringSchedule.objects.first()
+        api_key = sched.gemini_api_key if sched else None
+        
+        if not api_key:
+            return JsonResponse({'success': False, 'message': 'API Key di Gemini non configurata. Salvala dalla sezione Gemini.'})
+
+        # Interrogazione Gemini per interpretare il messaggio testuale
+        prompt = f'''
+Analizza il seguente messaggio inviato da un allievo in risposta all'appello per la lezione di ballo.
+Messaggio: "{text}"
+
+Devi restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o spazi aggiuntivi:
+- PRESENTE_SINGOLO (se ha confermato la sua presenza da solo)
+- ASSENTE_SINGOLO (se ha confermato che non ci sarà, solo per lui/lei)
+- PRESENTE_COPPIA (se ha parlato al plurale, es. "ci siamo", "veniamo", confermando per sé e per il partner)
+- ASSENTE_COPPIA (se ha parlato al plurale, es. "non ci siamo", "saltiamo", confermando l'assenza per entrambi)
+- IGNOTA (se non si capisce se è un'affermazione di presenza/assenza o fa una domanda/battuta)
+'''
+        
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        
+        try:
+            res = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
+            res.raise_for_status()
+            res_data = res.json()
+            risposta_ai = res_data['candidates'][0]['content']['parts'][0]['text'].strip().upper()
+        except Exception as e:
+            risposta_ai = "ERRORE: " + str(e)
+            
+        # Pulisci eventuali formattazioni non volute da Gemini
+        if "PRESENTE_COPPIA" in risposta_ai: esito = "PRESENTE_COPPIA"
+        elif "ASSENTE_COPPIA" in risposta_ai: esito = "ASSENTE_COPPIA"
+        elif "PRESENTE_SINGOLO" in risposta_ai: esito = "PRESENTE_SINGOLO"
+        elif "ASSENTE_SINGOLO" in risposta_ai: esito = "ASSENTE_SINGOLO"
+        elif "ERRORE" in risposta_ai: esito = "ERRORE"
+        else: esito = "IGNOTA"
+        
+        GeminiLog.objects.create(
+            allievo=allievo,
+            lezione=prossima_lezione,
+            testo_originale=text,
+            risposta_ai=risposta_ai,
+            esito_interpretato=esito
+        )
+
+        if 'PRESENTE' in esito or 'ASSENTE' in esito:
+            is_present = 'PRESENTE' in esito
+            is_coppia = 'COPPIA' in esito
+
+            Presenza.objects.update_or_create(
+                lezione=prossima_lezione,
+                allievo=allievo,
+                defaults={'presente': is_present, 'fonte': 'whatsapp'}
+            )
+            
+            # Se la risposta è plurale e l'allievo ha un partner assegnato, aggiorniamo anche il partner
+            if is_coppia and allievo.partner:
+                Presenza.objects.update_or_create(
+                    lezione=prossima_lezione,
+                    allievo=allievo.partner,
+                    defaults={'presente': is_present, 'fonte': 'whatsapp'}
+                )
+                
+        return JsonResponse({'success': True, 'esito': esito, 'allievo': str(allievo)})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
 

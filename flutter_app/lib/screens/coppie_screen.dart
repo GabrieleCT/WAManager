@@ -3,7 +3,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 
 class CoppieScreen extends StatefulWidget {
-  const CoppieScreen({super.key});
+  final bool embedded;
+  const CoppieScreen({super.key, this.embedded = false});
 
   @override
   State<CoppieScreen> createState() => _CoppieScreenState();
@@ -394,16 +395,18 @@ class _CoppieScreenState extends State<CoppieScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gestione Coppie'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica dati',
-            onPressed: () => _loadData(),
-          ),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Gestione Coppie'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Ricarica dati',
+                  onPressed: () => _loadData(),
+                ),
+              ],
+            ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -491,6 +494,12 @@ class _CoppieScreenState extends State<CoppieScreen> {
                                       _searchQuery = '';
                                     });
                                   },
+                                ),
+                              if (widget.embedded)
+                                IconButton(
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  tooltip: 'Ricarica dati',
+                                  onPressed: () => _loadData(),
                                 ),
                             ],
                           ),

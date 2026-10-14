@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
 class AllieviScreen extends StatefulWidget {
-  const AllieviScreen({super.key});
+  final bool embedded;
+  const AllieviScreen({super.key, this.embedded = false});
 
   @override
   State<AllieviScreen> createState() => _AllieviScreenState();
@@ -14,6 +16,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
   List<Allievo> _allievi = [];
   List<Corso> _corsi = [];
   List<Scuola> _scuole = [];
+  List<Pagamento> _pagamenti = [];
   bool _loading = true;
   String _groupBy = 'nessuno'; // 'nessuno', 'corso', 'scuola'
   String _searchQuery = '';
@@ -21,6 +24,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
   String? _selectedCorsoId;
   String _filterWaScuola = 'tutti'; // 'tutti', 'si', 'no'
   String _filterWaCorso = 'tutti';  // 'tutti', 'si', 'no'
+  String _filterNonPagato = 'tutti'; // 'tutti', 'T1', 'T2', 'T3'
+  String _filterStatoTessera = 'tutti'; // 'tutti', 'ok', 'scaduta', 'non_tesserato'
   bool _syncingWhatsapp = false;
 
   List<Allievo> get _filteredAllievi {
@@ -29,6 +34,18 @@ class _AllieviScreenState extends State<AllieviScreen> {
       if (_filterWaScuola == 'no' && a.inGruppoScuolaWhatsapp) return false;
       if (_filterWaCorso == 'si' && !a.inGruppoCorsoWhatsapp) return false;
       if (_filterWaCorso == 'no' && a.inGruppoCorsoWhatsapp) return false;
+      
+      if (_filterNonPagato != 'tutti') {
+        final haPagato = _pagamenti.any((p) => p.allievoId == a.id && p.trimestre == _filterNonPagato);
+        if (haPagato) return false;
+      }
+
+      if (_filterStatoTessera != 'tutti') {
+        if (_filterStatoTessera == 'ok' && !a.hasTesseraOk) return false;
+        if (_filterStatoTessera == 'scaduta' && !a.hasTesseraScaduta) return false;
+        if (_filterStatoTessera == 'non_tesserato' && !a.isNonTesserato) return false;
+      }
+
       return true;
     }).toList();
   }
@@ -51,17 +68,20 @@ class _AllieviScreenState extends State<AllieviScreen> {
     setState(() => _loading = true);
     final corsi = await _api.getCorsi();
     final scuole = await _api.getScuole();
+    final pagamenti = await _api.getPagamenti();
     final allievi = await _api.getAllievi(
       isProspect: false,
       search: _searchQuery.isNotEmpty ? _searchQuery : null,
       scuolaId: _selectedScuolaId,
-      corsoId: _selectedCorsoId,
+      corsoId: _selectedCorsoId == 'nessuno' ? null : _selectedCorsoId,
+      corsoIsNull: _selectedCorsoId == 'nessuno' ? true : null,
     );
     _sortAllievi(allievi);
     if (mounted) {
       setState(() {
         _corsi = corsi;
         _scuole = scuole;
+        _pagamenti = pagamenti;
         _allievi = allievi;
         _loading = false;
       });
@@ -70,15 +90,18 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
   Future<void> _loadAllievi() async {
     setState(() => _loading = true);
+    final pagamenti = await _api.getPagamenti();
     final allievi = await _api.getAllievi(
       isProspect: false,
       search: _searchQuery.isNotEmpty ? _searchQuery : null,
       scuolaId: _selectedScuolaId,
-      corsoId: _selectedCorsoId,
+      corsoId: _selectedCorsoId == 'nessuno' ? null : _selectedCorsoId,
+      corsoIsNull: _selectedCorsoId == 'nessuno' ? true : null,
     );
     _sortAllievi(allievi);
     if (mounted) {
       setState(() {
+        _pagamenti = pagamenti;
         _allievi = allievi;
         _loading = false;
       });
@@ -304,7 +327,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Vuoi aggiungere questo allievo al gruppo WhatsApp del corso?'),
+            const Text('Vuoi aggiungere questo allievo al gruppo WhatsApp del corso?'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
@@ -415,6 +438,11 @@ class _AllieviScreenState extends State<AllieviScreen> {
     final nomeController = TextEditingController(text: allievo?.nome ?? '');
     final cognomeController = TextEditingController(text: allievo?.cognome ?? '');
     final telefonoController = TextEditingController(text: allievo?.telefono ?? '');
+    final tesseraController = TextEditingController(text: allievo?.numeroTessera ?? '');
+    DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
+        ? DateTime.tryParse(allievo.dataEmissioneTessera!)
+        : null;
+
     String ruolo = allievo?.ruolo ?? 'leader';
     String livello = allievo?.livello ?? 'principiante';
     String recensione = allievo?.recensione ?? 'no';
@@ -454,7 +482,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                   ),
                   TextField(
                     controller: telefonoController,
-                    decoration: const InputDecoration(labelText: 'Telefono * (es. +39333...)'),
+                    decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)'),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -519,6 +547,83 @@ class _AllieviScreenState extends State<AllieviScreen> {
                     ],
                     onChanged: (v) => setDlgState(() => selectedCorsoId = v),
                   ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: tesseraController,
+                    decoration: const InputDecoration(
+                      labelText: 'Numero Tessera',
+                      hintText: 'Es. 12345 / 2025-ABC',
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                    title: Text(
+                      dataEmissione == null
+                          ? 'Nessuna data di emissione'
+                          : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
+                        fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
+                      ),
+                    ),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        if (dataEmissione != null)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                            tooltip: 'Rimuovi data emissione',
+                            onPressed: () => setDlgState(() => dataEmissione = null),
+                          ),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.edit_calendar, size: 16),
+                          label: const Text('Data', style: TextStyle(fontSize: 12)),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: dataEmissione ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setDlgState(() => dataEmissione = picked);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (allievo != null && allievo.partnerId != null) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: Text('Coppia con: ${allievo.partnerNomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                        TextButton.icon(
+                          icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                          label: const Text('Rimuovi', style: TextStyle(color: Colors.red)),
+                          onPressed: () async {
+                            await _api.setPartner(allievo.id, null);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _loadAllievi();
+                          },
+                        )
+                      ],
+                    )
+                  ],
                 ],
               ),
             ),
@@ -539,13 +644,36 @@ class _AllieviScreenState extends State<AllieviScreen> {
                     'recensione': recensione,
                     'corso': selectedCorsoId,
                     'is_prospect': false,
+                    'numero_tessera': tesseraController.text.trim(),
+                    'data_emissione_tessera': dataEmissione != null
+                        ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
+                        : null,
                   };
-                  if (allievo == null) {
-                    await _api.createAllievo(data);
-                  } else {
-                    await _api.updateAllievo(allievo.id, data);
+                  final res = allievo == null
+                      ? await _api.createAllievo(data)
+                      : await _api.updateAllievo(allievo.id, data);
+
+                  if (res == null) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Errore durante il salvataggio dell'allievo. Verifica i dati inseriti."),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
                   }
+
                   if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(allievo == null ? 'Allievo salvato con successo!' : 'Allievo aggiornato con successo!'),
+                        backgroundColor: Colors.green.shade800,
+                      ),
+                    );
+                  }
                   _loadAllievi();
                 },
                 child: const Text('Salva'),
@@ -578,6 +706,69 @@ class _AllieviScreenState extends State<AllieviScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
       child: Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildStatoTesseraBadge(Allievo a) {
+    Color bg;
+    Color border;
+    Color fg;
+    IconData icon;
+    String label = a.statoTessera;
+
+    if (a.hasTesseraOk) {
+      bg = Colors.green.shade50;
+      border = Colors.green.shade600;
+      fg = Colors.green.shade900;
+      icon = Icons.verified;
+    } else if (a.hasTesseraScaduta) {
+      bg = Colors.red.shade50;
+      border = Colors.red.shade600;
+      fg = Colors.red.shade900;
+      icon = Icons.error_outline;
+    } else {
+      bg = Colors.orange.shade50;
+      border = Colors.orange.shade600;
+      fg = Colors.orange.shade900;
+      icon = Icons.credit_card_off;
+    }
+
+    String tooltip = label;
+    if (a.numeroTessera.isNotEmpty) {
+      tooltip += ' (N. ${a.numeroTessera})';
+    }
+    if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
+      try {
+        final d = DateTime.parse(a.dataEmissioneTessera!);
+        tooltip += ' - Emessa il ${DateFormat('dd/MM/yyyy').format(d)}';
+      } catch (_) {}
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: border, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -751,10 +942,6 @@ class _AllieviScreenState extends State<AllieviScreen> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.purple.shade100,
-          child: Text(a.cognome.isNotEmpty ? a.cognome[0] : 'A'),
-        ),
         title: Row(children: [Text(a.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)), if (a.partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 16, color: Colors.pink)]]),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -764,6 +951,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
               Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (a.partnerId != null)
               Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
+            if (a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '💳 Tessera: ${a.numeroTessera.isNotEmpty ? a.numeroTessera : "N/D"}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (Emessa: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataEmissioneTessera!) ?? DateTime.now())})" : ""}',
+                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
+                ),
+              ),
           ],
         ),
         trailing: Wrap(
@@ -772,6 +967,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _buildRuoloBadge(a.ruolo),
+            _buildStatoTesseraBadge(a),
             Chip(
               label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 11)),
               visualDensity: VisualDensity.compact,
@@ -825,49 +1021,53 @@ class _AllieviScreenState extends State<AllieviScreen> {
         ? _corsi
         : _corsi.where((c) => c.scuolaId == _selectedScuolaId).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Elenco Allievi'),
-        actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            icon: _syncingWhatsapp
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.sync, size: 18),
-            label: const Text(
-              'Verifica WhatsApp',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            onPressed: _syncingWhatsapp ? null : _syncWhatsapp,
-          ),
-          const SizedBox(width: 8),
-          PopupMenuButton<String>(
-            tooltip: 'Raggruppa per',
-            icon: const Icon(Icons.group_work),
-            onSelected: (val) => setState(() => _groupBy = val),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'nessuno', child: Text('Nessun raggruppamento')),
-              PopupMenuItem(value: 'corso', child: Text('Raggruppa per Corso')),
-              PopupMenuItem(value: 'scuola', child: Text('Raggruppa per Scuola')),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica dati',
-            onPressed: _loadInitialData,
-          ),
+    final actionButtons = [
+      ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green.shade700,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        icon: _syncingWhatsapp
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.sync, size: 18),
+        label: const Text(
+          'Verifica WhatsApp',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        onPressed: _syncingWhatsapp ? null : _syncWhatsapp,
+      ),
+      const SizedBox(width: 8),
+      PopupMenuButton<String>(
+        tooltip: 'Raggruppa per',
+        icon: const Icon(Icons.group_work),
+        onSelected: (val) => setState(() => _groupBy = val),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'nessuno', child: Text('Nessun raggruppamento')),
+          PopupMenuItem(value: 'corso', child: Text('Raggruppa per Corso')),
+          PopupMenuItem(value: 'scuola', child: Text('Raggruppa per Scuola')),
         ],
       ),
+      IconButton(
+        icon: const Icon(Icons.refresh),
+        tooltip: 'Ricarica dati',
+        onPressed: _loadInitialData,
+      ),
+    ];
+
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Elenco Allievi'),
+              actions: actionButtons,
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddEditDialog(),
         icon: const Icon(Icons.person_add),
@@ -875,6 +1075,18 @@ class _AllieviScreenState extends State<AllieviScreen> {
       ),
       body: Column(
         children: [
+          if (widget.embedded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Row(
+                children: [
+                  actionButtons[0], // Verifica WhatsApp
+                  const Spacer(),
+                  actionButtons[2], // PopupMenuButton
+                  actionButtons[3], // Refresh
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
             child: TextField(
@@ -952,6 +1164,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           ),
                           items: [
                             const DropdownMenuItem(value: null, child: Text('Tutti i corsi')),
+                            const DropdownMenuItem(value: 'nessuno', child: Text('Nessun corso')),
                             ...corsiFiltratiPerScuola.map((c) => DropdownMenuItem(
                               value: c.id,
                               child: Text(
@@ -1004,12 +1217,58 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           onChanged: (v) => setState(() => _filterWaCorso = v!),
                         );
 
+                        final nonPagatoDropdown = DropdownButtonFormField<String>(
+                          value: _filterNonPagato,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Stato Pagamento',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.money_off, size: 20, color: Colors.red),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'tutti', child: Text('Tutti (Nessun filtro)')),
+                            DropdownMenuItem(value: 'T1', child: Text('Non ha pagato T1')),
+                            DropdownMenuItem(value: 'T2', child: Text('Non ha pagato T2')),
+                            DropdownMenuItem(value: 'T3', child: Text('Non ha pagato T3')),
+                          ],
+                          onChanged: (v) => setState(() => _filterNonPagato = v!),
+                        );
+
+                        final statoTesseraDropdown = DropdownButtonFormField<String>(
+                          value: _filterStatoTessera,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Stato Tessera',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.badge, size: 20, color: Colors.blueGrey),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'tutti', child: Text('Tutte le tessere')),
+                            DropdownMenuItem(value: 'ok', child: Text('TESSERA OK')),
+                            DropdownMenuItem(value: 'scaduta', child: Text('TESSERA SCADUTA')),
+                            DropdownMenuItem(value: 'non_tesserato', child: Text('NON TESSERATO')),
+                          ],
+                          onChanged: (v) => setState(() => _filterStatoTessera = v!),
+                        );
+
                         if (isCompact) {
                           return Column(
                             children: [
                               scuolaDropdown,
                               const SizedBox(height: 8),
                               corsoDropdown,
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(child: nonPagatoDropdown),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: statoTesseraDropdown),
+                                ],
+                              ),
                               const SizedBox(height: 8),
                               Row(
                                 children: [
@@ -1028,6 +1287,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                   Expanded(child: scuolaDropdown),
                                   const SizedBox(width: 12),
                                   Expanded(child: corsoDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: statoTesseraDropdown),
                                 ],
                               ),
                               const SizedBox(height: 8),
@@ -1036,6 +1297,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                   Expanded(child: waScuolaDropdown),
                                   const SizedBox(width: 12),
                                   Expanded(child: waCorsoDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: nonPagatoDropdown),
                                 ],
                               ),
                             ],
@@ -1077,6 +1340,33 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         Chip(
                           visualDensity: VisualDensity.compact,
                           backgroundColor: Colors.green.shade50,
+                          avatar: Icon(Icons.verified, size: 16, color: Colors.green.shade800),
+                          label: Text(
+                            'Tessera OK: ${allieviVisualizzati.where((a) => a.hasTesseraOk).length}',
+                            style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Colors.red.shade50,
+                          avatar: Icon(Icons.error_outline, size: 16, color: Colors.red.shade800),
+                          label: Text(
+                            'Tessera Scaduta: ${allieviVisualizzati.where((a) => a.hasTesseraScaduta).length}',
+                            style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Colors.orange.shade50,
+                          avatar: Icon(Icons.credit_card_off, size: 16, color: Colors.orange.shade800),
+                          label: Text(
+                            'Non Tesserati: ${allieviVisualizzati.where((a) => a.isNonTesserato).length}',
+                            style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: Colors.green.shade50,
                           avatar: Icon(Icons.check_circle, size: 16, color: Colors.green.shade800),
                           label: Text(
                             'WA Scuola: ${allieviVisualizzati.where((a) => a.inGruppoScuolaWhatsapp).length}',
@@ -1092,7 +1382,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w600),
                           ),
                         ),
-                        if (_selectedScuolaId != null || _selectedCorsoId != null || _filterWaScuola != 'tutti' || _filterWaCorso != 'tutti')
+                        if (_selectedScuolaId != null || _selectedCorsoId != null || _filterWaScuola != 'tutti' || _filterWaCorso != 'tutti' || _filterNonPagato != 'tutti' || _filterStatoTessera != 'tutti')
                           TextButton.icon(
                             icon: const Icon(Icons.filter_alt_off, size: 18),
                             label: const Text('Azzera filtri'),
@@ -1102,6 +1392,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                 _selectedCorsoId = null;
                                 _filterWaScuola = 'tutti';
                                 _filterWaCorso = 'tutti';
+                                _filterNonPagato = 'tutti';
+                                _filterStatoTessera = 'tutti';
                               });
                               _loadAllievi();
                             },

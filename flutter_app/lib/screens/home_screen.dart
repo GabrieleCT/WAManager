@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
 import 'presenze_screen.dart';
-import 'sondaggio_mattutino_screen.dart';
-import 'jolly_panel_screen.dart';
+import 'messaggistica_screen.dart';
 import 'lezioni_screen.dart';
-import 'allievi_screen.dart';
-import 'prospects_screen.dart';
+import 'anagrafica_allievi_screen.dart';
 import 'scuole_screen.dart';
 import 'corsi_screen.dart';
 import 'argomenti_screen.dart';
 import 'pagamenti_screen.dart';
-import 'import_export_screen.dart';
 import 'login_screen.dart';
-import 'wa_screen.dart';
-import 'coppie_screen.dart';
+import 'impostazioni_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,18 +24,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _pages = const [
     PresenzeScreen(),
-    SondaggioMattutinoScreen(),
-    JollyPanelScreen(),
+    MessaggisticaScreen(),
     LezioniScreen(),
-    AllieviScreen(),
-    ProspectsScreen(),
-    CoppieScreen(),
+    AnagraficaAllieviScreen(),
     ScuoleScreen(),
     CorsiScreen(),
     ArgomentiScreen(),
     PagamentiScreen(),
-    ImportExportScreen(),
-    WhatsAppScreen(),
+    ImpostazioniScreen(),
   ];
 
   void _logout() async {
@@ -81,37 +74,58 @@ class _HomeScreenState extends State<HomeScreen> {
                         selectedIndex: _currentIndex,
                         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
                         labelType: NavigationRailLabelType.all,
-                        leading: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Icon(Icons.music_note, color: Colors.deepPurple, size: 32),
+                        leading: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
                         ),
                         trailing: Expanded(
                           child: Align(
                             alignment: Alignment.bottomCenter,
                             child: Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: IconButton(
-                                icon: const Icon(Icons.logout, color: Colors.red),
-                                tooltip: 'Logout',
-                                onPressed: _logout,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FutureBuilder<PackageInfo>(
+                                    future: PackageInfo.fromPlatform(),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.hasData) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 8),
+                                          child: Text('v${snapshot.data!.version}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                        );
+                                      }
+                                      return const SizedBox();
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.logout, color: Colors.red),
+                                    tooltip: 'Logout',
+                                    onPressed: _logout,
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
                         destinations: const [
                           NavigationRailDestination(icon: Icon(Icons.how_to_reg), label: Text('Presenze')),
-                          NavigationRailDestination(icon: Icon(Icons.poll), label: Text('Sondaggio')),
-                          NavigationRailDestination(icon: Icon(Icons.star), label: Text('Jolly')),
+                          NavigationRailDestination(icon: Icon(Icons.chat), label: Text('Messaggistica')),
                           NavigationRailDestination(icon: Icon(Icons.event), label: Text('Lezioni')),
-                          NavigationRailDestination(icon: Icon(Icons.people), label: Text('Allievi')),
-                          NavigationRailDestination(icon: Icon(Icons.contact_mail), label: Text('Prospect')),
-                          NavigationRailDestination(icon: Icon(Icons.favorite), label: Text('Coppie')),
+                          NavigationRailDestination(icon: Icon(Icons.people_alt), label: Text('Anagrafica')),
                           NavigationRailDestination(icon: Icon(Icons.business), label: Text('Scuole')),
                           NavigationRailDestination(icon: Icon(Icons.class_), label: Text('Corsi')),
                           NavigationRailDestination(icon: Icon(Icons.menu_book), label: Text('Argomenti')),
                           NavigationRailDestination(icon: Icon(Icons.euro), label: Text('Pagamenti')),
-                          NavigationRailDestination(icon: Icon(Icons.import_export), label: Text('Imp/Exp')),
-                          NavigationRailDestination(icon: Icon(Icons.qr_code_scanner), label: Text('WhatsApp')),
+                          NavigationRailDestination(icon: Icon(Icons.settings), label: Text('Impostazioni')),
                         ],
                       ),
                     ),
@@ -132,16 +146,28 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.deepPurple),
+            DrawerHeader(
+              decoration: BoxDecoration(color: Theme.of(context).primaryColor),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Icon(Icons.music_note, size: 48, color: Colors.white),
-                  SizedBox(height: 8),
-                  Text('WAManager Tango', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text('Gestionale Scuola Tango', style: TextStyle(color: Colors.white70)),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.all(4),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 60,
+                        height: 48,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('TantoTango Manager', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text('Gestionale scuola di ballo', style: TextStyle(color: Colors.white70)),
                 ],
               ),
             ),
@@ -155,8 +181,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.poll),
-              title: const Text('Sondaggio Mattutino'),
+              leading: const Icon(Icons.chat),
+              title: const Text('Messaggistica'),
               selected: _currentIndex == 1,
               onTap: () {
                 setState(() => _currentIndex = 1);
@@ -164,8 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.star),
-              title: const Text('Jolly WA'),
+              leading: const Icon(Icons.event),
+              title: const Text('Lezioni'),
               selected: _currentIndex == 2,
               onTap: () {
                 setState(() => _currentIndex = 2);
@@ -173,8 +199,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.event),
-              title: const Text('Lezioni'),
+              leading: const Icon(Icons.people_alt),
+              title: const Text('Anagrafica Allievi'),
               selected: _currentIndex == 3,
               onTap: () {
                 setState(() => _currentIndex = 3);
@@ -182,8 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text('Allievi'),
+              leading: const Icon(Icons.business),
+              title: const Text('Scuole'),
               selected: _currentIndex == 4,
               onTap: () {
                 setState(() => _currentIndex = 4);
@@ -191,8 +217,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.contact_mail),
-              title: const Text('Prospects'),
+              leading: const Icon(Icons.class_),
+              title: const Text('Corsi'),
               selected: _currentIndex == 5,
               onTap: () {
                 setState(() => _currentIndex = 5);
@@ -200,8 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.favorite),
-              title: const Text('Coppie'),
+              leading: const Icon(Icons.menu_book),
+              title: const Text('Argomenti'),
               selected: _currentIndex == 6,
               onTap: () {
                 setState(() => _currentIndex = 6);
@@ -209,8 +235,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.business),
-              title: const Text('Scuole'),
+              leading: const Icon(Icons.euro),
+              title: const Text('Pagamenti'),
               selected: _currentIndex == 7,
               onTap: () {
                 setState(() => _currentIndex = 7);
@@ -218,51 +244,27 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.class_),
-              title: const Text('Corsi'),
+              leading: const Icon(Icons.settings),
+              title: const Text('Impostazioni'),
               selected: _currentIndex == 8,
               onTap: () {
                 setState(() => _currentIndex = 8);
                 Navigator.pop(context);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.menu_book),
-              title: const Text('Argomenti'),
-              selected: _currentIndex == 9,
-              onTap: () {
-                setState(() => _currentIndex = 9);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.euro),
-              title: const Text('Pagamenti'),
-              selected: _currentIndex == 10,
-              onTap: () {
-                setState(() => _currentIndex = 10);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.import_export),
-              title: const Text('Import / Export'),
-              selected: _currentIndex == 11,
-              onTap: () {
-                setState(() => _currentIndex = 11);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.qr_code_scanner),
-              title: const Text('WhatsApp'),
-              selected: _currentIndex == 12,
-              onTap: () {
-                setState(() => _currentIndex = 12);
-                Navigator.pop(context);
-              },
-            ),
             const Divider(),
+            FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text('v${snapshot.data!.version}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  );
+                }
+                return const SizedBox();
+              }
+            ),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text('Logout', style: TextStyle(color: Colors.red)),
@@ -275,22 +277,19 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.deepPurple,
+        selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey,
         onTap: (idx) => setState(() => _currentIndex = idx),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.how_to_reg), label: 'Presenze'),
-          BottomNavigationBarItem(icon: Icon(Icons.poll), label: 'Sondaggio'),
-          BottomNavigationBarItem(icon: Icon(Icons.star), label: 'Jolly'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Messaggistica'),
           BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Lezioni'),
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Allievi'),
-          BottomNavigationBarItem(icon: Icon(Icons.contact_mail), label: 'Prospect'),
+          BottomNavigationBarItem(icon: Icon(Icons.people_alt), label: 'Anagrafica'),
           BottomNavigationBarItem(icon: Icon(Icons.business), label: 'Scuole'),
           BottomNavigationBarItem(icon: Icon(Icons.class_), label: 'Corsi'),
           BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Argomenti'),
           BottomNavigationBarItem(icon: Icon(Icons.euro), label: 'Pagamenti'),
-          BottomNavigationBarItem(icon: Icon(Icons.import_export), label: 'Imp/Exp'),
-          BottomNavigationBarItem(icon: Icon(Icons.qr_code_scanner), label: 'WhatsApp'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
         ],
       ),
     );

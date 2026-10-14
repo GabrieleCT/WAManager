@@ -21,6 +21,8 @@ router.register(r'logs', api_views.MessageLogViewSet, basename='log')
 router.register(r'matches', api_views.MatchViewSet, basename='match')
 router.register(r'schedules', api_views.RecurringScheduleViewSet, basename='schedule')
 router.register(r'sondaggio-mattutino', api_views.SondaggioMattutinoViewSet, basename='sondaggio-mattutino')
+router.register(r'gemini-logs', api_views.GeminiLogViewSet, basename='gemini-log')
+router.register(r'document-templates', api_views.DocumentTemplateViewSet, basename='document-template')
 
 
 urlpatterns = [
@@ -61,6 +63,7 @@ urlpatterns = [
     path('api/wa-status/', views.wa_status, name='wa_status'),
     path('api/wa-logout/', views.wa_logout, name='wa_logout'),
     path('api/webhook/poll-vote/', views.poll_vote_webhook, name='poll_vote_webhook'),
+    path('api/webhook/whatsapp-message/', views.whatsapp_message_webhook, name='whatsapp_message_webhook'),
 
     # Viste legacy per dashboard html
     path('api/update-group/', views.update_group, name='update_group'),

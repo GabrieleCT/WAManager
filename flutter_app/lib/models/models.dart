@@ -4,6 +4,9 @@ class Scuola {
   final String sede;
   final String gruppoWhatsapp;
   final int corsiCount;
+  final int allieviCount;
+  final int prospectsCount;
+  final int pagantiCount;
 
   Scuola({
     required this.id,
@@ -11,6 +14,9 @@ class Scuola {
     required this.sede,
     required this.gruppoWhatsapp,
     this.corsiCount = 0,
+    this.allieviCount = 0,
+    this.prospectsCount = 0,
+    this.pagantiCount = 0,
   });
 
   factory Scuola.fromJson(Map<String, dynamic> json) {
@@ -20,6 +26,9 @@ class Scuola {
       sede: json['sede'] ?? '',
       gruppoWhatsapp: json['gruppo_whatsapp'] ?? '',
       corsiCount: json['corsi_count'] ?? 0,
+      allieviCount: json['allievi_count'] ?? 0,
+      prospectsCount: json['prospects_count'] ?? 0,
+      pagantiCount: json['paganti_count'] ?? 0,
     );
   }
 
@@ -41,6 +50,8 @@ class Corso {
   final String annoAccademico;
   final String gruppoWhatsapp;
   final int allieviCount;
+  final int prospectsCount;
+  final int pagantiCount;
 
   Corso({
     required this.id,
@@ -53,6 +64,8 @@ class Corso {
     required this.annoAccademico,
     required this.gruppoWhatsapp,
     this.allieviCount = 0,
+    this.prospectsCount = 0,
+    this.pagantiCount = 0,
   });
 
   String get giornoSettimanaDisplay {
@@ -80,6 +93,8 @@ class Corso {
       annoAccademico: json['anno_accademico'] ?? '2025/2026',
       gruppoWhatsapp: json['gruppo_whatsapp'] ?? '',
       allieviCount: json['allievi_count'] ?? 0,
+      prospectsCount: json['prospects_count'] ?? 0,
+      pagantiCount: json['paganti_count'] ?? 0,
     );
   }
 
@@ -149,6 +164,9 @@ class Allievo {
   final bool inGruppoCorsoWhatsapp;
   final String? corsoGruppoWhatsapp;
   final bool corsoHasWhatsapp;
+  final String numeroTessera;
+  final String? dataEmissioneTessera;
+  final String statoTessera;
 
   Allievo({
     required this.id,
@@ -175,10 +193,17 @@ class Allievo {
     this.inGruppoCorsoWhatsapp = false,
     this.corsoGruppoWhatsapp,
     this.corsoHasWhatsapp = false,
+    this.numeroTessera = '',
+    this.dataEmissioneTessera,
+    this.statoTessera = 'NON TESSERATO',
   });
 
   String get nomeCompleto => '$nome $cognome';
   String get partnerNomeCompleto => partnerNome != null ? '$partnerNome $partnerCognome' : '';
+
+  bool get hasTesseraOk => statoTessera == 'TESSERA OK';
+  bool get hasTesseraScaduta => statoTessera == 'TESSERA SCADUTA' || statoTessera == 'TESSERA SCADUTO';
+  bool get isNonTesserato => statoTessera == 'NON TESSERATO';
 
   String get sortName {
     final myName = '$cognome $nome'.toLowerCase().trim();
@@ -213,6 +238,9 @@ class Allievo {
       inGruppoCorsoWhatsapp: json['in_gruppo_corso_whatsapp'] ?? false,
       corsoGruppoWhatsapp: json['corso_gruppo_whatsapp'],
       corsoHasWhatsapp: json['corso_has_whatsapp'] ?? false,
+      numeroTessera: json['numero_tessera'] ?? '',
+      dataEmissioneTessera: json['data_emissione_tessera'],
+      statoTessera: json['stato_tessera'] ?? 'NON TESSERATO',
     );
   }
 
@@ -228,6 +256,8 @@ class Allievo {
     'is_prospect': isProspect,
     'note': note,
     'in_gruppo_scuola_whatsapp': inGruppoScuolaWhatsapp,
+    'numero_tessera': numeroTessera,
+    'data_emissione_tessera': dataEmissioneTessera,
   };
 }
 
@@ -357,7 +387,7 @@ class Presenza {
     return myName.compareTo(pName) < 0 ? myName : pName;
   }
 
-  bool presente;
+  bool? presente;
   String fonte;
 
   Presenza({
@@ -373,7 +403,7 @@ class Presenza {
     this.isJolly = false,
     this.allievoPartnerId,
     this.allievoPartnerNome,
-    required this.presente,
+    this.presente,
     this.fonte = 'manuale',
   });
 
@@ -391,7 +421,7 @@ class Presenza {
       isJolly: json['is_jolly'] ?? false,
       allievoPartnerId: json['allievo_partner_id'],
       allievoPartnerNome: json['allievo_partner_nome'],
-      presente: json['presente'] ?? false,
+      presente: json['presente'],
       fonte: json['fonte'] ?? 'manuale',
     );
   }
@@ -461,7 +491,11 @@ class SondaggioMattutinoConfig {
   final bool isPoll;
   final String pollOpzione1;
   final String pollOpzione2;
+  final int oreAscoltoRisposte;
   final bool isActive;
+  final bool sollecitoAttivo;
+  final String sollecitoOrario;
+  final String sollecitoTesto;
   final String createdAt;
   final String updatedAt;
 
@@ -476,7 +510,11 @@ class SondaggioMattutinoConfig {
     this.isPoll = true,
     this.pollOpzione1 = 'Ci sono! 🕺💃',
     this.pollOpzione2 = 'Non ci sono 🚫',
+    this.oreAscoltoRisposte = 5,
     this.isActive = true,
+    this.sollecitoAttivo = false,
+    this.sollecitoOrario = '16:00',
+    this.sollecitoTesto = '',
     this.createdAt = '',
     this.updatedAt = '',
   });
@@ -493,7 +531,11 @@ class SondaggioMattutinoConfig {
       isPoll: json['is_poll'] ?? true,
       pollOpzione1: json['poll_opzione_1'] ?? 'Ci sono! 🕺💃',
       pollOpzione2: json['poll_opzione_2'] ?? 'Non ci sono 🚫',
+      oreAscoltoRisposte: json['ore_ascolto_risposte'] ?? 5,
       isActive: json['is_active'] ?? true,
+      sollecitoAttivo: json['sollecito_attivo'] ?? false,
+      sollecitoOrario: json['sollecito_orario'] ?? '16:00',
+      sollecitoTesto: json['sollecito_testo'] ?? '',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );
@@ -507,8 +549,58 @@ class SondaggioMattutinoConfig {
     'is_poll': isPoll,
     'poll_opzione_1': pollOpzione1,
     'poll_opzione_2': pollOpzione2,
+    'ore_ascolto_risposte': oreAscoltoRisposte,
     'is_active': isActive,
+    'sollecito_attivo': sollecitoAttivo,
+    'sollecito_orario': sollecitoOrario,
+    'sollecito_testo': sollecitoTesto,
   };
+}
+
+class DocumentTemplate {
+  final String id;
+  final String chiave;
+  final String nome;
+  final String descrizione;
+  final String filename;
+  final int fileSize;
+  final String? fileUrl;
+  final String updatedAt;
+
+  DocumentTemplate({
+    required this.id,
+    required this.chiave,
+    required this.nome,
+    required this.descrizione,
+    this.filename = '',
+    this.fileSize = 0,
+    this.fileUrl,
+    this.updatedAt = '',
+  });
+
+  bool get hasFile => filename.isNotEmpty && fileUrl != null;
+
+  String get fileSizeFormatted {
+    if (fileSize <= 0) return '';
+    if (fileSize < 1024) return '$fileSize B';
+    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    return '${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+
+  factory DocumentTemplate.fromJson(Map<String, dynamic> json) {
+    return DocumentTemplate(
+      id: json['id'] ?? '',
+      chiave: json['chiave'] ?? '',
+      nome: json['nome'] ?? '',
+      descrizione: json['descrizione'] ?? '',
+      filename: json['filename'] ?? '',
+      fileSize: json['file_size'] is int
+          ? json['file_size']
+          : int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
+      fileUrl: json['file_url'],
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
 }
 
 

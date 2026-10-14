@@ -5,7 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 
 class ImportExportScreen extends StatefulWidget {
-  const ImportExportScreen({super.key});
+  final bool embedded;
+  const ImportExportScreen({super.key, this.embedded = false});
 
   @override
   State<ImportExportScreen> createState() => _ImportExportScreenState();
@@ -168,6 +169,41 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Theme.of(context).primaryColor,
+              unselectedLabelColor: Colors.grey.shade600,
+              indicatorColor: Theme.of(context).primaryColor,
+              indicatorWeight: 3,
+              tabs: const [
+                Tab(icon: Icon(Icons.download), text: 'Esporta Dati (Backup Globale)'),
+                Tab(icon: Icon(Icons.upload), text: 'Importa Dati (Ripristino Globale)'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildExportTab(),
+                _buildImportTab(),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Backup & Ripristino Globale'),

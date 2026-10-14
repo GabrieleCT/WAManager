@@ -9,21 +9,26 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 import datetime
 from django.utils import timezone
 
+from django.http import FileResponse, Http404
+
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    SondaggioMattutinoConfig
+    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate
 )
 from .serializers import (
     ScuolaSerializer, CorsoSerializer, ArgomentoSerializer,
     AllievoSerializer, JollySerializer, LezioneSerializer,
     PresenzaSerializer, PagamentoSerializer, MessageTemplateSerializer,
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer,
-    SondaggioMattutinoConfigSerializer
+    SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer
 )
 from .services import generate_matches
 from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
-from .tasks import invia_sondaggio_manuale_corsi, invia_sondaggio_mattutino_giornaliero
+from .tasks import (
+    invia_sondaggio_manuale_corsi, invia_sondaggio_mattutino_giornaliero,
+    invia_messaggio_sollecito, invia_sollecito_giornaliero
+)
 
 
 
@@ -97,6 +102,54 @@ class ScuolaViewSet(viewsets.ModelViewSet):
     search_fields = ['nome', 'sede']
     ordering_fields = ['nome']
 
+    @action(detail=True, methods=['get'], url_path='check-whatsapp')
+    def check_whatsapp(self, request, pk=None):
+        scuola = self.get_object()
+        if not scuola.gruppo_whatsapp:
+            return Response({'error': 'Nessun gruppo WhatsApp associato a questa scuola.'}, status=400)
+            
+        from .wa_client import get_group_participants
+        wa_data = get_group_participants(scuola.gruppo_whatsapp)
+        
+        if not wa_data.get('success'):
+            return Response({'error': f"Errore gateway WhatsApp: {wa_data.get('error', 'Sconosciuto')}"}, status=500)
+            
+        participants = wa_data.get('participants', [])
+        
+        wa_phones = []
+        for p in participants:
+            # Nuova API WhatsApp Node.js restituisce `phone` separato da `id` se `id` è in formato @lid
+            phone = p.get('phone')
+            if phone:
+                wa_phones.append(phone)
+            else:
+                jid = p.get('id', '')
+                if '@' in jid and not jid.endswith('@lid'):
+                    num = jid.split('@')[0]
+                    wa_phones.append(num)
+                
+        allievi = Allievo.objects.filter(is_active=True)
+        db_phones_raw = list(allievi.values_list('telefono', flat=True))
+        
+        db_phones_set = set()
+        for tel in db_phones_raw:
+            if not tel: continue
+            clean = ''.join(c for c in tel if c.isdigit())
+            db_phones_set.add(clean)
+            if not clean.startswith('39'):
+                db_phones_set.add('39' + clean)
+                
+        unregistered = []
+        for num in wa_phones:
+            if num not in db_phones_set:
+                unregistered.append(num)
+                
+        return Response({
+            'total_participants': len(participants),
+            'unregistered_count': len(unregistered),
+            'unregistered_numbers': unregistered
+        })
+
 
 class CorsoViewSet(viewsets.ModelViewSet):
     queryset = Corso.objects.select_related('scuola').all()
@@ -120,9 +173,43 @@ class AllievoViewSet(viewsets.ModelViewSet):
     queryset = Allievo.objects.select_related('corso', 'corso__scuola').all()
     serializer_class = AllievoSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['corso', 'corso__scuola', 'is_prospect', 'ruolo', 'livello', 'recensione', 'is_active']
-    search_fields = ['nome', 'cognome', 'telefono', 'note']
+    filterset_fields = {
+        'corso': ['exact', 'isnull'],
+        'corso__scuola': ['exact'],
+        'is_prospect': ['exact'],
+        'ruolo': ['exact'],
+        'livello': ['exact'],
+        'recensione': ['exact'],
+        'is_active': ['exact']
+    }
+    search_fields = ['nome', 'cognome', 'telefono', 'note', 'numero_tessera']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        stato_tessera = self.request.query_params.get('stato_tessera')
+        if stato_tessera:
+            from datetime import date, timedelta
+            from django.db.models import Q
+            one_year_ago = date.today() - timedelta(days=365)
+            st = stato_tessera.lower().strip()
+            if 'ok' in st:
+                qs = qs.exclude(numero_tessera='').filter(
+                    numero_tessera__isnull=False,
+                    data_emissione_tessera__isnull=False,
+                    data_emissione_tessera__gte=one_year_ago
+                )
+            elif 'scadut' in st:
+                qs = qs.exclude(numero_tessera='').filter(
+                    numero_tessera__isnull=False,
+                    data_emissione_tessera__isnull=False,
+                    data_emissione_tessera__lt=one_year_ago
+                )
+            elif 'non' in st or 'tesserato' in st:
+                qs = qs.filter(
+                    Q(numero_tessera='') | Q(numero_tessera__isnull=True) | Q(data_emissione_tessera__isnull=True)
+                )
+        return qs
 
     @action(detail=False, methods=['get'])
     def prospects(self, request):
@@ -436,6 +523,44 @@ class AllievoViewSet(viewsets.ModelViewSet):
                 'invite_link': res.get('inviteLink')
             }, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'], url_path='invia-sollecito')
+    def invia_sollecito(self, request, pk=None):
+        """
+        Invia un messaggio di sollecito risposta WhatsApp al singolo allievo o prospect.
+        Utilizza il template configurato oppure il testo personalizzato passato nel body.
+        """
+        allievo = self.get_object()
+        telefono = (allievo.telefono or '').strip()
+        if not telefono:
+            return Response(
+                {'success': False, 'error': f"Nessun numero di telefono registrato per {allievo.nome} {allievo.cognome}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        testo = request.data.get('testo', '').strip()
+        if not testo:
+            cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+            tmpl = cfg.sollecito_testo if (cfg and cfg.sollecito_testo) else "Ciao <nome_allievo>, ci sei stasera al corso?"
+            testo = tmpl.replace('<nome_allievo>', allievo.nome)\
+                        .replace('{allievo}', allievo.nome)\
+                        .replace('{nome}', allievo.nome)\
+                        .replace('<nome>', allievo.nome)
+
+        res = send_whatsapp_message(
+            to=telefono,
+            message=testo,
+            is_group=False
+        )
+        is_ok = bool(res.get('success'))
+        return Response({
+            'success': is_ok,
+            'allievo_id': str(allievo.id),
+            'allievo_nome': f"{allievo.nome} {allievo.cognome}",
+            'telefono': telefono,
+            'messaggio': testo,
+            'error': res.get('error')
+        })
+
 
 
 
@@ -470,15 +595,25 @@ class LezioneViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def presenze(self, request, pk=None):
-        """Restituisce le presenze per la lezione selezionata."""
+        """Restituisce le presenze per la lezione selezionata, auto-inizializzando gli allievi mancanti."""
         lezione = self.get_object()
+        
+        # Auto-inizializzazione
+        allievi = Allievo.objects.filter(corso=lezione.corso, is_active=True)
+        for allievo in allievi:
+            Presenza.objects.get_or_create(
+                lezione=lezione,
+                allievo=allievo,
+                defaults={'presente': None, 'fonte': 'manuale'}
+            )
+            
         presenze = Presenza.objects.filter(lezione=lezione).select_related('allievo')
         serializer = PresenzaSerializer(presenze, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
     def init_presenze(self, request, pk=None):
-        """Inizializza le presenze per tutti gli allievi (effettivi e prospect) del corso della lezione."""
+        """Inizializza le presenze per tutti gli allievi."""
         lezione = self.get_object()
         allievi = Allievo.objects.filter(corso=lezione.corso, is_active=True)
         created_count = 0
@@ -486,7 +621,7 @@ class LezioneViewSet(viewsets.ModelViewSet):
             _, created = Presenza.objects.get_or_create(
                 lezione=lezione,
                 allievo=allievo,
-                defaults={'presente': False}
+                defaults={'presente': None, 'fonte': 'manuale'}
             )
             if created:
                 created_count += 1
@@ -774,9 +909,44 @@ def sync_daemon_schedule(orario_str):
         print(f"Errore sincronizzazione schedule Django-Q: {e}")
 
 
+def sync_sollecito_schedule(sollecito_orario_str, attivo=True):
+    """
+    Sincronizza o aggiorna l'orario del task pianificato per il sollecito pomeridiano in Django-Q.
+    """
+    try:
+        from django_q.models import Schedule
+        sched = Schedule.objects.filter(func='core.tasks.invia_sollecito_giornaliero').first()
+        if not attivo:
+            if sched:
+                sched.delete()
+            return
+
+        parts = (sollecito_orario_str or '16:00').split(':')
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+
+        now = timezone.localtime(timezone.now())
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time <= now:
+            target_time += datetime.timedelta(days=1)
+
+        if sched:
+            sched.next_run = target_time
+            sched.save()
+        else:
+            Schedule.objects.create(
+                name='Sollecito Presenze Giornaliero',
+                func='core.tasks.invia_sollecito_giornaliero',
+                schedule_type=Schedule.DAILY,
+                next_run=target_time
+            )
+    except Exception as e:
+        print(f"Errore sincronizzazione sollecito Django-Q: {e}")
+
+
 class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
     """
-    CRUD configurazione sondaggio mattutino, impostazione orario/giorni demone e invio manuale.
+    CRUD configurazione sondaggio mattutino, impostazione orario/giorni demone, sollecito e invio manuale.
     """
     queryset = SondaggioMattutinoConfig.objects.all().select_related('corso', 'corso__scuola')
     serializer_class = SondaggioMattutinoConfigSerializer
@@ -794,7 +964,9 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
                 is_poll=True,
                 poll_opzione_1="Ci sono! 🕺💃",
                 poll_opzione_2="Non ci sono 🚫",
-                is_active=True
+                is_active=True,
+                sollecito_attivo=False,
+                sollecito_orario='16:00'
             )
 
         if request.method == 'POST':
@@ -813,9 +985,16 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
                 config.poll_opzione_2 = data['poll_opzione_2']
             if 'is_active' in data:
                 config.is_active = bool(data['is_active'])
+            if 'sollecito_attivo' in data:
+                config.sollecito_attivo = bool(data['sollecito_attivo'])
+            if 'sollecito_orario' in data:
+                config.sollecito_orario = data['sollecito_orario']
+            if 'sollecito_testo' in data:
+                config.sollecito_testo = data['sollecito_testo']
 
             config.save()
             sync_daemon_schedule(config.orario)
+            sync_sollecito_schedule(config.sollecito_orario, config.sollecito_attivo)
 
         serializer = self.get_serializer(config)
         return Response(serializer.data)
@@ -857,4 +1036,83 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['post'], url_path='invia-sollecito-ora')
+    def invia_sollecito_ora(self, request):
+        """Invia immediatamente il messaggio di sollecito per oggi o per i corsi selezionati."""
+        try:
+            corso_ids = request.data.get('corso_ids', None)
+            res = invia_messaggio_sollecito(corso_ids=corso_ids)
+            return Response(res)
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class GeminiLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = GeminiLog.objects.all().order_by('-timestamp')
+    serializer_class = GeminiLogSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['esito_interpretato', 'allievo', 'lezione']
+    ordering_fields = ['timestamp']
+
+
+class DocumentTemplateViewSet(viewsets.ModelViewSet):
+    queryset = DocumentTemplate.objects.all()
+    serializer_class = DocumentTemplateSerializer
+    lookup_field = 'chiave'
+
+    def list(self, request, *args, **kwargs):
+        # Assicura che i template predefiniti esistano
+        predefiniti = [
+            ('ricevuta', 'Template Ricevuta Pagamento', 'Template PDF utilizzato per la generazione delle ricevute di pagamento quote e corsi.'),
+            ('modulo_tesseramento', 'Modulo di Tesseramento', 'Modulo PDF ufficiale per la richiesta o rinnovo del tesseramento degli allievi.')
+        ]
+        for chiave, nome, desc in predefiniti:
+            DocumentTemplate.objects.get_or_create(
+                chiave=chiave,
+                defaults={'nome': nome, 'descrizione': desc}
+            )
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='upload')
+    def upload_file(self, request, chiave=None):
+        template = self.get_object()
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'success': False, 'error': 'Nessun file fornito.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Se esiste già un file, rimuovilo prima dal disco
+        if template.file:
+            try:
+                template.file.delete(save=False)
+            except Exception:
+                pass
+
+        template.file = file_obj
+        template.save()
+
+        serializer = self.get_serializer(template)
+        return Response({'success': True, 'template': serializer.data})
+
+    @action(detail=True, methods=['post', 'delete'], url_path='remove')
+    def remove_file(self, request, chiave=None):
+        template = self.get_object()
+        if template.file:
+            try:
+                template.file.delete(save=False)
+            except Exception:
+                pass
+            template.file = None
+            template.save()
+
+        serializer = self.get_serializer(template)
+        return Response({'success': True, 'template': serializer.data})
+
+    @action(detail=True, methods=['get'], url_path='file', permission_classes=[permissions.AllowAny])
+    def download_file(self, request, chiave=None):
+        template = self.get_object()
+        if not template.file:
+            raise Http404("Nessun file associato a questo template.")
+        try:
+            return FileResponse(template.file.open('rb'), content_type='application/pdf', filename=template.filename)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
 

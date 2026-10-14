@@ -6,6 +6,206 @@ import 'package:printing/printing.dart';
 import '../models/models.dart';
 
 class PdfReportService {
+  /// Genera e mostra il PDF con l'elenco degli iscritti di un corso
+  static Future<void> generaElencoCorso({
+    required BuildContext context,
+    required Corso corso,
+    required List<Allievo> iscritti,
+    required List<Allievo> prospects,
+  }) async {
+    final tutti = [...iscritti, ...prospects];
+    tutti.sort((a, b) => a.cognome.compareTo(b.cognome));
+
+    if (tutti.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun iscritto o prospect trovato per questo corso.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final doc = pw.Document(
+      title: 'Elenco Iscritti - ${corso.scuolaNome} ${corso.livelloDisplay}',
+      author: 'TantoTango Manager',
+    );
+
+    // Dati di sintesi
+    final leaderCount = iscritti.where((a) => a.ruolo == 'leader').length;
+    final followerCount = iscritti.where((a) => a.ruolo == 'follower').length;
+    final prospectCount = prospects.length;
+    final totale = tutti.length;
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (ctx) => _buildElencoHeader(corso, leaderCount, followerCount, prospectCount, totale),
+        footer: (ctx) => _buildFooter(ctx),
+        build: (ctx) => [
+          pw.SizedBox(height: 10),
+          _buildElencoTable(tutti),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => doc.save(),
+      name: 'Elenco_Corso_${corso.id}.pdf',
+    );
+  }
+
+  static pw.Widget _buildElencoHeader(Corso c, int leaderCount, int followerCount, int prospectCount, int totale) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'ELENCO ISCRITTI E PROSPECT',
+                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  '${c.scuolaNome} - ${c.livelloDisplay}',
+                  style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey800),
+                ),
+              ],
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text(
+                  '${c.giornoSettimanaDisplay} - Ore ${c.orario}',
+                  style: const pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.indigo900,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 8),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: pw.BoxDecoration(
+            color: PdfColors.indigo50,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+            border: pw.Border.all(color: PdfColors.indigo200, width: 0.8),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Totale: $totale', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+              pw.Text('Iscritti: ${totale - prospectCount}', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+              pw.Text('Leader: $leaderCount  |  Follower: $followerCount', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+              pw.Text('In Prova (Prospect): $prospectCount', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Divider(thickness: 0.8, color: PdfColors.grey400),
+      ],
+    );
+  }
+
+  static pw.Widget _buildElencoTable(List<Allievo> tutti) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+      columnWidths: const {
+        0: pw.FixedColumnWidth(25),  // N
+        1: pw.FlexColumnWidth(3),    // Nome
+        2: pw.FlexColumnWidth(3),    // Cognome
+        3: pw.FlexColumnWidth(2),    // Ruolo
+        4: pw.FlexColumnWidth(3),    // Telefono
+        5: pw.FlexColumnWidth(3),    // Partner
+        6: pw.FixedColumnWidth(45),  // Stato (Iscritto/Prova)
+      },
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.indigo800),
+          children: [
+            _buildHeaderCell('N.', align: pw.TextAlign.center),
+            _buildHeaderCell('Nome'),
+            _buildHeaderCell('Cognome'),
+            _buildHeaderCell('Ruolo', align: pw.TextAlign.center),
+            _buildHeaderCell('Telefono', align: pw.TextAlign.center),
+            _buildHeaderCell('Partner'),
+            _buildHeaderCell('Stato', align: pw.TextAlign.center),
+          ],
+        ),
+        for (int i = 0; i < tutti.length; i++)
+          _buildElencoRow(i + 1, tutti[i], isEven: i % 2 == 0),
+      ],
+    );
+  }
+
+  static pw.TableRow _buildElencoRow(int index, Allievo a, {required bool isEven}) {
+    final bgColor = isEven ? PdfColors.white : PdfColors.grey50;
+    final isProva = a.isProspect;
+    final ruoloDisplay = a.ruolo.toLowerCase() == 'leader' ? 'Leader' : 'Follower';
+
+    return pw.TableRow(
+      decoration: pw.BoxDecoration(color: bgColor),
+      children: [
+        pw.Container(
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: pw.Text('$index', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: pw.Text(a.nome, style: const pw.TextStyle(fontSize: 9)),
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: pw.Text(a.cognome, style: const pw.TextStyle(fontSize: 9)),
+        ),
+        pw.Container(
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: pw.Text(
+            ruoloDisplay,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+              color: ruoloDisplay == 'Leader' ? PdfColors.blue800 : PdfColors.purple800,
+            ),
+          ),
+        ),
+        pw.Container(
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: pw.Text(a.telefono, style: const pw.TextStyle(fontSize: 9)),
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: pw.Text(a.partnerNomeCompleto, style: pw.TextStyle(fontSize: 9, color: PdfColors.pink800)),
+        ),
+        pw.Container(
+          alignment: pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: pw.Text(
+            isProva ? 'PROVA' : 'ISCRITTO',
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+              color: isProva ? PdfColors.orange800 : PdfColors.green800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Genera e mostra il PDF di appello per la lezione selezionata
   static Future<void> generaFoglioAppello({
     required BuildContext context,
@@ -14,7 +214,7 @@ class PdfReportService {
     String? scuolaNome,
   }) async {
     // 1. Filtra solo i presenti
-    final presenti = presenze.where((p) => p.presente).toList();
+    final presenti = presenze.where((p) => p.presente == true).toList();
 
     if (presenti.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -363,7 +563,7 @@ class PdfReportService {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-            'Generato il ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())} - WAManager',
+            'Generato il ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())} - TantoTango Manager',
             style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
           ),
           pw.Text(
@@ -372,6 +572,173 @@ class PdfReportService {
           ),
         ],
       ),
+    );
+  }
+  /// Genera e mostra il PDF con il report dei pagamenti
+  static Future<void> generaReportPagamenti({
+    required BuildContext context,
+    required List<Pagamento> pagamenti,
+    String? filtriAttivi,
+  }) async {
+    if (pagamenti.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun pagamento trovato con i filtri correnti.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final totale = pagamenti.fold<double>(0.0, (sum, p) => sum + p.importo);
+
+    final doc = pw.Document(
+      title: 'Report Pagamenti',
+      author: 'TantoTango Manager',
+    );
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context ctx) {
+          return [
+            pw.Header(
+              level: 0,
+              title: 'Report Pagamenti',
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Report Pagamenti', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+                  pw.Text(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+                ],
+              ),
+            ),
+            if (filtriAttivi != null && filtriAttivi.isNotEmpty)
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 10),
+                child: pw.Text('Filtri: $filtriAttivi', style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey600)),
+              ),
+            pw.SizedBox(height: 10),
+            pw.TableHelper.fromTextArray(
+              border: pw.TableBorder.all(color: PdfColors.grey300),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo400),
+              cellAlignment: pw.Alignment.centerLeft,
+              data: [
+                ['Trimestre', 'Data', 'Allievo', 'Corso/Scuola', 'Importo', 'Note'],
+                ...pagamenti.map((p) => [
+                      p.trimestre,
+                      p.dataPagamento,
+                      p.allievoNome,
+                      '${p.scuolaNome} - ${p.corsoDescrizione}',
+                      'E. ${p.importo.toStringAsFixed(2)}',
+                      p.note,
+                    ])
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text('Totale Incassato: E. ${totale.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+            ),
+          ];
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => doc.save(),
+      name: 'Report_Pagamenti_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+    );
+  }
+
+  /// Genera la ricevuta per un singolo pagamento
+  static Future<void> generaRicevutaPagamento({
+    required BuildContext context,
+    required Pagamento pagamento,
+  }) async {
+    final doc = pw.Document(
+      title: 'Ricevuta Pagamento - ${pagamento.allievoNome}',
+      author: 'TantoTango Manager',
+    );
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context ctx) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('TantoTango ASD', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
+                      pw.Text('Associazione Sportiva Dilettantistica', style: pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('RICEVUTA DI PAGAMENTO', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                      pw.SizedBox(height: 4),
+                      pw.Text('Data: ${pagamento.dataPagamento}', style: const pw.TextStyle(fontSize: 12)),
+                      pw.Text('ID: ${pagamento.id.split('-').first.toUpperCase()}', style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey600)),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Divider(color: PdfColors.grey400, thickness: 1.5),
+              pw.SizedBox(height: 20),
+              pw.Text('Dettagli Allievo', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo700)),
+              pw.SizedBox(height: 8),
+              pw.Text('Nome: ${pagamento.allievoNome}', style: const pw.TextStyle(fontSize: 14)),
+              pw.SizedBox(height: 20),
+              pw.Text('Dettagli Iscrizione', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo700)),
+              pw.SizedBox(height: 8),
+              pw.Text('Scuola: ${pagamento.scuolaNome}', style: const pw.TextStyle(fontSize: 14)),
+              pw.Text('Corso: ${pagamento.corsoDescrizione}', style: const pw.TextStyle(fontSize: 14)),
+              pw.Text('Trimestre: ${pagamento.trimestreDisplay}', style: const pw.TextStyle(fontSize: 14)),
+              if (pagamento.note.isNotEmpty) ...[
+                pw.SizedBox(height: 10),
+                pw.Text('Note: ${pagamento.note}', style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey800)),
+              ],
+              pw.SizedBox(height: 40),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('IMPORTO PAGATO:', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('E. ${pagamento.importo.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                  ],
+                ),
+              ),
+              pw.Spacer(),
+              pw.Divider(color: PdfColors.grey300),
+              pw.SizedBox(height: 8),
+              pw.Center(
+                child: pw.Text('Documento generato automaticamente - TantoTango Manager', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey500)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => doc.save(),
+      name: 'Ricevuta_${pagamento.allievoNome.replaceAll(' ', '_')}_${pagamento.dataPagamento}.pdf',
     );
   }
 }

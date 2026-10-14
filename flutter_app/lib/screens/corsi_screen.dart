@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/pdf_report_service.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -322,6 +323,72 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
+  void _showAddAllievoToCorsoDialog(Corso c) async {
+    final allAllievi = await _api.getAllievi(isProspect: false);
+    final available = allAllievi.where((a) => a.corsoId != c.id).toList();
+
+    if (!mounted) return;
+
+    String? selectedAllievoId = available.isNotEmpty ? available.first.id : null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.person_add_alt_1, color: Colors.indigo.shade800),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Aggiungi Allievo al Corso', style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+          content: available.isEmpty
+              ? const Text('Nessun allievo disponibile.')
+              : SizedBox(
+                  width: 400,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Seleziona l\'allievo da aggiungere (verrà spostato se già in un altro corso):', style: TextStyle(fontSize: 13)),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedAllievoId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(labelText: 'Allievo *', border: OutlineInputBorder()),
+                        items: available.map((a) {
+                          final fromStr = (a.corsoDescrizione != null && a.corsoDescrizione!.isNotEmpty) ? ' [Da: ${a.corsoDescrizione}]' : '';
+                          return DropdownMenuItem(
+                            value: a.id,
+                            child: Text('${a.nomeCompleto} (${a.ruolo.toUpperCase()})$fromStr'),
+                          );
+                        }).toList(),
+                        onChanged: (v) => setDlgState(() => selectedAllievoId = v),
+                      ),
+                    ],
+                  ),
+                ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+            ElevatedButton(
+              onPressed: available.isEmpty
+                  ? null
+                  : () async {
+                      if (selectedAllievoId == null) return;
+                      await _api.updateAllievo(selectedAllievoId!, {'corso': c.id, 'livello': c.livello});
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _loadAll();
+                    },
+              child: const Text('Assegna'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showAddProspectToCorsoDialog(Corso c) async {
     final allProspects = await _api.getAllievi(isProspect: true);
     final available = allProspects.where((p) => p.corsoId != c.id).toList();
@@ -413,7 +480,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: telCtl,
-                      decoration: const InputDecoration(labelText: 'Telefono * (es. +39...)', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39...)', border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
@@ -462,7 +529,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     'recensione': 'no',
                     'note': noteCtl.text.trim().isNotEmpty ? noteCtl.text.trim() : 'Lezione di prova',
                   };
-                  await _api.createAllievo(data);
+                  final res = await _api.createAllievo(data);
+                  if (res == null) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Errore durante la creazione del prospect.'), backgroundColor: Colors.red),
+                      );
+                    }
+                    return;
+                  }
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
                 _fetchIscritti(c.id);
@@ -547,6 +622,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (res != null) {
                   _fetchIscritti(c.id);
+                  _loadAll();
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Pagamento registrato per ${a.nomeCompleto}!'), backgroundColor: Colors.green.shade700),
@@ -558,6 +634,242 @@ class _CorsiScreenState extends State<CorsiScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+
+  void _showEditAllievoDialog(Corso c, Allievo a) {
+    final nomeController = TextEditingController(text: a.nome);
+    final cognomeController = TextEditingController(text: a.cognome);
+    final telefonoController = TextEditingController(text: a.telefono);
+    final tesseraController = TextEditingController(text: a.numeroTessera);
+    final noteController = TextEditingController(text: a.note);
+    DateTime? dataEmissione = (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty)
+        ? DateTime.tryParse(a.dataEmissioneTessera!)
+        : null;
+    String ruolo = a.ruolo;
+    String livello = a.livello;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            title: Text(a.isProspect ? 'Modifica Prospect' : 'Modifica Allievo'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nomeController, decoration: const InputDecoration(labelText: 'Nome *')),
+                  TextField(controller: cognomeController, decoration: const InputDecoration(labelText: 'Cognome *')),
+                  TextField(controller: telefonoController, decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)')),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: ruolo,
+                    decoration: const InputDecoration(labelText: 'Ruolo *'),
+                    items: const [
+                      DropdownMenuItem(value: 'leader', child: Text('Leader')),
+                      DropdownMenuItem(value: 'follower', child: Text('Follower')),
+                    ],
+                    onChanged: (v) => setDlgState(() => ruolo = v!),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: livello,
+                    decoration: const InputDecoration(labelText: 'Livello *'),
+                    items: const [
+                      DropdownMenuItem(value: 'principiante', child: Text('Principiante')),
+                      DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
+                      DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
+                    ],
+                    onChanged: (v) => setDlgState(() => livello = v!),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Note',
+                      hintText: 'Disponibilità, richieste, dettagli prova...',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: tesseraController,
+                    decoration: const InputDecoration(labelText: 'Numero Tessera', prefixIcon: Icon(Icons.badge_outlined)),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                    title: Text(
+                      dataEmissione == null
+                          ? 'Nessuna data di emissione'
+                          : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
+                        fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
+                      ),
+                    ),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: [
+                        if (dataEmissione != null)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                            tooltip: 'Rimuovi data emissione',
+                            onPressed: () => setDlgState(() => dataEmissione = null),
+                          ),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.edit_calendar, size: 16),
+                          label: const Text('Data', style: TextStyle(fontSize: 12)),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: dataEmissione ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setDlgState(() => dataEmissione = picked);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (a.partnerId != null) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: Text('Coppia con: ${a.partnerNomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                        TextButton.icon(
+                          icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                          label: const Text('Rimuovi', style: TextStyle(color: Colors.red)),
+                          onPressed: () async {
+                            await _api.setPartner(a.id, null);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _loadAll();
+                          },
+                        )
+                      ],
+                    )
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                  final res = await _api.updateAllievo(a.id, {
+                    'nome': nomeController.text.trim(),
+                    'cognome': cognomeController.text.trim(),
+                    'telefono': telefonoController.text.trim(),
+                    'ruolo': ruolo,
+                    'livello': livello,
+                    'note': noteController.text.trim(),
+                    'numero_tessera': tesseraController.text.trim(),
+                    'data_emissione_tessera': dataEmissione != null
+                        ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
+                        : null,
+                  });
+                  if (res == null) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Errore durante l'aggiornamento di ${a.isProspect ? 'questo prospect' : 'questo allievo'}."), backgroundColor: Colors.red),
+                      );
+                    }
+                    return;
+                  }
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  _fetchIscritti(c.id);
+                  _loadAll();
+                },
+                child: const Text('Salva'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _confirmDeleteOrRemoveAllievo(Corso c, Allievo a) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Opzioni Allievo/Prospect'),
+        content: Text('Cosa desideri fare con ${a.nomeCompleto}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx), 
+            child: const Text('Annulla')
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _api.updateAllievo(a.id, {'corso': null});
+              _fetchIscritti(c.id);
+              _loadAll();
+            },
+            child: const Text('Rimuovi dal Corso', style: TextStyle(color: Colors.orange)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _api.deleteAllievo(a.id);
+              _fetchIscritti(c.id);
+              _loadAll();
+            },
+            child: const Text('Elimina dal DB'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecapBadge({
+    required IconData icon,
+    required String label,
+    required int count,
+    required MaterialColor color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color.shade700),
+          const SizedBox(width: 4),
+          Text(
+            '$label: ',
+            style: TextStyle(fontSize: 11, color: color.shade800, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 12, color: color.shade900, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }
@@ -609,6 +921,62 @@ class _CorsiScreenState extends State<CorsiScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
       child: Text(label, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildStatoTesseraBadge(Allievo a) {
+    Color bg;
+    Color border;
+    Color fg;
+    IconData icon;
+    String label = a.statoTessera;
+
+    if (a.hasTesseraOk) {
+      bg = Colors.green.shade50;
+      border = Colors.green.shade600;
+      fg = Colors.green.shade900;
+      icon = Icons.verified;
+    } else if (a.hasTesseraScaduta) {
+      bg = Colors.red.shade50;
+      border = Colors.red.shade600;
+      fg = Colors.red.shade900;
+      icon = Icons.error_outline;
+    } else {
+      bg = Colors.orange.shade50;
+      border = Colors.orange.shade600;
+      fg = Colors.orange.shade900;
+      icon = Icons.credit_card_off;
+    }
+
+    String tooltip = label;
+    if (a.numeroTessera.isNotEmpty) {
+      tooltip += ' (N. ${a.numeroTessera})';
+    }
+    if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
+      tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: border, width: 1.1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: fg),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -808,6 +1176,23 @@ class _CorsiScreenState extends State<CorsiScreen> {
                 children: [
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    icon: const Icon(Icons.picture_as_pdf, size: 16),
+                    label: const Text('Esporta Elenco'),
+                    onPressed: () => PdfReportService.generaElencoCorso(
+                      context: context,
+                      corso: c,
+                      iscritti: effettivi,
+                      prospects: prospects,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.shade700,
                       foregroundColor: Colors.white,
                       visualDensity: VisualDensity.compact,
@@ -816,6 +1201,18 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     icon: const Icon(Icons.person_add_alt_1, size: 16),
                     label: const Text('Assegna Prospect in Prova'),
                     onPressed: () => _showAddProspectToCorsoDialog(c),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    icon: const Icon(Icons.person_add, size: 16),
+                    label: const Text('Aggiungi Allievo'),
+                    onPressed: () => _showAddAllievoToCorsoDialog(c),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
@@ -918,24 +1315,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       child: ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        leading: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: haPagato
-                              ? (a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.purple.shade100)
-                              : Colors.red.shade100,
-                          child: Text(
-                            a.cognome.isNotEmpty
-                                ? a.cognome[0]
-                                : (a.nome.isNotEmpty ? a.nome[0] : 'A'),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: haPagato
-                                  ? (a.ruolo == 'leader' ? Colors.blue.shade900 : Colors.purple.shade900)
-                                  : Colors.red.shade900,
-                            ),
-                          ),
-                        ),
                         title: Row(
                           children: [
                             Flexible(
@@ -965,6 +1344,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               ],
                             ),
                             const SizedBox(height: 3),
+                            if (a.numeroTessera.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Text(
+                                  'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                ),
+                              ),
                             if (haPagato && pag != null)
                               Text(
                                 '✓ Quota saldata (€${pag.importo.toStringAsFixed(0)} - ${pag.trimestreDisplay})',
@@ -981,6 +1368,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           spacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            _buildStatoTesseraBadge(a),
                             if (haPagato)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1037,12 +1425,21 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
                               ),
                             ],
-                            _buildRuoloBadge(a.ruolo),
-                            Chip(
-                              label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 10)),
-                              visualDensity: VisualDensity.compact,
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                              tooltip: 'Modifica ${a.nomeCompleto}',
                               padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => _showEditAllievoDialog(c, a),
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                              tooltip: 'Elimina/Rimuovi ${a.nomeCompleto}',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
+                            ),
+                            _buildRuoloBadge(a.ruolo),
                             if (a.recensione == 'si')
                               const Tooltip(
                                 message: 'Recensione rilasciata',
@@ -1107,12 +1504,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     ),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: Colors.amber.shade200,
-                          child: Icon(Icons.assignment_ind, color: Colors.amber.shade900, size: 20),
-                        ),
-                        const SizedBox(width: 12),
+
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1181,19 +1573,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, size: 18, color: Colors.red),
-                              tooltip: 'Rimuovi dalla prova del corso',
+                              icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                              tooltip: 'Modifica ${p.nomeCompleto}',
                               visualDensity: VisualDensity.compact,
-                              onPressed: () async {
-                                await _api.updateAllievo(p.id, {'corso': null});
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('${p.nomeCompleto} rimosso dalla prova del corso.')),
-                                  );
-                                  _fetchIscritti(c.id);
-                                  _loadAll();
-                                }
-                              },
+                              onPressed: () => _showEditAllievoDialog(c, p),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                              tooltip: 'Rimuovi o Elimina ${p.nomeCompleto}',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _confirmDeleteOrRemoveAllievo(c, p),
                             ),
                           ],
                         ),
@@ -1249,11 +1638,44 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             backgroundColor: Colors.indigo.shade100,
                             child: const Icon(Icons.school, color: Colors.indigo),
                           ),
-                          title: Text(
-                            scuola.nome,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          title: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                scuola.nome,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                              ),
+                              _buildRecapBadge(
+                                icon: Icons.people_alt,
+                                label: 'Totale allievi',
+                                count: scuola.allieviCount,
+                                color: Colors.blue,
+                              ),
+                              _buildRecapBadge(
+                                icon: Icons.person_search,
+                                label: 'Totale Prospect',
+                                count: scuola.prospectsCount,
+                                color: Colors.orange,
+                              ),
+                              _buildRecapBadge(
+                                icon: Icons.payments,
+                                label: 'Totale Paganti',
+                                count: scuola.pagantiCount,
+                                color: Colors.green,
+                              ),
+                            ],
                           ),
-                          subtitle: Text('${corsiScuola.length} corsi'),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              scuola.sede.isNotEmpty
+                                  ? '${corsiScuola.length} corsi • ${scuola.sede}'
+                                  : '${corsiScuola.length} corsi',
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                            ),
+                          ),
                           children: corsiScuola.isEmpty
                               ? [const Padding(padding: EdgeInsets.all(16.0), child: Text('Nessun corso per questa scuola.'))]
                               : corsiScuola.map((c) => Card(
@@ -1270,9 +1692,35 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                       title: Row(
                                         children: [
                                           Expanded(
-                                            child: Text(
-                                              '${c.livelloDisplay}',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                            child: Wrap(
+                                              spacing: 8,
+                                              runSpacing: 4,
+                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              children: [
+                                                Text(
+                                                  c.livelloDisplay,
+                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                                ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.people_alt,
+                                                  label: 'Allievi',
+                                                  count: c.allieviCount,
+                                                  color: Colors.blue,
+                                                ),
+                                                if (c.prospectsCount > 0)
+                                                  _buildRecapBadge(
+                                                    icon: Icons.person_search,
+                                                    label: 'Prospect',
+                                                    count: c.prospectsCount,
+                                                    color: Colors.orange,
+                                                  ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.payments,
+                                                  label: 'Paganti',
+                                                  count: c.pagantiCount,
+                                                  color: Colors.green,
+                                                ),
+                                              ],
                                             ),
                                           ),
                                           IconButton(

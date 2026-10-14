@@ -439,3 +439,139 @@ def invia_sondaggio_manuale_corsi(corso_ids, testo_custom=None, is_poll=True, po
 
     return results
 
+
+def invia_messaggio_sollecito(corso_ids=None):
+    """
+    Invia il messaggio di sollecito per i corsi specificati oppure per tutti i corsi attivi oggi.
+    Sostituisce i placeholder dinamici: {corso}, {orario}, {data}, {scuola}, {argomento}.
+    """
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    current_weekday = today.weekday()
+
+    WEEKDAY_TO_GIORNO = {
+        0: 'LUNEDI',
+        1: 'MARTEDI',
+        2: 'MERCOLEDI',
+        3: 'GIOVEDI',
+        4: 'VENERDI',
+        5: 'SABATO',
+        6: 'DOMENICA',
+    }
+    current_giorno = WEEKDAY_TO_GIORNO.get(current_weekday)
+
+    global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+    default_testo = (
+        "⚠️ *Sollecito Presenze - Lezione di stasera*\n"
+        "Ragazzi, chi di voi non ha ancora confermato la presenza al corso {corso} ({orario}) è pregato di farlo subito per consentirci di bilanciare coppie e jolly. Grazie! 🙏"
+    )
+    base_testo = global_config.sollecito_testo if (global_config and global_config.sollecito_testo and global_config.sollecito_testo.strip()) else default_testo
+
+    if corso_ids:
+        corsi = Corso.objects.filter(id__in=corso_ids).select_related('scuola')
+    else:
+        corsi = Corso.objects.filter(
+            Q(giorno_settimana=current_giorno) | Q(lezioni__data=today)
+        ).select_related('scuola').distinct()
+
+    results = []
+
+    for corso in corsi:
+        group_target = corso.gruppo_whatsapp or (corso.scuola.gruppo_whatsapp if corso.scuola else '')
+        if not group_target:
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': '',
+                'success': False,
+                'error': "Nessun gruppo WhatsApp configurato per questo corso o scuola."
+            })
+            continue
+
+        lezione = Lezione.objects.filter(corso=corso, data=today).first()
+        if not lezione:
+            lezione = Lezione.objects.filter(corso=corso, data__gte=today).order_by('data').first()
+
+        orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
+        data_str = lezione.data.strftime('%d/%m/%Y') if lezione else today.strftime('%d/%m/%Y')
+        scuola_str = corso.scuola.nome if corso.scuola else ''
+        argomento_str = (lezione.argomento.titolo if (lezione and lezione.argomento) else 'Da definire')
+
+        testo_renderizzato = base_testo\
+            .replace('{corso}', str(corso.nome))\
+            .replace('{orario}', orario_str)\
+            .replace('{data}', data_str)\
+            .replace('{scuola}', scuola_str)\
+            .replace('{argomento}', argomento_str)
+
+        try:
+            res = send_whatsapp_message(
+                to=group_target,
+                message=testo_renderizzato,
+                is_group=True
+            )
+            is_ok = bool(res.get('success'))
+            err_msg = res.get('error', '')
+
+            tmpl, _ = MessageTemplate.objects.get_or_create(
+                name='SOLLECITO',
+                defaults={'body': base_testo}
+            )
+            MessageLog.objects.create(
+                lezione=lezione,
+                template=tmpl,
+                rendered_text=testo_renderizzato,
+                status='Inviato' if is_ok else 'Errore',
+                error_message=err_msg
+            )
+
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': group_target,
+                'success': is_ok,
+                'error': err_msg
+            })
+        except Exception as e:
+            results.append({
+                'corso_id': str(corso.id),
+                'corso_nome': corso.nome,
+                'scuola_nome': corso.scuola.nome if corso.scuola else '',
+                'gruppo_whatsapp': group_target,
+                'success': False,
+                'error': str(e)
+            })
+
+    success_count = sum(1 for r in results if r.get('success'))
+    return {
+        'success': True,
+        'totale_corsi': len(results),
+        'inviati_con_successo': success_count,
+        'dettagli': results
+    }
+
+
+def invia_sollecito_giornaliero():
+    """
+    Task demone per l'invio del messaggio di sollecito pomeridiano.
+    Verifica se il sollecito è attivo e invia ai corsi odierni.
+    """
+    global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+    if not global_config or not global_config.sollecito_attivo:
+        print("[Sollecito Giornaliero] Sollecito disattivato.")
+        return
+
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    current_weekday = today.weekday()
+    giorni_globali = [int(x.strip()) for x in global_config.giorni_settimana.split(',') if x.strip().isdigit()]
+    if current_weekday not in giorni_globali:
+        print(f"[Sollecito Giornaliero] Oggi ({current_weekday}) non è tra i giorni abilitati.")
+        return
+
+    res = invia_messaggio_sollecito()
+    print(f"[Sollecito Giornaliero] Inviati {res['inviati_con_successo']} su {res['totale_corsi']}.")
+
+

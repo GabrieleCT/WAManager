@@ -88,10 +88,15 @@ class _LezioniScreenState extends State<LezioniScreen> {
     final lezioniCorso = _lezioni.where((l) => l.corsoId == corsoId).toList();
     
     String trimestre = '';
-    if (dataLezione.month >= 10 && dataLezione.month <= 12) trimestre = '1° Trimestre';
-    else if (dataLezione.month >= 1 && dataLezione.month <= 3) trimestre = '2° Trimestre';
-    else if (dataLezione.month >= 4 && dataLezione.month <= 6) trimestre = '3° Trimestre';
-    else trimestre = '4° Trimestre';
+    if (dataLezione.month >= 10 && dataLezione.month <= 12) {
+      trimestre = '1° Trimestre';
+    } else if (dataLezione.month >= 1 && dataLezione.month <= 3) {
+      trimestre = '2° Trimestre';
+    } else if (dataLezione.month >= 4 && dataLezione.month <= 6) {
+      trimestre = '3° Trimestre';
+    } else {
+      trimestre = '4° Trimestre';
+    }
 
     final lezioniTrimestre = lezioniCorso.where((l) => _extractTrimestre(l) == trimestre).toList();
     
@@ -190,11 +195,201 @@ class _LezioniScreenState extends State<LezioniScreen> {
                   'titolo': titoloCtl.text.trim(),
                   'argomento': selectedArgomentoId,
                 };
-                await _api.createLezione(data);
+                final res = await _api.createLezione(data);
+                if (res == null) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Errore durante la creazione della lezione.'), backgroundColor: Colors.red),
+                    );
+                  }
+                  return;
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Lezione creata con successo!'), backgroundColor: Colors.green),
+                  );
+                }
                 _loadAll();
               },
               child: const Text('Salva Lezione'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── DIALOG MODIFICA LEZIONE SINGOLA (DATA E ARGOMENTO) ───────
+  void _showEditLezioneDialog(Lezione l) {
+    DateTime selectedDate = DateTime.tryParse(l.data) ?? DateTime.now();
+    String? selectedArgomentoId = l.argomentoId;
+    final titoloCtl = TextEditingController(text: l.titolo);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Modifica Lezione'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Info Corso
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.deepPurple.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.school, size: 18, color: Colors.deepPurple),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          l.corsoDescrizione.isNotEmpty ? l.corsoDescrizione : 'Corso',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Data della lezione con selettore data interattivo
+                const Text('Data della lezione *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 4),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2035),
+                    );
+                    if (picked != null) {
+                      setDlgState(() => selectedDate = picked);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today, size: 18, color: Colors.deepPurple),
+                            const SizedBox(width: 10),
+                            Text(
+                              '${DateFormat('dd/MM/yyyy').format(selectedDate)} (${_giornoItaliano(selectedDate.weekday)})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          'Cambia data',
+                          style: TextStyle(color: Colors.deepPurple.shade700, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Selezione Argomento Trattato
+                const Text('Argomento trattato', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedArgomentoId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    hintText: 'Seleziona argomento...',
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('-- Nessun argomento associato --', style: TextStyle(color: Colors.grey)),
+                    ),
+                    ..._argomenti.map((a) => DropdownMenuItem(
+                      value: a.id,
+                      child: Text(
+                        '${a.titolo} (${a.livelloDisplay})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
+                  ],
+                  onChanged: (v) => setDlgState(() => selectedArgomentoId = v),
+                ),
+                const SizedBox(height: 16),
+
+                // Titolo / Nomenclatura
+                const Text('Titolo / Nomenclatura', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: titoloCtl,
+                  decoration: const InputDecoration(
+                    hintText: 'Es. 1/12 - 1° Trimestre',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final data = {
+                  'data': DateFormat('yyyy-MM-dd').format(selectedDate),
+                  'titolo': titoloCtl.text.trim(),
+                  'argomento': selectedArgomentoId,
+                };
+                final res = await _api.updateLezione(l.id, data);
+                if (res == null) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Errore durante l\'aggiornamento della lezione.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Lezione del ${DateFormat('dd/MM/yyyy').format(selectedDate)} aggiornata con successo!'),
+                      backgroundColor: Colors.green.shade800,
+                    ),
+                  );
+                }
+                _loadAll();
+              },
+              child: const Text('Salva Modifiche'),
             ),
           ],
         ),
@@ -1202,23 +1397,61 @@ class _LezioniScreenState extends State<LezioniScreen> {
                                                                 ],
                                                               ],
                                                             ),
-                                                            subtitle: Row(
-                                                              children: [
-                                                                if (l.argomentoTitolo != null && l.argomentoTitolo!.isNotEmpty) ...[
+                                                            subtitle: Padding(
+                                                              padding: const EdgeInsets.only(top: 3),
+                                                              child: Wrap(
+                                                                spacing: 8,
+                                                                runSpacing: 4,
+                                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                                children: [
+                                                                  if (l.argomentoTitolo != null && l.argomentoTitolo!.isNotEmpty)
+                                                                    Container(
+                                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                      decoration: BoxDecoration(
+                                                                        color: Colors.deepPurple.shade50,
+                                                                        borderRadius: BorderRadius.circular(4),
+                                                                        border: Border.all(color: Colors.deepPurple.shade200),
+                                                                      ),
+                                                                      child: Row(
+                                                                        mainAxisSize: MainAxisSize.min,
+                                                                        children: [
+                                                                          const Icon(Icons.menu_book, size: 12, color: Colors.deepPurple),
+                                                                          const SizedBox(width: 4),
+                                                                          Text(
+                                                                            l.argomentoTitolo!,
+                                                                            style: const TextStyle(color: Colors.deepPurple, fontSize: 11, fontWeight: FontWeight.bold),
+                                                                          ),
+                                                                        ],
+                                                                      ),
+                                                                    )
+                                                                  else
+                                                                    Container(
+                                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                      decoration: BoxDecoration(
+                                                                        color: Colors.grey.shade100,
+                                                                        borderRadius: BorderRadius.circular(4),
+                                                                        border: Border.all(color: Colors.grey.shade300),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        '📖 Nessun argomento',
+                                                                        style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic),
+                                                                      ),
+                                                                    ),
                                                                   Text(
-                                                                    '📖 ${l.argomentoTitolo!}  •  ',
-                                                                    style: const TextStyle(color: Colors.deepPurple, fontSize: 11),
+                                                                    '👥  /  presenti',
+                                                                    style: TextStyle(color: Colors.grey.shade800, fontSize: 11),
                                                                   ),
                                                                 ],
-                                                                Text(
-                                                                  '👥 ${l.presentiCount} / ${l.presenzeTotali} presenti',
-                                                                  style: TextStyle(color: Colors.grey.shade800, fontSize: 11),
-                                                                ),
-                                                              ],
+                                                              ),
                                                             ),
                                                             trailing: Row(
                                                               mainAxisSize: MainAxisSize.min,
                                                               children: [
+                                                                IconButton(
+                                                                  icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
+                                                                  tooltip: 'Modifica Lezione (Data / Argomento)',
+                                                                  onPressed: () => _showEditLezioneDialog(l),
+                                                                ),
                                                                 IconButton(
                                                                   icon: const Icon(Icons.how_to_reg, color: Colors.deepPurple, size: 20),
                                                                   tooltip: 'Gestisci Presenze',
@@ -1239,6 +1472,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
                                                                 ),
                                                               ],
                                                             ),
+                                                            onTap: () => _showEditLezioneDialog(l),
                                                           );
                                                         },
                                                       ),

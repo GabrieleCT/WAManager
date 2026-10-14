@@ -37,7 +37,25 @@ ENV/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db
-
 .wwebjs_auth/
 .wwebjs_cache/
+
+# Media uploads
+media/
+
+# IDE & Editor
+.vscode/
+
+# Temporary scratch & patch scripts
+patch_*.py
+fix_*.py
+check*.py
+find_bounds.py
+inject_segmented.py
+read_apikey.py
+remove_*.py
+replace_*.py
+restore_*.py
+test_check_wa.py
+test_wa_groups.py
+

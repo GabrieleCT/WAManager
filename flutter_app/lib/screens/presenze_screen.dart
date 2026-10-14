@@ -20,11 +20,11 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   bool _isCustomSelection = false;
   List<Presenza> _presenze = [];
   bool _loading = false;
-  bool _saving = false;
-  Map<String, dynamic>? _matchStats;
+    Map<String, dynamic>? _matchStats;
 
   List<Scuola> _scuole = [];
   List<Corso> _corsi = [];
+  String _sollecitoTemplate = 'Ciao <nome_allievo>, ci sei stasera al corso?';
 
   @override
   void initState() {
@@ -54,6 +54,10 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     final lezioni = await _api.getLezioni();
     final scuole = await _api.getScuole();
     final corsi = await _api.getCorsi();
+    final daemonConfig = await _api.getDaemonConfig();
+    if (daemonConfig != null && daemonConfig.sollecitoTesto.trim().isNotEmpty) {
+      _sollecitoTemplate = daemonConfig.sollecitoTesto.trim();
+    }
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
     // Ordine cronologico decrescente per facile reperibilità
@@ -101,7 +105,10 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
   void _sortPresenze(List<Presenza> list) {
     list.sort((a, b) {
-      if (a.presente != b.presente) return a.presente ? -1 : 1; // Presenti in cima
+      if (a.presente == true && b.presente != true) return -1;
+      if (a.presente != true && b.presente == true) return 1;
+      if (a.presente == null && b.presente == false) return -1;
+      if (a.presente == false && b.presente == null) return 1;
       int cmp = a.allievoSortName.compareTo(b.allievoSortName);
       if (cmp != 0) return cmp;
       return b.allievoRuolo.compareTo(a.allievoRuolo); // Leader prima
@@ -122,25 +129,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     }
   }
 
-  Future<void> _savePresenze() async {
-    if (_selectedLezione == null) return;
-    setState(() => _saving = true);
-    final payload = _presenze.map((p) => {
-      'allievo_id': p.allievoId,
-      'presente': p.presente,
-      'fonte': p.fonte,
-    }).toList();
-    final ok = await _api.batchUpdatePresenze(_selectedLezione!.id, payload);
-    setState(() => _saving = false);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ok ? 'Presenze salvate con successo!' : 'Errore nel salvataggio presenze.'),
-          backgroundColor: ok ? Colors.green.shade800 : Colors.red.shade800,
-        ),
-      );
-    }
-  }
 
   Future<void> _generateMatches() async {
     if (_selectedLezione == null) return;
@@ -150,6 +138,152 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       _matchStats = res;
       _loading = false;
     });
+  }
+
+  Future<void> _inviaSollecitoRisposta(Presenza p) async {
+    if (p.allievoTelefono.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nessun numero di telefono registrato per ${p.cleanNome}.'),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
+
+    // Aggiorna template con eventuale ultima modifica da backend
+    try {
+      final cfg = await _api.getDaemonConfig();
+      if (cfg != null && cfg.sollecitoTesto.trim().isNotEmpty) {
+        _sollecitoTemplate = cfg.sollecitoTesto.trim();
+      }
+    } catch (_) {}
+
+    final nome = p.nomeSolo;
+    String baseText = _sollecitoTemplate.trim().isNotEmpty
+        ? _sollecitoTemplate
+        : 'Ciao <nome_allievo>, ci sei stasera al corso?';
+
+    final textReplaced = baseText
+        .replaceAll('<nome_allievo>', nome)
+        .replaceAll('{nome_allievo}', nome)
+        .replaceAll('{allievo}', nome)
+        .replaceAll('{nome}', nome)
+        .replaceAll('<nome>', nome);
+
+    final textCtrl = TextEditingController(text: textReplaced);
+    bool sending = false;
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.chat, color: Colors.green.shade700, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sollecito Risposta WhatsApp',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'A: ${p.cleanNome} (${p.allievoTelefono})',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontWeight: FontWeight.normal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Messaggio da inviare:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: textCtrl,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    hintText: 'Scrivi qui il messaggio di sollecito...',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Il messaggio verrà inviato direttamente via WhatsApp Gateway al contatto.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final msg = textCtrl.text.trim();
+                      if (msg.isEmpty) return;
+                      setDlgState(() => sending = true);
+                      final res = await _api.inviaSollecitoAllievo(p.allievoId, testo: msg);
+                      final bool ok = res['success'] == true;
+                      if (!mounted) return;
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'Sollecito inviato con successo a ${p.cleanNome}!'
+                                : (res['error'] ?? 'Errore durante l\'invio del messaggio.')),
+                            backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
+                          ),
+                        );
+                      }
+                    },
+              icon: sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send, size: 18),
+              label: Text(sending ? 'Invio in corso...' : 'Invia su WhatsApp'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSelectAnyLezioneDialog() {
@@ -294,8 +428,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   void _showAddJollyDialog() {
     if (_selectedLezione == null) return;
 
-    final presentiLeader = _presenze.where((p) => p.presente && p.allievoRuolo == 'leader').length;
-    final presentiFollower = _presenze.where((p) => p.presente && p.allievoRuolo == 'follower').length;
+    final presentiLeader = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'leader').length;
+    final presentiFollower = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'follower').length;
     String infoBilanciamento;
     if (presentiLeader > presentiFollower) {
       infoBilanciamento = 'Attualmente servono ${presentiLeader - presentiFollower} Follower per pareggiare i ruoli.';
@@ -331,7 +465,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                     allieviList = aList;
                     loading = false;
                     final candidateJolly = jList.where(
-                      (j) => !_presenze.any((p) => p.allievoId == j.allievoId && p.presente)
+                      (j) => !_presenze.any((p) => p.allievoId == j.allievoId && p.presente == true)
                     ).toList();
                     if (candidateJolly.isNotEmpty) {
                       selectedAllievoId = candidateJolly.first.allievoId;
@@ -355,7 +489,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             final items = <DropdownMenuItem<String>>[];
             if (jollyList.isNotEmpty) {
               for (final j in jollyList) {
-                final giaPresente = _presenze.any((p) => p.allievoId == j.allievoId && p.presente);
+                final giaPresente = _presenze.any((p) => p.allievoId == j.allievoId && p.presente == true);
                 items.add(DropdownMenuItem(
                   value: j.allievoId,
                   child: Text(
@@ -372,7 +506,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
             final altriAllievi = allieviList.where((a) => !jollyList.any((j) => j.allievoId == a.id)).toList();
             for (final a in altriAllievi) {
-              final giaPresente = _presenze.any((p) => p.allievoId == a.id && p.presente);
+              final giaPresente = _presenze.any((p) => p.allievoId == a.id && p.presente == true);
               items.add(DropdownMenuItem(
                 value: a.id,
                 child: Text(
@@ -538,14 +672,14 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   Widget build(BuildContext context) {
     _sortPresenze(_presenze);
 
-    final presentiList = _presenze.where((p) => p.presente).toList();
+    final presentiList = _presenze.where((p) => p.presente == true).toList();
     final presentiCount = presentiList.length;
     final whatsappPresentiCount = presentiList.where((p) => p.fonte == 'whatsapp').length;
     final manualePresentiCount = presentiList.where((p) => p.fonte == 'manuale').length;
     final jollyPresentiCount = presentiList.where((p) => p.isJolly).length;
 
-    final leaderCount = _presenze.where((p) => p.presente && p.allievoRuolo == 'leader').length;
-    final followerCount = _presenze.where((p) => p.presente && p.allievoRuolo == 'follower').length;
+    final leaderCount = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'leader').length;
+    final followerCount = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'follower').length;
     final jollyNecessari = (leaderCount - followerCount).abs();
 
     return Scaffold(
@@ -791,17 +925,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                         label: const Text('Aggiungi Jolly'),
                         onPressed: _showAddJollyDialog,
                       ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
-                          foregroundColor: Colors.white,
-                        ),
-                        icon: const Icon(Icons.save, size: 18),
-                        label: _saving
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Salva Presenze'),
-                        onPressed: _saving ? null : _savePresenze,
-                      ),
+
                     ],
                   ),
                 ],
@@ -907,156 +1031,208 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                               width: isWa ? 1.5 : 1.0,
                             ),
                           ),
-                          child: CheckboxListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            value: p.presente,
-                            activeColor: isWa ? Colors.green.shade700 : Colors.deepPurple,
-                            secondary: CircleAvatar(
-                              backgroundColor: p.presente
-                                  ? (isWa ? Colors.green.shade600 : (p.isJolly ? Colors.purple.shade600 : Colors.indigo.shade600))
-                                  : Colors.red.shade100,
-                              child: Icon(
-                                p.presente
-                                    ? (isWa ? Icons.smart_toy : (p.isJolly ? Icons.star : Icons.check))
-                                    : Icons.close,
-                                color: p.presente ? Colors.white : Colors.red.shade800,
-                                size: 20,
-                              ),
-                            ),
-                            title: Row(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                if (p.allievoIsProspect) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 8),
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.amber.shade100,
-                                      border: Border.all(color: Colors.amber.shade600),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      'PROVA',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.amber.shade900,
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: p.presente == true
+                                          ? (isWa ? Colors.green.shade600 : (p.isJolly ? Colors.purple.shade600 : Colors.indigo.shade600))
+                                          : (p.presente == false ? Colors.red.shade100 : Colors.grey.shade300),
+                                      child: Icon(
+                                        p.presente == true
+                                            ? (isWa ? Icons.smart_toy : (p.isJolly ? Icons.star : Icons.check))
+                                            : (p.presente == false ? Icons.close : Icons.help_outline),
+                                        color: p.presente == true ? Colors.white : (p.presente == false ? Colors.red.shade800 : Colors.grey.shade700),
+                                        size: 20,
                                       ),
                                     ),
-                                  ),
-                                ],
-                                if (p.isJolly) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 8),
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.purple.shade100,
-                                      border: Border.all(color: Colors.purple.shade600),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.star, size: 10, color: Colors.purple.shade900),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          'JOLLY',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.purple.shade900,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              if (p.allievoIsProspect)
+                                                Container(
+                                                  margin: const EdgeInsets.only(right: 8),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.amber.shade100,
+                                                    border: Border.all(color: Colors.amber.shade600),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: const Text(
+                                                    'PROVA',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Colors.amber,
+                                                    ),
+                                                  ),
+                                                ),
+                                              Expanded(
+                                                child: Text(
+                                                  p.allievoNome,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 15,
+                                                    decoration: p.presente == false ? TextDecoration.lineThrough : null,
+                                                    color: p.presente == false ? Colors.grey : Colors.black87,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (p.isJolly) ...[
+                                                Container(
+                                                  margin: const EdgeInsets.only(right: 8),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.purple.shade100,
+                                                    border: Border.all(color: Colors.purple.shade600),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    'JOLLY',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Colors.purple.shade900,
+                                                    ),
+                                                  ),
+                                                ),
+                                                InkWell(
+                                                  onTap: () => _removeJollyPresenza(p),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.all(4),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red.shade50,
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(color: Colors.red.shade200),
+                                                    ),
+                                                    child: Icon(Icons.close, size: 14, color: Colors.red.shade700),
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(width: 8),
+                                              IconButton(
+                                                icon: Icon(
+                                                  Icons.chat,
+                                                  size: 19,
+                                                  color: p.allievoTelefono.trim().isNotEmpty
+                                                      ? Colors.green.shade700
+                                                      : Colors.grey.shade400,
+                                                ),
+                                                tooltip: p.allievoTelefono.trim().isNotEmpty
+                                                    ? 'Invia sollecito risposta WhatsApp a '
+                                                    : 'Nessun numero di telefono per ',
+                                                visualDensity: VisualDensity.compact,
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                onPressed: () => _inviaSollecitoRisposta(p),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Ruolo: ${p.allievoRuolo.toUpperCase()}${p.allievoPartnerId != null && p.cleanPartnerNome.isNotEmpty ? " - Coppia: ${p.cleanPartnerNome}" : ""}',
+                                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                                ),
+                                              ),
+                                              if (p.fonte == 'whatsapp')
+                                                Container(
+                                                  margin: const EdgeInsets.only(left: 6),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.shade100,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: Colors.green.shade400),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.message, size: 10, color: Colors.green.shade800),
+                                                      const SizedBox(width: 4),
+                                                      Text('WA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade900)),
+                                                    ],
+                                                  ),
+                                                )
+                                              else if (p.fonte == 'manuale')
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.indigo.shade50,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: Colors.indigo.shade300),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.edit_note, size: 10, color: Colors.indigo.shade900),
+                                                      const SizedBox(width: 3),
+                                                      Text('Man', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.indigo.shade900)),
+                                                    ],
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
-                                Expanded(
-                                  child: Text(
-                                    p.cleanNome,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SegmentedButton<String>(
+                                  segments: const [
+                                    ButtonSegment<String>(
+                                      value: 'presente',
+                                      label: Text('Presente'),
+                                      icon: Icon(Icons.check),
+                                    ),
+                                    ButtonSegment<String>(
+                                      value: 'assente',
+                                      label: Text('Assente'),
+                                      icon: Icon(Icons.close),
+                                    ),
+                                    ButtonSegment<String>(
+                                      value: 'non_risposto',
+                                      label: Text('Nessuna risp.'),
+                                      icon: Icon(Icons.help_outline),
+                                    ),
+                                  ],
+                                  selected: {
+                                    p.presente == true
+                                        ? 'presente'
+                                        : (p.presente == false ? 'assente' : 'non_risposto')
+                                  },
+                                  onSelectionChanged: (Set<String> newSelection) async {
+                                    bool? val;
+                                    if (newSelection.first == 'presente') val = true;
+                                    if (newSelection.first == 'assente') val = false;
+                                    
+                                    setState(() {
+                                      p.presente = val;
+                                      p.fonte = 'manuale';
+                                      _sortPresenze(_presenze);
+                                    });
+                                    await _api.updatePresenza(p.id, {
+                                      'presente': val,
+                                      'fonte': 'manuale',
+                                    });
+                                  },
+                                  style: ButtonStyle(
+                                    visualDensity: VisualDensity.compact,
                                   ),
                                 ),
-                                // BADGE VISIVO DIFFERENZIATO FONTE
-                                if (isWa)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.shade100,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.green.shade600),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.smart_toy, size: 14, color: Colors.green.shade900),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'WhatsApp (AI Gemini)',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.green.shade900,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.indigo.shade50,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.indigo.shade300),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.edit_note, size: 15, color: Colors.indigo.shade900),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          'Manuale',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.indigo.shade900,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                if (p.isJolly) ...[
-                                  const SizedBox(width: 6),
-                                  InkWell(
-                                    onTap: () => _removeJollyPresenza(p),
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.shade50,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.red.shade200),
-                                      ),
-                                      child: Icon(Icons.close, size: 14, color: Colors.red.shade700),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Ruolo: ${p.allievoRuolo.toUpperCase()}${p.allievoPartnerId != null && p.cleanPartnerNome.isNotEmpty ? " • Coppia: ${p.cleanPartnerNome}" : ""}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                              ),
-                            ),
-                            onChanged: (val) {
-                              setState(() {
-                                p.presente = val ?? false;
-                                p.fonte = 'manuale'; // Modifica esplicita dall'utente
-                                _sortPresenze(_presenze);
-                              });
-                            },
                           ),
                         );
                       },

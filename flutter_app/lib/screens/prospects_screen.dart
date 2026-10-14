@@ -3,7 +3,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 
 class ProspectsScreen extends StatefulWidget {
-  const ProspectsScreen({super.key});
+  final bool embedded;
+  const ProspectsScreen({super.key, this.embedded = false});
 
   @override
   State<ProspectsScreen> createState() => _ProspectsScreenState();
@@ -34,13 +35,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
       isProspect: true,
       search: _searchQuery.isNotEmpty ? _searchQuery : null,
       scuolaId: _selectedScuolaId,
-      corsoId: _selectedCorsoId,
+      corsoId: _selectedCorsoId == 'none' ? null : _selectedCorsoId,
     );
     final scuole = await _api.getScuole();
     final corsi = await _api.getCorsi();
     if (mounted) {
       setState(() {
-        _prospects = prospects;
+        if (_selectedCorsoId == 'none') {
+          _prospects = prospects.where((p) => p.corsoId == null).toList();
+        } else {
+          _prospects = prospects;
+        }
         _scuole = scuole;
         _corsi = corsi;
         _loading = false;
@@ -88,7 +93,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   ),
                   TextField(
                     controller: telefonoController,
-                    decoration: const InputDecoration(labelText: 'Telefono * (es. +39333...)'),
+                    decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)'),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -121,12 +126,12 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     }),
                   ),
                   const SizedBox(height: 12),
-                  // ASSEGNAZIONE CORSO DI PROVA OPZIONALE
+                  // ASSEGNAZIONE SCUOLA OBBLIGATORIA
                   DropdownButtonFormField<String?>(
                     value: selectedScuolaId,
-                    decoration: const InputDecoration(labelText: 'Scuola per lezione di prova (opzionale)'),
+                    decoration: const InputDecoration(labelText: 'Scuola *'),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('-- Tutte le scuole --')),
+                      const DropdownMenuItem(value: null, child: Text('-- Seleziona una scuola --')),
                       ..._scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))),
                     ],
                     onChanged: (v) {
@@ -140,11 +145,12 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
+                  // ASSEGNAZIONE CORSO OBBLIGATORIA
                   DropdownButtonFormField<String?>(
                     value: selectedCorsoId,
-                    decoration: const InputDecoration(labelText: 'Corso di Prova assegnato (associato al livello)'),
+                    decoration: const InputDecoration(labelText: 'Corso di Prova assegnato *'),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('-- Nessun corso assegnato --')),
+                      const DropdownMenuItem(value: null, child: Text('-- Seleziona un corso --')),
                       ...filteredCorsi.map((c) => DropdownMenuItem(
                             value: c.id,
                             child: Text('${c.scuolaNome} - ${c.livelloDisplay} - ${c.giornoSettimanaDisplay} - ${c.orario}'),
@@ -163,11 +169,28 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     onChanged: (v) => setDlgState(() => recensione = v!),
                   ),
                   const SizedBox(height: 12),
+                  if (editingProspect != null && editingProspect.partnerId != null) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: Text('Coppia con: ${editingProspect.partnerNomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                        TextButton.icon(
+                          icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                          label: const Text('Rimuovi', style: TextStyle(color: Colors.red)),
+                          onPressed: () async {
+                            await _api.setPartner(editingProspect.id, null);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _loadData();
+                          },
+                        )
+                      ],
+                    )
+                  ],
                   TextField(
                     controller: noteController,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Note obbligatorie *',
+                      labelText: 'Note',
                       hintText: 'Disponibilità, richieste, lezione di prova fissata...',
                     ),
                   ),
@@ -178,7 +201,13 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
               ElevatedButton(
                 onPressed: () async {
-                  if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                  if (nomeController.text.trim().isEmpty || 
+                      cognomeController.text.trim().isEmpty || 
+                      selectedScuolaId == null || 
+                      selectedCorsoId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compila tutti i campi obbligatori (*).')));
+                    return;
+                  }
                   final data = {
                     'nome': nomeController.text.trim(),
                     'cognome': cognomeController.text.trim(),
@@ -190,12 +219,31 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     'is_prospect': true,
                     'note': noteController.text.trim().isNotEmpty ? noteController.text.trim() : 'Prospect',
                   };
-                  if (editingProspect == null) {
-                    await _api.createAllievo(data);
-                  } else {
-                    await _api.updateAllievo(editingProspect.id, data);
+                  final res = editingProspect == null
+                      ? await _api.createAllievo(data)
+                      : await _api.updateAllievo(editingProspect.id, data);
+
+                  if (res == null) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Errore durante il salvataggio del prospect. Verifica i dati inseriti.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
                   }
+
                   if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(editingProspect == null ? 'Prospect salvato con successo!' : 'Prospect aggiornato con successo!'),
+                        backgroundColor: Colors.green.shade800,
+                      ),
+                    );
+                  }
                   _loadData();
                 },
                 child: Text(editingProspect == null ? 'Salva Prospect' : 'Aggiorna Prospect'),
@@ -260,12 +308,14 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gestione Prospect'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text('Gestione Prospect (${_prospects.length})'),
+              actions: [
+                IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
+              ],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddEditProspectDialog(),
         icon: const Icon(Icons.person_add_alt_1),
@@ -275,17 +325,31 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Cerca prospect per nome, cognome o telefono...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              onChanged: (v) {
-                _searchQuery = v;
-                _loadData();
-              },
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Cerca prospect per nome, cognome o telefono...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    onChanged: (v) {
+                      _searchQuery = v;
+                      _loadData();
+                    },
+                  ),
+                ),
+                if (widget.embedded) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Ricarica dati',
+                    onPressed: _loadData,
+                  ),
+                ],
+              ],
             ),
           ),
           Padding(
@@ -352,6 +416,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                           ),
                           items: [
                             const DropdownMenuItem(value: null, child: Text('Tutti i corsi')),
+                            const DropdownMenuItem(value: 'none', child: Text('Nessun corso associato')),
                             ...corsiFiltratiPerScuola.map((c) => DropdownMenuItem(
                               value: c.id,
                               child: Text(
@@ -407,10 +472,6 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
                     return Card(
                       child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.orange.shade100,
-                          child: const Icon(Icons.contact_mail, color: Colors.orange),
-                        ),
                         title: Row(
                           children: [
                             Text(p.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -429,7 +490,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 4),
-                            Text('📞 ${p.telefono} | Ruolo: ${p.ruoloDisplay} | Livello: ${p.livelloDisplay}'),
+                            Text('📞 ${p.telefono.isNotEmpty ? p.telefono : "N/D"} | Ruolo: ${p.ruoloDisplay} | Livello: ${p.livelloDisplay}'),
                             if (hasCorso) ...[
                               const SizedBox(height: 4),
                               Container(
@@ -461,9 +522,38 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                               tooltip: 'Modifica prospect',
                               onPressed: () => _showAddEditProspectDialog(p),
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                              tooltip: 'Elimina prospect',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Conferma Eliminazione'),
+                                    content: Text('Vuoi eliminare definitivamente il prospect ${p.nomeCompleto}?'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('Elimina'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  final ok = await _api.deleteAllievo(p.id);
+                                  if (ok) {
+                                    _loadData();
+                                  } else if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore eliminazione')));
+                                  }
+                                }
+                              },
+                            ),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
+                                backgroundColor: Theme.of(context).colorScheme.primary,
                                 foregroundColor: Colors.white,
                                 visualDensity: VisualDensity.compact,
                               ),

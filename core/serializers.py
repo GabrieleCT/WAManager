@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    SondaggioMattutinoConfig
+    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate
 )
 from .wa_client import resolve_group_link
 
@@ -38,10 +38,25 @@ def normalize_and_resolve_whatsapp_group(value: str) -> str:
 
 class ScuolaSerializer(serializers.ModelSerializer):
     corsi_count = serializers.IntegerField(source='corsi.count', read_only=True)
+    allievi_count = serializers.SerializerMethodField()
+    prospects_count = serializers.SerializerMethodField()
+    paganti_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Scuola
-        fields = ['id', 'nome', 'sede', 'gruppo_whatsapp', 'corsi_count']
+        fields = [
+            'id', 'nome', 'sede', 'gruppo_whatsapp', 'corsi_count',
+            'allievi_count', 'prospects_count', 'paganti_count'
+        ]
+
+    def get_allievi_count(self, obj):
+        return Allievo.objects.filter(corso__scuola=obj, is_prospect=False).count()
+
+    def get_prospects_count(self, obj):
+        return Allievo.objects.filter(corso__scuola=obj, is_prospect=True).count()
+
+    def get_paganti_count(self, obj):
+        return Pagamento.objects.filter(corso__scuola=obj).values('allievo').distinct().count()
 
     def validate_gruppo_whatsapp(self, value):
         return normalize_and_resolve_whatsapp_group(value)
@@ -53,15 +68,27 @@ class CorsoSerializer(serializers.ModelSerializer):
     scuola_sede = serializers.CharField(source='scuola.sede', read_only=True)
     livello_display = serializers.CharField(source='get_livello_display', read_only=True)
     giorno_settimana_display = serializers.CharField(source='get_giorno_settimana_display', read_only=True)
-    allievi_count = serializers.IntegerField(source='allievi.count', read_only=True)
+    allievi_count = serializers.SerializerMethodField()
+    prospects_count = serializers.SerializerMethodField()
+    paganti_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Corso
         fields = [
             'id', 'scuola', 'scuola_nome', 'scuola_sede', 'livello',
             'livello_display', 'giorno_settimana', 'giorno_settimana_display',
-            'orario', 'anno_accademico', 'gruppo_whatsapp', 'allievi_count'
+            'orario', 'anno_accademico', 'gruppo_whatsapp',
+            'allievi_count', 'prospects_count', 'paganti_count'
         ]
+
+    def get_allievi_count(self, obj):
+        return obj.allievi.filter(is_prospect=False).count()
+
+    def get_prospects_count(self, obj):
+        return obj.allievi.filter(is_prospect=True).count()
+
+    def get_paganti_count(self, obj):
+        return Pagamento.objects.filter(corso=obj).values('allievo').distinct().count()
 
     def to_internal_value(self, data):
         if isinstance(data, dict) and 'giorno_settimana' in data and data['giorno_settimana']:
@@ -108,6 +135,10 @@ class AllievoSerializer(serializers.ModelSerializer):
     partner_cognome = serializers.CharField(source='partner.cognome', read_only=True)
     corso_gruppo_whatsapp = serializers.CharField(source='corso.gruppo_whatsapp', read_only=True)
     corso_has_whatsapp = serializers.SerializerMethodField()
+    telefono = serializers.CharField(required=False, allow_blank=True, default='')
+    numero_tessera = serializers.CharField(required=False, allow_blank=True, default='')
+    data_emissione_tessera = serializers.DateField(required=False, allow_null=True)
+    stato_tessera = serializers.CharField(read_only=True)
 
     class Meta:
         model = Allievo
@@ -117,8 +148,20 @@ class AllievoSerializer(serializers.ModelSerializer):
             'recensione', 'recensione_display', 'livello', 'livello_display',
             'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
-            'corso_gruppo_whatsapp', 'corso_has_whatsapp'
+            'corso_gruppo_whatsapp', 'corso_has_whatsapp',
+            'numero_tessera', 'data_emissione_tessera', 'stato_tessera'
         ]
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            if 'telefono' in data and data['telefono'] is None:
+                data['telefono'] = ''
+            if data.get('data_emissione_tessera') == '':
+                data['data_emissione_tessera'] = None
+            if 'numero_tessera' in data and data['numero_tessera'] is None:
+                data['numero_tessera'] = ''
+        return super().to_internal_value(data)
 
     def get_corso_descrizione(self, obj):
         if obj.corso:
@@ -160,6 +203,13 @@ class LezioneSerializer(serializers.ModelSerializer):
             'data', 'titolo', 'argomento', 'argomento_titolo',
             'presenze_totali', 'presenti_count'
         ]
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            if data.get('argomento') == '':
+                data['argomento'] = None
+        return super().to_internal_value(data)
 
     def get_corso_descrizione(self, obj):
         return str(obj.corso)
@@ -274,6 +324,40 @@ class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
             'id', 'corso', 'corso_nome', 'scuola_nome',
             'orario', 'giorni_settimana', 'testo',
             'is_poll', 'poll_opzione_1', 'poll_opzione_2',
-            'is_active', 'created_at', 'updated_at'
+            'ore_ascolto_risposte', 'is_active',
+            'sollecito_attivo', 'sollecito_orario', 'sollecito_testo',
+            'created_at', 'updated_at'
         ]
+
+class GeminiLogSerializer(serializers.ModelSerializer):
+    allievo_nome = serializers.SerializerMethodField()
+    lezione_descrizione = serializers.CharField(source='lezione.__str__', read_only=True)
+
+    class Meta:
+        model = GeminiLog
+        fields = [
+            'id', 'timestamp', 'allievo', 'allievo_nome', 'lezione', 'lezione_descrizione',
+            'testo_originale', 'risposta_ai', 'esito_interpretato'
+        ]
+
+    def get_allievo_nome(self, obj):
+        return f"{obj.allievo.nome} {obj.allievo.cognome}" if obj.allievo else "Sconosciuto"
+
+
+class DocumentTemplateSerializer(serializers.ModelSerializer):
+    filename = serializers.ReadOnlyField()
+    file_size = serializers.ReadOnlyField()
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentTemplate
+        fields = [
+            'id', 'chiave', 'nome', 'descrizione',
+            'filename', 'file_size', 'file_url', 'updated_at'
+        ]
+
+    def get_file_url(self, obj):
+        if obj.file and obj.file.name:
+            return f"/api/document-templates/{obj.chiave}/file/"
+        return None
 

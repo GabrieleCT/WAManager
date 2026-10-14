@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
@@ -26,6 +27,75 @@ class _ScuoleScreenState extends State<ScuoleScreen> {
       _scuole = scuole;
       _loading = false;
     });
+  }
+
+  Future<void> _checkWhatsappMembers(Scuola s) async {
+    if (s.gruppoWhatsapp.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nessun gruppo WhatsApp impostato per questa scuola.')));
+      return;
+    }
+    
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    
+    try {
+      final res = await _api.checkScuolaWhatsapp(s.id);
+      if (!mounted) return;
+      Navigator.pop(context); // Chiudi il loader
+      
+      final int total = res['total_participants'] ?? 0;
+      final int unregCount = res['unregistered_count'] ?? 0;
+      final List unregNumbers = res['unregistered_numbers'] ?? [];
+      
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Analisi Gruppo WhatsApp'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Partecipanti totali nel gruppo: $total', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Text('Numeri NON censiti come allievi: $unregCount', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                const SizedBox(height: 10),
+                if (unregNumbers.isNotEmpty)
+                  Container(
+                    height: 200,
+                    width: double.maxFinite,
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: unregNumbers.length,
+                      itemBuilder: (context, index) {
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.phone_android, size: 16),
+                          title: SelectableText(unregNumbers[index].toString(), style: const TextStyle(fontSize: 14)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.copy, size: 16),
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: unregNumbers[index].toString()));
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numero copiato!'), duration: Duration(seconds: 1)));
+                            },
+                          ),
+                        );
+                      }
+                    ),
+                  )
+              ]
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi')),
+          ],
+        )
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   void _showAddScuolaDialog([Scuola? scuola]) {
@@ -242,6 +312,11 @@ class _ScuoleScreenState extends State<ScuoleScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Chip(label: Text('${s.corsiCount} corsi')),
+                      IconButton(
+                        tooltip: 'Analisi Membri WhatsApp',
+                        icon: const Icon(Icons.person_search, color: Colors.green),
+                        onPressed: () => _checkWhatsappMembers(s),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.edit, color: Colors.blue),
                         onPressed: () => _showAddScuolaDialog(s),
