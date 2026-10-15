@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
@@ -83,6 +85,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
       selectedCorsoId = _allievi.first.corsoId;
     }
     final importoController = TextEditingController(text: '150.00');
+    final causaleController = TextEditingController(text: 'Quota Primo Trimestre (T1)');
     final noteController = TextEditingController();
     String trimestre = 'T1';
     DateTime selectedDate = DateTime.now();
@@ -131,7 +134,14 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                     DropdownMenuItem(value: 'T2', child: Text('Secondo Trimestre (T2)')),
                     DropdownMenuItem(value: 'T3', child: Text('Terzo Trimestre (T3)')),
                   ],
-                  onChanged: (v) => setDlgState(() => trimestre = v!),
+                  onChanged: (v) => setDlgState(() {
+                    trimestre = v!;
+                    if (causaleController.text.startsWith('Quota ') || causaleController.text.isEmpty) {
+                      if (v == 'T1') causaleController.text = 'Quota Primo Trimestre (T1)';
+                      if (v == 'T2') causaleController.text = 'Quota Secondo Trimestre (T2)';
+                      if (v == 'T3') causaleController.text = 'Quota Terzo Trimestre (T3)';
+                    }
+                  }),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -140,6 +150,14 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Importo (€) *',
                     prefixText: '€ ',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: causaleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Causale Pagamento *',
+                    hintText: 'es. Quota Primo Trimestre, Mensilità Ottobre',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -177,6 +195,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                   'importo': double.tryParse(importoController.text.trim()) ?? 150.00,
                   'trimestre': trimestre,
                   'data_pagamento': DateFormat('yyyy-MM-dd').format(selectedDate),
+                  'causale': causaleController.text.trim(),
                   'note': noteController.text.trim(),
                 };
                 await _api.createPagamento(data);
@@ -191,9 +210,150 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     );
   }
 
+  void _showEditPaymentDialog(Pagamento p) {
+    final importoController = TextEditingController(text: p.importo.toStringAsFixed(2));
+    final causaleController = TextEditingController(text: p.causale.isNotEmpty ? p.causale : p.causaleDisplay);
+    final noteController = TextEditingController(text: p.note);
+    String trimestre = p.trimestre;
+    DateTime selectedDate = DateTime.tryParse(p.dataPagamento) ?? DateTime.now();
 
-  void _stampaRicevuta(Pagamento p) {
-    PdfReportService.generaRicevutaPagamento(context: context, pagamento: p);
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: Text('Modifica Pagamento - ${p.allievoNome}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${p.scuolaNome} - ${p.corsoDescrizione}',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: trimestre,
+                  decoration: const InputDecoration(labelText: 'Trimestre *'),
+                  items: const [
+                    DropdownMenuItem(value: 'T1', child: Text('Primo Trimestre (T1)')),
+                    DropdownMenuItem(value: 'T2', child: Text('Secondo Trimestre (T2)')),
+                    DropdownMenuItem(value: 'T3', child: Text('Terzo Trimestre (T3)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setDlgState(() {
+                        trimestre = v;
+                        if (causaleController.text.startsWith('Quota ') || causaleController.text.isEmpty) {
+                          if (v == 'T1') causaleController.text = 'Quota Primo Trimestre (T1)';
+                          if (v == 'T2') causaleController.text = 'Quota Secondo Trimestre (T2)';
+                          if (v == 'T3') causaleController.text = 'Quota Terzo Trimestre (T3)';
+                        }
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: importoController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Importo (€) *',
+                    prefixText: '€ ',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: causaleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Causale Pagamento *',
+                    hintText: 'es. Quota Primo Trimestre, Mensilità Ottobre',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Data Pagamento: ${DateFormat('dd/MM/yyyy').format(selectedDate)}'),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2035),
+                    );
+                    if (picked != null) {
+                      setDlgState(() => selectedDate = picked);
+                    }
+                  },
+                ),
+                TextField(
+                  controller: noteController,
+                  decoration: const InputDecoration(labelText: 'Note aggiuntive (es. bonifico, contanti)'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+            ElevatedButton(
+              onPressed: () async {
+                final double? importoVal = double.tryParse(importoController.text.trim());
+                if (importoVal == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Inserisci un importo valido.')),
+                  );
+                  return;
+                }
+                final data = {
+                  'importo': importoVal,
+                  'causale': causaleController.text.trim(),
+                  'trimestre': trimestre,
+                  'data_pagamento': DateFormat('yyyy-MM-dd').format(selectedDate),
+                  'note': noteController.text.trim(),
+                };
+                final res = await _api.updatePagamento(p.id, data);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (res != null) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Pagamento aggiornato con successo.')),
+                    );
+                  }
+                  _loadAll();
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Errore durante l\'aggiornamento del pagamento.')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Salva Modifiche'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _stampaRicevuta(Pagamento p) async {
+    try {
+      final templateBytes = await _api.getPagamentoRicevutaPdf(p.id);
+      if (templateBytes != null && templateBytes.isNotEmpty) {
+        await Printing.layoutPdf(
+          onLayout: (PdfPageFormat format) async => templateBytes,
+          name: 'Ricevuta_Pagamento_${p.id}.pdf',
+        );
+        return;
+      }
+    } catch (e) {
+      debugPrint('Fallback stampa ricevuta pagamento: $e');
+    }
+
+    if (mounted) {
+      PdfReportService.generaRicevutaPagamento(context: context, pagamento: p);
+    }
   }
 
   void _esportaReportPagamenti() {
@@ -317,15 +477,23 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('${p.scuolaNome} | ${p.corsoDescrizione}'),
+                        const SizedBox(height: 2),
+                        Text('Causale: ${p.causaleDisplay}',
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87, fontSize: 13)),
                         Text('Data: ${p.dataPagamento}${p.note.isNotEmpty ? ' | Note: ' + p.note : ''}',
                             style: const TextStyle(fontSize: 12, color: Colors.grey)),
                       ],
                     ),
-                                        trailing: Row(
+                    trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('€ ${p.importo.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          tooltip: 'Modifica Pagamento',
+                          onPressed: () => _showEditPaymentDialog(p),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.receipt, color: Colors.indigo),
                           tooltip: 'Stampa Ricevuta',
@@ -333,6 +501,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
+                          tooltip: 'Elimina Pagamento',
                           onPressed: () => _deletePagamento(p),
                         ),
                       ],

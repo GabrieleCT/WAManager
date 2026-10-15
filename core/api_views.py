@@ -9,19 +9,22 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 import datetime
 from django.utils import timezone
 
-from django.http import FileResponse, Http404
+from django.http import HttpResponse, FileResponse, Http404
+from .pdf_template_service import genera_pdf_ricevuta_da_template
 
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate
+    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig
 )
 from .serializers import (
     ScuolaSerializer, CorsoSerializer, ArgomentoSerializer,
     AllievoSerializer, JollySerializer, LezioneSerializer,
     PresenzaSerializer, PagamentoSerializer, MessageTemplateSerializer,
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer,
-    SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer
+    SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer,
+    ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer
 )
 from .services import generate_matches
 from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
@@ -731,8 +734,40 @@ class PagamentoViewSet(viewsets.ModelViewSet):
     serializer_class = PagamentoSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['allievo', 'corso', 'corso__scuola', 'trimestre']
-    search_fields = ['allievo__nome', 'allievo__cognome', 'corso__scuola__nome', 'note']
+    search_fields = ['allievo__nome', 'allievo__cognome', 'corso__scuola__nome', 'causale', 'note']
     ordering_fields = ['data_pagamento', 'importo']
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Restituisce il PDF della ricevuta compilato dal template per il pagamento specificato."""
+        pagamento = self.get_object()
+        try:
+            allievo_nome = f"{pagamento.allievo.nome} {pagamento.allievo.cognome}" if pagamento.allievo else "Ricevuta"
+            numero = str(pagamento.id)[:6].upper()
+            anno = pagamento.data_pagamento.year if pagamento.data_pagamento else timezone.now().year
+            causale = pagamento.causale
+            if not causale:
+                causale = f"Quota corso {pagamento.corso.nome if pagamento.corso else ''}"
+                if pagamento.trimestre:
+                    causale += f" ({pagamento.get_trimestre_display()})"
+
+            pdf_bytes = genera_pdf_ricevuta_da_template(
+                numero=numero,
+                anno=anno,
+                intestatario=allievo_nome,
+                importo=pagamento.importo,
+                causale=causale,
+                data_emissione=pagamento.data_pagamento or timezone.now().date()
+            )
+            if not pdf_bytes:
+                return Response({'error': 'Template ricevuta non trovato o non configurato.'}, status=status.HTTP_404_NOT_FOUND)
+
+            filename = f"ricevuta_pagamento_{pagamento.id}.pdf"
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class MessageTemplateViewSet(viewsets.ModelViewSet):
@@ -1115,4 +1150,464 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
             return FileResponse(template.file.open('rb'), content_type='application/pdf', filename=template.filename)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+
+class RicevutaViewSet(viewsets.ModelViewSet):
+    queryset = Ricevuta.objects.all().order_by('-anno', '-numero')
+    serializer_class = RicevutaSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['anno', 'allievo']
+    ordering_fields = ['numero', 'anno', 'data', 'importo', 'created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        anno = self.request.query_params.get('anno')
+        if anno:
+            try:
+                qs = qs.filter(anno=int(anno))
+            except ValueError:
+                pass
+        search = self.request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(intestatario__icontains=search) |
+                Q(causale__icontains=search) |
+                Q(note__icontains=search) |
+                Q(numero__icontains=search)
+            )
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    @action(detail=False, methods=['get'], url_path='anni')
+    def get_anni(self, request):
+        """Restituisce l'elenco degli anni per cui esistono ricevute, includendo l'anno corrente."""
+        curr_year = timezone.now().year
+        anni_db = list(Ricevuta.objects.values_list('anno', flat=True).distinct())
+        anni_cont = list(ContatoreRicevute.objects.values_list('anno', flat=True).distinct())
+        tutti_anni = sorted(list(set(anni_db + anni_cont + [curr_year])), reverse=True)
+        return Response({'anni': tutti_anni, 'anno_corrente': curr_year})
+
+    @action(detail=False, methods=['get'], url_path='contatore')
+    def get_contatore(self, request):
+        """Restituisce il contatore di ricevute per l'anno specificato (default anno corrente)."""
+        anno_param = request.query_params.get('anno')
+        curr_year = timezone.now().year
+        try:
+            anno = int(anno_param) if anno_param else curr_year
+        except ValueError:
+            anno = curr_year
+
+        contatore, created = ContatoreRicevute.objects.get_or_create(
+            anno=anno,
+            defaults={'ultimo_numero': 0}
+        )
+        if created:
+            from django.db.models import Max
+            max_existing = Ricevuta.objects.filter(anno=anno).aggregate(m=Max('numero'))['m'] or 0
+            if max_existing > 0:
+                contatore.ultimo_numero = max_existing
+                contatore.save()
+
+        conteggio_emesse = Ricevuta.objects.filter(anno=anno).count()
+
+        return Response({
+            'anno': anno,
+            'ultimo_numero': contatore.ultimo_numero,
+            'prossimo_numero': contatore.ultimo_numero + 1,
+            'conteggio_emesse': conteggio_emesse,
+            'is_anno_corrente': (anno == curr_year),
+        })
+
+    @action(detail=False, methods=['post'], url_path='aggiorna-contatore')
+    def aggiorna_contatore(self, request):
+        """Permette di modificare il contatore (ultimo_numero) per un anno specificato."""
+        anno = request.data.get('anno')
+        ultimo_numero = request.data.get('ultimo_numero')
+
+        curr_year = timezone.now().year
+        try:
+            anno = int(anno) if anno is not None else curr_year
+        except ValueError:
+            anno = curr_year
+
+        if ultimo_numero is None:
+            return Response({'error': 'Campo ultimo_numero obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            ultimo_numero = int(ultimo_numero)
+            if ultimo_numero < 0:
+                return Response({'error': 'Il numero deve essere maggiore o uguale a 0.'}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({'error': 'Valore ultimo_numero non valido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        contatore, _ = ContatoreRicevute.objects.get_or_create(
+            anno=anno,
+            defaults={'ultimo_numero': ultimo_numero}
+        )
+        contatore.ultimo_numero = ultimo_numero
+        contatore.save()
+
+        conteggio_emesse = Ricevuta.objects.filter(anno=anno).count()
+        return Response({
+            'success': True,
+            'anno': anno,
+            'ultimo_numero': contatore.ultimo_numero,
+            'prossimo_numero': contatore.ultimo_numero + 1,
+            'conteggio_emesse': conteggio_emesse,
+        })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Restituisce il PDF compilato dal template per la ricevuta specificata."""
+        ricevuta = self.get_object()
+        try:
+            pdf_bytes = genera_pdf_ricevuta_da_template(
+                numero=ricevuta.numero,
+                anno=ricevuta.anno,
+                intestatario=ricevuta.intestatario,
+                importo=ricevuta.importo,
+                causale=ricevuta.causale,
+                data_emissione=ricevuta.data
+            )
+            if not pdf_bytes:
+                return Response({'error': 'Template ricevuta non trovato o non configurato.'}, status=status.HTTP_404_NOT_FOUND)
+
+            filename = f"ricevuta_{ricevuta.numero}_{ricevuta.anno}.pdf"
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class GoogleDriveConfigViewSet(viewsets.ViewSet):
+    """
+    Gestione della configurazione e chiave privata Google Drive.
+    """
+    def list(self, request):
+        config = GoogleDriveConfig.get_instance()
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='upload')
+    def upload_file(self, request):
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'success': False, 'error': 'Nessun file fornito.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = GoogleDriveConfig.get_instance()
+
+        content_bytes = file_obj.read()
+        file_obj.seek(0)
+
+        client_email = ''
+        project_id = ''
+        private_key_id = ''
+
+        try:
+            import json
+            data = json.loads(content_bytes.decode('utf-8'))
+            if isinstance(data, dict):
+                client_email = data.get('client_email', '')
+                project_id = data.get('project_id', '')
+                private_key_id = data.get('private_key_id', '')
+        except Exception:
+            pass
+
+        if config.credentials_file:
+            try:
+                config.credentials_file.delete(save=False)
+            except Exception:
+                pass
+
+        config.credentials_file = file_obj
+        config.client_email = client_email
+        config.project_id = project_id
+        config.private_key_id = private_key_id
+        config.last_test_status = ''
+        config.last_test_message = ''
+        config.last_tested_at = None
+        config.save()
+
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path='test')
+    def test_connection(self, request):
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Nessuna chiave privata caricata per Google Drive.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+
+            credentials = service_account.Credentials.from_service_account_file(
+                config.credentials_file.path,
+                scopes=['https://www.googleapis.com/auth/drive']
+            )
+            drive_service = build('drive', 'v3', credentials=credentials)
+
+            about = drive_service.about().get(fields='user').execute()
+            user_info = about.get('user', {})
+            user_display = user_info.get('displayName') or user_info.get('emailAddress') or config.client_email or 'Google Drive'
+
+            config.last_test_status = 'success'
+            config.last_test_message = f"Connessione a Google Drive riuscita! Account: {user_display}"
+            config.last_tested_at = timezone.now()
+            config.save()
+
+            serializer = GoogleDriveConfigSerializer(config)
+            return Response({'success': True, 'config': serializer.data, 'message': config.last_test_message})
+        except Exception as e:
+            config.last_test_status = 'error'
+            config.last_test_message = f"Errore connessione Google Drive: {str(e)}"
+            config.last_tested_at = timezone.now()
+            config.save()
+
+            serializer = GoogleDriveConfigSerializer(config)
+            return Response({'success': False, 'config': serializer.data, 'error': config.last_test_message})
+
+    @action(detail=False, methods=['post', 'delete'], url_path='remove')
+    def remove_file(self, request):
+        config = GoogleDriveConfig.get_instance()
+        if config.credentials_file:
+            try:
+                config.credentials_file.delete(save=False)
+            except Exception:
+                pass
+            config.credentials_file = None
+            config.client_email = ''
+            config.project_id = ''
+            config.private_key_id = ''
+            config.last_test_status = ''
+            config.last_test_message = ''
+            config.last_tested_at = None
+            config.save()
+
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    def _get_drive_service(self, config=None):
+        if not config:
+            config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            raise ValueError('Nessuna chiave privata valida configurata per Google Drive.')
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+
+        credentials = service_account.Credentials.from_service_account_file(
+            config.credentials_file.path,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        return build('drive', 'v3', credentials=credentials)
+
+    @action(detail=False, methods=['get'], url_path='folders')
+    def list_folders(self, request):
+        """
+        Sfoglia l'alberatura delle cartelle di Google Drive a cui ha accesso il service account.
+        Se parent_id è vuoto o 'root', elenca le cartelle condivise direttamente con il service account,
+        le cartelle radice del suo drive e gli Shared Drives (Team Drives).
+        Se parent_id è specificato, elenca le sottocartelle di quel parent.
+        """
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Nessuna chiave privata configurata per Google Drive. Carica prima il file delle credenziali.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        parent_id = (request.query_params.get('parent_id') or '').strip()
+
+        try:
+            drive_service = self._get_drive_service(config)
+
+            if not parent_id or parent_id == 'root':
+                # Radice / Cartelle condivise con il Service Account
+                items_dict = {}
+
+                # 1. Cartelle condivise con il service account
+                try:
+                    q_shared = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and sharedWithMe = true"
+                    res_shared = drive_service.files().list(
+                        q=q_shared,
+                        pageSize=100,
+                        fields='files(id, name, mimeType, parents, owners, modifiedTime)',
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True
+                    ).execute()
+                    for f in res_shared.get('files', []):
+                        items_dict[f['id']] = {
+                            'id': f['id'],
+                            'name': f.get('name', 'Senza nome'),
+                            'is_shared': True,
+                            'parents': f.get('parents', []),
+                        }
+                except Exception as e:
+                    print(f"Avviso cartelle sharedWithMe: {e}")
+
+                # 2. Cartelle radice del Drive del Service Account
+                try:
+                    q_root = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
+                    res_root = drive_service.files().list(
+                        q=q_root,
+                        pageSize=100,
+                        fields='files(id, name, mimeType, parents, owners, modifiedTime)',
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True
+                    ).execute()
+                    for f in res_root.get('files', []):
+                        items_dict[f['id']] = {
+                            'id': f['id'],
+                            'name': f.get('name', 'Senza nome'),
+                            'is_shared': False,
+                            'parents': f.get('parents', []),
+                        }
+                except Exception as e:
+                    print(f"Avviso cartelle root: {e}")
+
+                # 3. Shared Drives (Team Drives)
+                try:
+                    res_drives = drive_service.drives().list(pageSize=50).execute()
+                    for d in res_drives.get('drives', []):
+                        items_dict[d['id']] = {
+                            'id': d['id'],
+                            'name': d.get('name', 'Shared Drive'),
+                            'is_drive': True,
+                            'parents': [],
+                        }
+                except Exception:
+                    pass
+
+                folders = sorted(items_dict.values(), key=lambda x: x['name'].lower())
+                return Response({
+                    'success': True,
+                    'parent_id': 'root',
+                    'current_folder': {
+                        'id': 'root',
+                        'name': 'Radice / Cartelle Condivise',
+                        'parents': [],
+                    },
+                    'breadcrumbs': [
+                        {'id': 'root', 'name': 'Drive (Radice / Condivisi)'}
+                    ],
+                    'folders': folders
+                })
+            else:
+                # Sottocartella specifica
+                current_info = {'id': parent_id, 'name': parent_id, 'parents': []}
+                try:
+                    current_info = drive_service.files().get(
+                        fileId=parent_id,
+                        fields='id, name, parents',
+                        supportsAllDrives=True
+                    ).execute()
+                except Exception:
+                    pass
+
+                q_sub = f"mimeType = 'application/vnd.google-apps.folder' and trashed = false and '{parent_id}' in parents"
+                res_sub = drive_service.files().list(
+                    q=q_sub,
+                    pageSize=100,
+                    fields='files(id, name, mimeType, parents, modifiedTime)',
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
+                ).execute()
+
+                subfolders = []
+                for f in res_sub.get('files', []):
+                    subfolders.append({
+                        'id': f['id'],
+                        'name': f.get('name', 'Senza nome'),
+                        'parents': f.get('parents', []),
+                    })
+                subfolders.sort(key=lambda x: x['name'].lower())
+
+                return Response({
+                    'success': True,
+                    'parent_id': parent_id,
+                    'current_folder': current_info,
+                    'folders': subfolders
+                })
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f"Errore durante l'accesso alle cartelle di Google Drive: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='create-folder')
+    def create_folder(self, request):
+        """
+        Crea una nuova cartella su Google Drive all'interno della cartella specificata.
+        """
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Google Drive non configurato.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        name = (request.data.get('name') or '').strip()
+        parent_id = (request.data.get('parent_id') or '').strip()
+
+        if not name:
+            return Response({'success': False, 'error': 'Nome della cartella obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            drive_service = self._get_drive_service(config)
+            body = {
+                'name': name,
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            if parent_id and parent_id != 'root':
+                body['parents'] = [parent_id]
+
+            new_folder = drive_service.files().create(
+                body=body,
+                fields='id, name, parents',
+                supportsAllDrives=True
+            ).execute()
+
+            return Response({
+                'success': True,
+                'folder': {
+                    'id': new_folder.get('id'),
+                    'name': new_folder.get('name'),
+                    'parents': new_folder.get('parents', [])
+                }
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f"Errore creazione cartella: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['patch', 'post'], url_path='update-settings')
+    def update_settings(self, request):
+        config = GoogleDriveConfig.get_instance()
+        folder_fields = [
+            'folder_id',
+            'folder_ricevute_id',
+            'folder_ricevute_nome',
+            'folder_tessere_id',
+            'folder_tessere_nome'
+        ]
+        for f in folder_fields:
+            if f in request.data:
+                setattr(config, f, str(request.data.get(f) or '').strip())
+
+        if 'is_active' in request.data:
+            config.is_active = bool(request.data.get('is_active'))
+
+        config.save()
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
 

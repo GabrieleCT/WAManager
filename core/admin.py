@@ -1,7 +1,8 @@
 from django.contrib import admin
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
-    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule
+    Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig
 )
 
 
@@ -84,4 +85,25 @@ class MatchAdmin(admin.ModelAdmin):
 class RecurringScheduleAdmin(admin.ModelAdmin):
     list_display = ('corso', 'days_of_week', 'time', 'rsvp_mode', 'debug_mode')
     list_filter = ('rsvp_mode', 'debug_mode')
+
+
+@admin.register(ContatoreRicevute)
+class ContatoreRicevuteAdmin(admin.ModelAdmin):
+    list_display = ('anno', 'ultimo_numero', 'updated_at')
+    ordering = ('-anno',)
+
+
+@admin.register(Ricevuta)
+class RicevutaAdmin(admin.ModelAdmin):
+    list_display = ('numero_display', 'data', 'intestatario', 'causale', 'importo', 'allievo')
+    list_filter = ('anno', 'data')
+    search_fields = ('intestatario', 'causale', 'note', 'numero')
+    ordering = ('-anno', '-numero')
+
+
+@admin.register(GoogleDriveConfig)
+class GoogleDriveConfigAdmin(admin.ModelAdmin):
+    list_display = ('client_email', 'project_id', 'is_active', 'last_test_status', 'last_tested_at', 'updated_at')
+    readonly_fields = ('client_email', 'project_id', 'private_key_id', 'last_test_status', 'last_test_message', 'last_tested_at')
+
 

@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.utils import timezone
 
 
 # ─── Enumerazioni ───────────────────────────────────────────────
@@ -311,6 +312,7 @@ class Pagamento(models.Model):
     importo = models.DecimalField(max_digits=8, decimal_places=2, default=150.00)
     trimestre = models.CharField(max_length=2, choices=Trimestre.choices, default=Trimestre.PRIMO)
     data_pagamento = models.DateField()
+    causale = models.CharField(max_length=255, blank=True, default='')
     note = models.TextField(blank=True, default='')
 
     class Meta:
@@ -318,7 +320,8 @@ class Pagamento(models.Model):
         ordering = ['-data_pagamento']
 
     def __str__(self):
-        return f"{self.allievo} - {self.corso} - {self.get_trimestre_display()} - €{self.importo}"
+        causale_str = f" ({self.causale})" if self.causale else ""
+        return f"{self.allievo} - {self.corso} - {self.get_trimestre_display()}{causale_str} - €{self.importo}"
 
 
 # ─── WhatsApp: Template e Log messaggi ──────────────────────────
@@ -527,3 +530,104 @@ class DocumentTemplate(models.Model):
             except Exception:
                 return 0
         return 0
+
+
+# ─── 1.12 Ricevute ──────────────────────────────────────────────
+
+class ContatoreRicevute(models.Model):
+    anno = models.PositiveIntegerField(unique=True, help_text="Anno di riferimento (es. 2026)")
+    ultimo_numero = models.PositiveIntegerField(default=0, help_text="Ultimo numero di ricevuta emesso per l'anno")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Contatore Ricevute"
+        verbose_name_plural = "Contatori Ricevute"
+        ordering = ['-anno']
+
+    def __str__(self):
+        return f"Anno {self.anno}: Ultimo N. {self.ultimo_numero}"
+
+
+class Ricevuta(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    numero = models.PositiveIntegerField(help_text="Numero progressivo di ricevuta")
+    anno = models.PositiveIntegerField(help_text="Anno di emissione (es. 2026)")
+    data = models.DateField(default=timezone.now, help_text="Data di emissione della ricevuta")
+    intestatario = models.CharField(max_length=255, help_text="Nome e cognome o ragione sociale dell'intestatario")
+    causale = models.CharField(max_length=255, help_text="Causale del pagamento")
+    importo = models.DecimalField(max_digits=10, decimal_places=2, help_text="Importo in Euro")
+    note = models.TextField(blank=True, default='', help_text="Note aggiuntive (es. bonifico, contanti)")
+    allievo = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True, related_name='ricevute')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ricevuta"
+        verbose_name_plural = "Ricevute"
+        ordering = ['-anno', '-numero']
+        unique_together = ('anno', 'numero')
+
+    @property
+    def numero_display(self):
+        return f"N. {self.numero}/{self.anno}"
+
+    def __str__(self):
+        return f"Ricevuta {self.numero_display} - {self.intestatario} (€ {self.importo})"
+
+
+# ─── 1.13 Google Drive Configuration ───────────────────────────
+
+class GoogleDriveConfig(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    credentials_file = models.FileField(upload_to='google_drive/', null=True, blank=True, help_text="File JSON chiave privata / Service Account di Google Drive")
+    client_email = models.CharField(max_length=255, blank=True, default='', help_text="Email dell'account di servizio (da abilitare sulle cartelle Drive)")
+    project_id = models.CharField(max_length=255, blank=True, default='', help_text="ID Progetto Google Cloud")
+    private_key_id = models.CharField(max_length=255, blank=True, default='', help_text="ID chiave privata")
+    folder_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella predefinita Google Drive")
+    folder_ricevute_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Ricevute")
+    folder_ricevute_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Ricevute")
+    folder_tessere_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Tessere")
+    folder_tessere_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Tessere")
+    is_active = models.BooleanField(default=True, help_text="Stato attivazione integrazione Google Drive")
+    last_tested_at = models.DateTimeField(null=True, blank=True)
+    last_test_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error'
+    last_test_message = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configurazione Google Drive"
+        verbose_name_plural = "Configurazioni Google Drive"
+
+    def __str__(self):
+        status = "Configurato" if self.is_configured else "Non configurato"
+        return f"Google Drive ({status} - {self.client_email or 'Nessun account'})"
+
+    @classmethod
+    def get_instance(cls):
+        inst = cls.objects.first()
+        if not inst:
+            inst = cls.objects.create()
+        return inst
+
+    @property
+    def is_configured(self):
+        import os
+        return bool(self.credentials_file and self.credentials_file.name and os.path.exists(self.credentials_file.path))
+
+    @property
+    def filename(self):
+        if self.credentials_file and self.credentials_file.name:
+            import os
+            return os.path.basename(self.credentials_file.name)
+        return ''
+
+    @property
+    def file_size(self):
+        if self.credentials_file:
+            try:
+                return self.credentials_file.size
+            except Exception:
+                return 0
+        return 0
+

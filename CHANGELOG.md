@@ -3,6 +3,25 @@
 Tutte le modifiche rilevanti a questo progetto saranno documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it-IT/1.0.0/), e questo progetto rispetta il [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-15
+### Added
+- **Sezione Ricevute:**
+  - Nuova sezione "Ricevute" nel menu di navigazione principale.
+  - Monitoraggio e modifica del contatore delle ricevute per l'anno selezionato.
+  - Elenco storico delle ricevute emesse con filtri per anno e barra di ricerca.
+  - Dialog di emissione nuova ricevuta con intestatario, causale, importo, data e collegamento facoltativo all'allievo.
+  - Stampa e generazione PDF compilato a partire dal template PDF caricato.
+- **Integrazione Google Drive (Impostazioni):**
+  - Nuova scheda "Google Drive" nelle Impostazioni.
+  - Upload sicuro del file JSON della chiave privata del Service Account di Google Cloud con visualizzazione metadati.
+  - Pulsante per copiare con un click l'indirizzo email del Service Account per agevolare la condivisione delle cartelle su Google Drive.
+  - Test di connessione in tempo reale verso le API di Google Drive.
+  - Browser interattivo ad albero per sfogliare le cartelle condivise e le sottocartelle con percorso breadcrumb e ricerca rapida.
+  - Creazione diretta di nuove cartelle su Google Drive dall'interfaccia.
+  - Selezione dedicata e salvataggio separato della cartella per le **Ricevute** e della cartella per le **Tessere**.
+- **Gestione Pagamenti:**
+  - Aggiunto campo causale ai pagamenti con possibilità di modifica di importo e causale per i pagamenti esistenti.
+
 ## [1.0.2] - 2026-10-01
 ### Added
 - Aggiunta funzionalit "Esporta Elenco" in formato PDF all'interno della gestione Corsi, che genera un riepilogo tabellare con i dettagli di iscritti e prospect e le metriche sintetiche del corso.

@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate
+    SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig
 )
 from .wa_client import resolve_group_link
 
@@ -267,7 +268,7 @@ class PagamentoSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'allievo', 'allievo_nome', 'corso', 'corso_descrizione',
             'scuola_id', 'scuola_nome', 'importo', 'trimestre',
-            'trimestre_display', 'data_pagamento', 'note'
+            'trimestre_display', 'data_pagamento', 'causale', 'note'
         ]
 
 
@@ -360,4 +361,101 @@ class DocumentTemplateSerializer(serializers.ModelSerializer):
         if obj.file and obj.file.name:
             return f"/api/document-templates/{obj.chiave}/file/"
         return None
+
+
+class ContatoreRicevuteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContatoreRicevute
+        fields = ['id', 'anno', 'ultimo_numero', 'updated_at']
+
+
+class RicevutaSerializer(serializers.ModelSerializer):
+    numero = serializers.IntegerField(required=False, default=0)
+    anno = serializers.IntegerField(required=False, default=0)
+    numero_display = serializers.CharField(read_only=True)
+    allievo_nome = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Ricevuta
+        fields = [
+            'id', 'numero', 'anno', 'data', 'intestatario',
+            'causale', 'importo', 'note', 'allievo', 'allievo_nome',
+            'numero_display', 'created_at', 'updated_at'
+        ]
+        validators = []
+
+    def get_allievo_nome(self, obj):
+        if obj.allievo:
+            return f"{obj.allievo.nome} {obj.allievo.cognome}"
+        return ''
+
+    def validate(self, attrs):
+        numero = attrs.get('numero')
+        anno = attrs.get('anno')
+        instance = getattr(self, 'instance', None)
+        target_anno = anno or (instance.anno if instance else None)
+        target_numero = numero or (instance.numero if instance else None)
+
+        if target_anno and target_numero and target_numero > 0:
+            qs = Ricevuta.objects.filter(anno=target_anno, numero=target_numero)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {'numero': f"Esiste già una ricevuta N. {target_numero} per l'anno {target_anno}."}
+                )
+        return attrs
+
+    def create(self, validated_data):
+        from django.utils import timezone
+        from django.db.models import Max
+
+        data_emissione = validated_data.get('data') or timezone.now().date()
+        anno = validated_data.get('anno')
+        if not anno or anno <= 0:
+            anno = data_emissione.year
+
+        numero = validated_data.get('numero')
+        if not numero or numero <= 0:
+            contatore, _ = ContatoreRicevute.objects.get_or_create(
+                anno=anno,
+                defaults={'ultimo_numero': 0}
+            )
+            numero = contatore.ultimo_numero + 1
+            while Ricevuta.objects.filter(anno=anno, numero=numero).exists():
+                numero += 1
+            contatore.ultimo_numero = numero
+            contatore.save()
+        else:
+            contatore, _ = ContatoreRicevute.objects.get_or_create(
+                anno=anno,
+                defaults={'ultimo_numero': 0}
+            )
+            if numero > contatore.ultimo_numero:
+                contatore.ultimo_numero = numero
+                contatore.save()
+
+        validated_data['anno'] = anno
+        validated_data['numero'] = numero
+        return super().create(validated_data)
+
+
+class GoogleDriveConfigSerializer(serializers.ModelSerializer):
+    filename = serializers.ReadOnlyField()
+    file_size = serializers.ReadOnlyField()
+    is_configured = serializers.ReadOnlyField()
+
+    class Meta:
+        model = GoogleDriveConfig
+        fields = [
+            'id', 'is_configured', 'filename', 'file_size',
+            'client_email', 'project_id', 'private_key_id',
+            'folder_id', 'folder_ricevute_id', 'folder_ricevute_nome',
+            'folder_tessere_id', 'folder_tessere_nome',
+            'is_active', 'last_tested_at',
+            'last_test_status', 'last_test_message',
+            'created_at', 'updated_at'
+        ]
+
+
 

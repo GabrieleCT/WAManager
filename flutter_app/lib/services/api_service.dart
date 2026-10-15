@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
@@ -557,10 +559,121 @@ class ApiService {
     return null;
   }
 
+  Future<Pagamento?> updatePagamento(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/pagamenti/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return Pagamento.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
   Future<bool> deletePagamento(String id) async {
     final res = await http.delete(Uri.parse('$baseUrl/api/pagamenti/$id/'), headers: _headers);
     return res.statusCode == 204 || res.statusCode == 200;
   }
+
+  // ─── Ricevute ─────────────────────────────────────────────
+  Future<List<Ricevuta>> getRicevute({int? anno, String? search}) async {
+    var params = <String>[];
+    if (anno != null) params.add('anno=$anno');
+    if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+
+    var urlStr = '$baseUrl/api/ricevute/';
+    if (params.isNotEmpty) urlStr += '?${params.join('&')}';
+
+    final res = await http.get(Uri.parse(urlStr), headers: _headers);
+    if (res.statusCode == 200) {
+      final List list = jsonDecode(utf8.decode(res.bodyBytes));
+      return list.map((e) => Ricevuta.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  Future<Ricevuta?> createRicevuta(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/ricevute/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 201) {
+      return Ricevuta.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore createRicevuta: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<Ricevuta?> updateRicevuta(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/ricevute/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return Ricevuta.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore updateRicevuta: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<bool> deleteRicevuta(String id) async {
+    final res = await http.delete(Uri.parse('$baseUrl/api/ricevute/$id/'), headers: _headers);
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
+  Future<List<int>> getAnniRicevute() async {
+    final res = await http.get(Uri.parse('$baseUrl/api/ricevute/anni/'), headers: _headers);
+    if (res.statusCode == 200) {
+      final Map<String, dynamic> data = jsonDecode(utf8.decode(res.bodyBytes));
+      final List list = data['anni'] ?? [];
+      return list.map((e) => e is int ? e : int.tryParse(e.toString()) ?? 2026).toList();
+    }
+    return [DateTime.now().year];
+  }
+
+  Future<ContatoreRicevuteInfo?> getContatoreRicevute({int? anno}) async {
+    var urlStr = '$baseUrl/api/ricevute/contatore/';
+    if (anno != null) urlStr += '?anno=$anno';
+    final res = await http.get(Uri.parse(urlStr), headers: _headers);
+    if (res.statusCode == 200) {
+      return ContatoreRicevuteInfo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<ContatoreRicevuteInfo?> aggiornaContatoreRicevute(int anno, int ultimoNumero) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/ricevute/aggiorna-contatore/'),
+      headers: _headers,
+      body: jsonEncode({'anno': anno, 'ultimo_numero': ultimoNumero}),
+    );
+    if (res.statusCode == 200) {
+      return ContatoreRicevuteInfo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<Uint8List?> getRicevutaPdf(String id) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/ricevute/$id/pdf/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    debugPrint('Errore getRicevutaPdf: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<Uint8List?> getPagamentoRicevutaPdf(String id) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/pagamenti/$id/pdf/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    debugPrint('Errore getPagamentoRicevutaPdf: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
 
   // ─── Matches ──────────────────────────────────────────────
   Future<Map<String, dynamic>> generateMatches(String lezioneId) async {
@@ -806,6 +919,114 @@ class ApiService {
 
   String getDocumentTemplateDownloadUrl(String chiave) {
     return '$baseUrl/api/document-templates/$chiave/file/';
+  }
+
+  // ─── Google Drive Configuration ──────────────────────────────
+  Future<GoogleDriveConfig?> getGoogleDriveConfig() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/google-drive/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return GoogleDriveConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> uploadGoogleDriveKey(List<int> bytes, String filename) async {
+    final uri = Uri.parse('$baseUrl/api/google-drive/upload/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+
+    final multipartFile = http.MultipartFile.fromBytes('file', bytes, filename: filename);
+    request.files.add(multipartFile);
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        return {'success': false, 'error': 'Errore HTTP ${response.statusCode}: ${response.body}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> testGoogleDriveConnection() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/test/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200 || res.statusCode == 400) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> removeGoogleDriveKey() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/remove/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> updateGoogleDriveConfig(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/update-settings/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> getGoogleDriveFolders({String? parentId}) async {
+    final uri = Uri.parse('$baseUrl/api/google-drive/folders/').replace(
+      queryParameters: parentId != null && parentId.isNotEmpty
+          ? {'parent_id': parentId}
+          : null,
+    );
+    final res = await http.get(uri, headers: _headers);
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {'success': false, 'error': data['error'] ?? 'Errore HTTP ${res.statusCode}'};
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> createGoogleDriveFolder({
+    required String name,
+    String? parentId,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/create-folder/'),
+      headers: _headers,
+      body: jsonEncode({
+        'name': name,
+        if (parentId != null && parentId.isNotEmpty) 'parent_id': parentId,
+      }),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {'success': false, 'error': data['error'] ?? 'Errore HTTP ${res.statusCode}'};
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    }
   }
 }
 

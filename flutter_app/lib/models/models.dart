@@ -438,6 +438,7 @@ class Pagamento {
   final String trimestre;
   final String trimestreDisplay;
   final String dataPagamento;
+  final String causale;
   final String note;
 
   Pagamento({
@@ -451,8 +452,15 @@ class Pagamento {
     required this.trimestre,
     required this.trimestreDisplay,
     required this.dataPagamento,
+    this.causale = '',
     this.note = '',
   });
+
+  String get causaleDisplay {
+    if (causale.isNotEmpty) return causale;
+    if (note.isNotEmpty) return note;
+    return 'Quota $trimestreDisplay';
+  }
 
   factory Pagamento.fromJson(Map<String, dynamic> json) {
     return Pagamento(
@@ -466,6 +474,7 @@ class Pagamento {
       trimestre: json['trimestre'] ?? 'T1',
       trimestreDisplay: json['trimestre_display'] ?? json['trimestre'] ?? '',
       dataPagamento: json['data_pagamento'] ?? '',
+      causale: json['causale'] ?? '',
       note: json['note'] ?? '',
     );
   }
@@ -476,6 +485,7 @@ class Pagamento {
     'importo': importo.toStringAsFixed(2),
     'trimestre': trimestre,
     'data_pagamento': dataPagamento,
+    'causale': causale,
     'note': note,
   };
 }
@@ -599,6 +609,195 @@ class DocumentTemplate {
           : int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
       fileUrl: json['file_url'],
       updatedAt: json['updated_at'] ?? '',
+    );
+  }
+}
+
+class Ricevuta {
+  final String id;
+  final int numero;
+  final int anno;
+  final String data;
+  final String intestatario;
+  final String causale;
+  final double importo;
+  final String note;
+  final String? allievoId;
+  final String? allievoNome;
+  final String numeroDisplay;
+  final String createdAt;
+  final String updatedAt;
+
+  Ricevuta({
+    required this.id,
+    required this.numero,
+    required this.anno,
+    required this.data,
+    required this.intestatario,
+    required this.causale,
+    required this.importo,
+    this.note = '',
+    this.allievoId,
+    this.allievoNome,
+    required this.numeroDisplay,
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  factory Ricevuta.fromJson(Map<String, dynamic> json) {
+    return Ricevuta(
+      id: json['id'] ?? '',
+      numero: json['numero'] is int
+          ? json['numero']
+          : int.tryParse(json['numero']?.toString() ?? '0') ?? 0,
+      anno: json['anno'] is int
+          ? json['anno']
+          : int.tryParse(json['anno']?.toString() ?? '2026') ?? 2026,
+      data: json['data'] ?? '',
+      intestatario: json['intestatario'] ?? '',
+      causale: json['causale'] ?? '',
+      importo: double.tryParse(json['importo']?.toString() ?? '0.0') ?? 0.0,
+      note: json['note'] ?? '',
+      allievoId: json['allievo'],
+      allievoNome: json['allievo_nome'],
+      numeroDisplay: json['numero_display'] ?? 'N. ${json['numero']}/${json['anno']}',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'numero': numero,
+    'anno': anno,
+    'data': data,
+    'intestatario': intestatario,
+    'causale': causale,
+    'importo': importo.toStringAsFixed(2),
+    'note': note,
+    if (allievoId != null) 'allievo': allievoId,
+  };
+}
+
+class ContatoreRicevuteInfo {
+  final int anno;
+  final int ultimoNumero;
+  final int prossimoNumero;
+  final int conteggioEmesse;
+  final bool isAnnoCorrente;
+
+  ContatoreRicevuteInfo({
+    required this.anno,
+    required this.ultimoNumero,
+    required this.prossimoNumero,
+    required this.conteggioEmesse,
+    required this.isAnnoCorrente,
+  });
+
+  factory ContatoreRicevuteInfo.fromJson(Map<String, dynamic> json) {
+    return ContatoreRicevuteInfo(
+      anno: json['anno'] is int ? json['anno'] : int.tryParse(json['anno']?.toString() ?? '2026') ?? 2026,
+      ultimoNumero: json['ultimo_numero'] is int ? json['ultimo_numero'] : int.tryParse(json['ultimo_numero']?.toString() ?? '0') ?? 0,
+      prossimoNumero: json['prossimo_numero'] is int ? json['prossimo_numero'] : int.tryParse(json['prossimo_numero']?.toString() ?? '1') ?? 1,
+      conteggioEmesse: json['conteggio_emesse'] is int ? json['conteggio_emesse'] : int.tryParse(json['conteggio_emesse']?.toString() ?? '0') ?? 0,
+      isAnnoCorrente: json['is_anno_corrente'] ?? true,
+    );
+  }
+}
+
+class GoogleDriveConfig {
+  final String id;
+  final bool isConfigured;
+  final String filename;
+  final int fileSize;
+  final String clientEmail;
+  final String projectId;
+  final String privateKeyId;
+  final String folderId;
+  final String folderRicevuteId;
+  final String folderRicevuteNome;
+  final String folderTessereId;
+  final String folderTessereNome;
+  final bool isActive;
+  final String? lastTestedAt;
+  final String lastTestStatus;
+  final String lastTestMessage;
+  final String createdAt;
+  final String updatedAt;
+
+  GoogleDriveConfig({
+    required this.id,
+    required this.isConfigured,
+    required this.filename,
+    required this.fileSize,
+    required this.clientEmail,
+    required this.projectId,
+    required this.privateKeyId,
+    required this.folderId,
+    this.folderRicevuteId = '',
+    this.folderRicevuteNome = '',
+    this.folderTessereId = '',
+    this.folderTessereNome = '',
+    required this.isActive,
+    this.lastTestedAt,
+    required this.lastTestStatus,
+    required this.lastTestMessage,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory GoogleDriveConfig.fromJson(Map<String, dynamic> json) {
+    return GoogleDriveConfig(
+      id: json['id'] ?? '',
+      isConfigured: json['is_configured'] ?? false,
+      filename: json['filename'] ?? '',
+      fileSize: json['file_size'] is int ? json['file_size'] : int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
+      clientEmail: json['client_email'] ?? '',
+      projectId: json['project_id'] ?? '',
+      privateKeyId: json['private_key_id'] ?? '',
+      folderId: json['folder_id'] ?? '',
+      folderRicevuteId: json['folder_ricevute_id'] ?? '',
+      folderRicevuteNome: json['folder_ricevute_nome'] ?? '',
+      folderTessereId: json['folder_tessere_id'] ?? '',
+      folderTessereNome: json['folder_tessere_nome'] ?? '',
+      isActive: json['is_active'] ?? true,
+      lastTestedAt: json['last_tested_at'],
+      lastTestStatus: json['last_test_status'] ?? '',
+      lastTestMessage: json['last_test_message'] ?? '',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  String get fileSizeFormatted {
+    if (fileSize <= 0) return '0 B';
+    if (fileSize < 1024) return '$fileSize B';
+    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    return '${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+}
+
+class GoogleDriveFolderItem {
+  final String id;
+  final String name;
+  final bool isShared;
+  final bool isDrive;
+  final List<String> parents;
+
+  GoogleDriveFolderItem({
+    required this.id,
+    required this.name,
+    this.isShared = false,
+    this.isDrive = false,
+    this.parents = const [],
+  });
+
+  factory GoogleDriveFolderItem.fromJson(Map<String, dynamic> json) {
+    return GoogleDriveFolderItem(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      isShared: json['is_shared'] ?? false,
+      isDrive: json['is_drive'] ?? false,
+      parents: (json['parents'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
     );
   }
 }

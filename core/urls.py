@@ -23,6 +23,8 @@ router.register(r'schedules', api_views.RecurringScheduleViewSet, basename='sche
 router.register(r'sondaggio-mattutino', api_views.SondaggioMattutinoViewSet, basename='sondaggio-mattutino')
 router.register(r'gemini-logs', api_views.GeminiLogViewSet, basename='gemini-log')
 router.register(r'document-templates', api_views.DocumentTemplateViewSet, basename='document-template')
+router.register(r'ricevute', api_views.RicevutaViewSet, basename='ricevuta')
+router.register(r'google-drive', api_views.GoogleDriveConfigViewSet, basename='google-drive')
 
 
 urlpatterns = [

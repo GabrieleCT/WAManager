@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'gemini_screen.dart';
+import 'google_drive_screen.dart';
 import 'import_export_screen.dart';
 import 'template_settings_screen.dart';
 
@@ -18,9 +19,9 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3,
+      length: 4,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 2),
+      initialIndex: widget.initialTab.clamp(0, 3),
     );
   }
 
@@ -50,6 +51,10 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
               icon: Icon(Icons.picture_as_pdf),
               text: 'Template',
             ),
+            Tab(
+              icon: Icon(Icons.add_to_drive),
+              text: 'Google Drive',
+            ),
           ],
         ),
       ),
@@ -59,6 +64,7 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
           GeminiScreen(embedded: true),
           ImportExportScreen(embedded: true),
           TemplateSettingsScreen(embedded: true),
+          GoogleDriveScreen(embedded: true),
         ],
       ),
     );

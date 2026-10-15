@@ -9,6 +9,7 @@ import 'scuole_screen.dart';
 import 'corsi_screen.dart';
 import 'argomenti_screen.dart';
 import 'pagamenti_screen.dart';
+import 'ricevute_screen.dart';
 import 'login_screen.dart';
 import 'impostazioni_screen.dart';
 
@@ -31,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
     CorsiScreen(),
     ArgomentiScreen(),
     PagamentiScreen(),
+    RicevuteScreen(),
     ImpostazioniScreen(),
   ];
 
@@ -125,6 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           NavigationRailDestination(icon: Icon(Icons.class_), label: Text('Corsi')),
                           NavigationRailDestination(icon: Icon(Icons.menu_book), label: Text('Argomenti')),
                           NavigationRailDestination(icon: Icon(Icons.euro), label: Text('Pagamenti')),
+                          NavigationRailDestination(icon: Icon(Icons.receipt_long), label: Text('Ricevute')),
                           NavigationRailDestination(icon: Icon(Icons.settings), label: Text('Impostazioni')),
                         ],
                       ),
@@ -244,11 +247,20 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Impostazioni'),
+              leading: const Icon(Icons.receipt_long),
+              title: const Text('Ricevute'),
               selected: _currentIndex == 8,
               onTap: () {
                 setState(() => _currentIndex = 8);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Impostazioni'),
+              selected: _currentIndex == 9,
+              onTap: () {
+                setState(() => _currentIndex = 9);
                 Navigator.pop(context);
               },
             ),
@@ -289,6 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.class_), label: 'Corsi'),
           BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Argomenti'),
           BottomNavigationBarItem(icon: Icon(Icons.euro), label: 'Pagamenti'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Ricevute'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
         ],
       ),
