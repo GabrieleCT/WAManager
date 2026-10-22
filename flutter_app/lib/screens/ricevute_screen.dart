@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
@@ -22,6 +23,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   int? _selectedAnno;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _uploadingDriveIds = {};
 
   ContatoreRicevuteInfo? _contatoreAnnoCorrente;
   bool _loading = true;
@@ -549,6 +551,194 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
     }
   }
 
+  // ─── Inserimento Ricevuta in Prima Nota Cassa (Bilancio) ───────────
+  Future<void> _inserisciEntrataNotaCassa(Ricevuta r) async {
+    if (r.inBilancio) return;
+
+    // Categoria suggerita in base alla causale
+    String defaultCat = 'Quote corsi';
+    final cLower = r.causale.toLowerCase();
+    if (cLower.contains('tesser') || cLower.contains('associat') || cLower.contains('iscrizion')) {
+      defaultCat = 'Tesseramenti';
+    } else if (cLower.contains('stage') || cLower.contains('workshop')) {
+      defaultCat = 'Stage / Workshop';
+    } else if (cLower.contains('privat')) {
+      defaultCat = 'Lezioni private';
+    } else if (cLower.contains('milong') || cLower.contains('serat')) {
+      defaultCat = 'Milonghe / Serate';
+    } else if (cLower.contains('donazion') || cLower.contains('contribut')) {
+      defaultCat = 'Donazioni / Contributi';
+    }
+
+    final List<String> categorieEntrata = [
+      'Quote corsi',
+      'Tesseramenti',
+      'Milonghe / Serate',
+      'Stage / Workshop',
+      'Lezioni private',
+      'Quote associative',
+      'Donazioni / Contributi',
+      'Varie entrate'
+    ];
+    if (!categorieEntrata.contains(defaultCat)) {
+      categorieEntrata.insert(0, defaultCat);
+    }
+
+    String selectedCategoria = defaultCat;
+    final descrController = TextEditingController(text: 'Ricevuta ${r.numeroDisplay} - ${r.intestatario}');
+    final noteController = TextEditingController(
+      text: r.note.isNotEmpty
+          ? 'Rif. Ricevuta ${r.numeroDisplay} (${r.causale}) - ${r.note}'
+          : 'Rif. Ricevuta ${r.numeroDisplay} (${r.causale})',
+    );
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Row(
+            children: [
+              Icon(Icons.point_of_sale, color: Colors.teal),
+              SizedBox(width: 8),
+              Text('Inserisci in Prima Nota Cassa'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.teal.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Ricevuta: ${r.numeroDisplay}',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal.shade900),
+                        ),
+                        Text(
+                          'Importo: € ${r.importo.toStringAsFixed(2)}',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green.shade800),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descrController,
+                    decoration: const InputDecoration(
+                      labelText: 'Descrizione Movimento *',
+                      prefixIcon: Icon(Icons.description),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategoria,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria di Entrata *',
+                      prefixIcon: Icon(Icons.category),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: categorieEntrata.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDlgState(() => selectedCategoria = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Note aggiuntive',
+                      prefixIcon: Icon(Icons.notes),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade700,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.check),
+              label: const Text('Conferma e Inserisci'),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final res = await _api.inserisciRicevutaInCassa(
+      r.id,
+      categoria: selectedCategoria,
+      descrizione: descrController.text.trim(),
+      note: noteController.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  res['message'] ?? 'Entrata per ${r.numeroDisplay} inserita con successo a Bilancio!',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.teal.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+
+      setState(() {
+        final idx = _ricevute.indexWhere((x) => x.id == r.id);
+        if (idx != -1) {
+          _ricevute[idx] = _ricevute[idx].copyWith(
+            inBilancio: true,
+            movimentoCassaId: res['movimento_id']?.toString(),
+          );
+        }
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['error'] ?? 'Errore durante l\'inserimento a bilancio.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
+
   Future<void> _stampaRicevuta(Ricevuta r) async {
     try {
       final templateBytes = await _api.getRicevutaPdf(r.id);
@@ -566,6 +756,279 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
     if (mounted) {
       PdfReportService.generaRicevutaFiscale(context: context, ricevuta: r);
     }
+  }
+
+  Future<void> _salvaSuGoogleDrive(Ricevuta r) async {
+    setState(() => _uploadingDriveIds.add(r.id));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text('Salvataggio di ${r.numeroDisplay} su Google Drive...')),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final res = await _api.uploadRicevutaToDrive(r.id);
+      if (mounted) {
+        setState(() => _uploadingDriveIds.remove(r.id));
+        if (res['success'] == true) {
+          final folderNome = res['folder_nome'] ?? 'Ricevute';
+          final link = res['webViewLink']?.toString();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Ricevuta ${r.numeroDisplay} salvata su Google Drive nella cartella "$folderNome"!',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green.shade700,
+              duration: const Duration(seconds: 5),
+              action: (link != null && link.isNotEmpty)
+                  ? SnackBarAction(
+                      label: 'APRI',
+                      textColor: Colors.amberAccent,
+                      onPressed: () async {
+                        try {
+                          await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
+                        } catch (_) {}
+                      },
+                    )
+                  : null,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['error'] ?? 'Errore nel salvataggio su Google Drive.'),
+              backgroundColor: Colors.red.shade700,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingDriveIds.remove(r.id));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _inviaWhatsApp(Ricevuta r) async {
+    final defaultPhone = r.allievoTelefono ?? '';
+    final phoneController = TextEditingController(text: defaultPhone);
+    final messageController = TextEditingController(
+      text: 'Gentile ${r.intestatario}, in allegato la ricevuta ${r.numeroDisplay} del ${r.data} di € ${r.importo.toStringAsFixed(2)} per "${r.causale}".',
+    );
+    bool sending = false;
+    String? localError;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF25D366).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.chat, color: Color(0xFF25D366), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Invia Ricevuta WhatsApp', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(r.numeroDisplay, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (localError != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            localError!,
+                            style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.picture_as_pdf, color: Colors.indigo, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Allegato: Ricevuta_${r.numero}_${r.anno}.pdf',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            Text(
+                              'Intestatario: ${r.intestatario} • Importo: € ${r.importo.toStringAsFixed(2)}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Numero di Telefono WhatsApp *',
+                    hintText: 'es. 393401234567 o 3401234567',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    helperText: defaultPhone.isNotEmpty
+                        ? 'Recuperato automaticamente dall\'allievo'
+                        : 'Inserisci il numero con prefisso (es. 39...)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: messageController,
+                  maxLines: 3,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Messaggio di accompagnamento',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send, size: 18),
+              label: Text(sending ? 'Invio in corso...' : 'Invia PDF'),
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final phone = phoneController.text.trim();
+                      if (phone.isEmpty) {
+                        setDlgState(() => localError = 'Inserisci un numero di telefono valido.');
+                        return;
+                      }
+
+                      setDlgState(() {
+                        sending = true;
+                        localError = null;
+                      });
+
+                      final res = await _api.sendRicevutaWhatsApp(
+                        ricevutaId: r.id,
+                        telefono: phone,
+                        messaggio: messageController.text.trim(),
+                      );
+
+                      if (ctx.mounted) {
+                        if (res['success'] == true) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle, color: Colors.white),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      res['message'] ?? 'Ricevuta ${r.numeroDisplay} inviata via WhatsApp a $phone!',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: Colors.green.shade700,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        } else {
+                          setDlgState(() {
+                            sending = false;
+                            localError = res['error'] ?? 'Errore durante l\'invio via WhatsApp.';
+                          });
+                        }
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _esportaElenco() {
@@ -849,6 +1312,32 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
                           ),
                         ),
+                        if (r.inBilancio) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.green.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'A Bilancio',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     subtitle: Column(
@@ -863,36 +1352,202 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                           'Data: ${r.data}${r.note.isNotEmpty ? " • Note: ${r.note}" : ""}',
                           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                         ),
+                        const SizedBox(height: 6),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: r.inBilancio ? Colors.grey.shade200 : Colors.teal.shade700,
+                            foregroundColor: r.inBilancio ? Colors.grey.shade500 : Colors.white,
+                            disabledBackgroundColor: Colors.grey.shade200,
+                            disabledForegroundColor: Colors.grey.shade500,
+                            elevation: r.inBilancio ? 0 : 1,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              side: BorderSide(
+                                color: r.inBilancio ? Colors.grey.shade300 : Colors.teal.shade700,
+                              ),
+                            ),
+                          ),
+                          icon: Icon(
+                            r.inBilancio ? Icons.check_circle : Icons.point_of_sale,
+                            size: 15,
+                            color: r.inBilancio ? Colors.green.shade600 : Colors.white,
+                          ),
+                          label: Text(
+                            r.inBilancio ? 'Entrata Aggiunta a Bilancio' : 'Inserisci Entrata Nota Cassa',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: r.inBilancio ? Colors.grey.shade600 : Colors.white,
+                            ),
+                          ),
+                          onPressed: r.inBilancio ? null : () => _inserisciEntrataNotaCassa(r),
+                        ),
                       ],
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '€ ${r.importo.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        IconButton(
-                          icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
-                          tooltip: 'Stampa Ricevuta PDF',
-                          onPressed: () => _stampaRicevuta(r),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          tooltip: 'Modifica Ricevuta',
-                          onPressed: () => _showEditRicevutaDialog(r),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          tooltip: 'Elimina Ricevuta',
-                          onPressed: () => _deleteRicevuta(r),
-                        ),
-                      ],
+                    trailing: LayoutBuilder(
+                      builder: (ctx, constraints) {
+                        final screenW = MediaQuery.of(context).size.width;
+                        final bool isMobile = screenW < 700;
+
+                        if (isMobile) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '€ ${r.importo.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal,
+                                ),
+                              ),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert),
+                                tooltip: 'Azioni',
+                                onSelected: (val) {
+                                  if (val == 'bilancio') {
+                                    if (!r.inBilancio) _inserisciEntrataNotaCassa(r);
+                                  } else if (val == 'drive') {
+                                    _salvaSuGoogleDrive(r);
+                                  } else if (val == 'wa') {
+                                    _inviaWhatsApp(r);
+                                  } else if (val == 'pdf') {
+                                    _stampaRicevuta(r);
+                                  } else if (val == 'edit') {
+                                    _showEditRicevutaDialog(r);
+                                  } else if (val == 'delete') {
+                                    _deleteRicevuta(r);
+                                  }
+                                },
+                                itemBuilder: (ctx) => [
+                                  PopupMenuItem(
+                                    value: 'bilancio',
+                                    enabled: !r.inBilancio,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          r.inBilancio ? Icons.check_circle : Icons.point_of_sale,
+                                          color: r.inBilancio ? Colors.grey : Colors.teal,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(r.inBilancio ? 'Già in Prima Nota' : 'Aggiungi a Prima Nota'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'drive',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.add_to_drive, color: Colors.blue.shade700, size: 18),
+                                        const SizedBox(width: 8),
+                                        const Text('Salva in Google Drive'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'wa',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.chat, color: Color(0xFF25D366), size: 18),
+                                        const SizedBox(width: 8),
+                                        Text('Invia WhatsApp'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'pdf',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.picture_as_pdf, color: Colors.indigo, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text('Stampa PDF'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, color: Colors.blue, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text('Modifica'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete, color: Colors.red, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text('Elimina', style: TextStyle(color: Colors.red)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '€ ${r.importo.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.teal,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(
+                                r.inBilancio ? Icons.check_circle : Icons.point_of_sale,
+                                color: r.inBilancio ? Colors.grey.shade400 : Colors.teal.shade700,
+                              ),
+                              tooltip: r.inBilancio
+                                  ? 'Già inserito in Prima Nota Cassa (Bilancio)'
+                                  : 'Inserisci Entrata Nota Cassa',
+                              onPressed: r.inBilancio ? null : () => _inserisciEntrataNotaCassa(r),
+                            ),
+                            IconButton(
+                              icon: _uploadingDriveIds.contains(r.id)
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : Icon(Icons.add_to_drive, color: Colors.blue.shade700),
+                              tooltip: 'Salva in Google Drive',
+                              onPressed: _uploadingDriveIds.contains(r.id) ? null : () => _salvaSuGoogleDrive(r),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chat, color: Color(0xFF25D366)),
+                              tooltip: 'Invia Ricevuta via WhatsApp',
+                              onPressed: () => _inviaWhatsApp(r),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
+                              tooltip: 'Stampa Ricevuta PDF',
+                              onPressed: () => _stampaRicevuta(r),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              tooltip: 'Modifica Ricevuta',
+                              onPressed: () => _showEditRicevutaDialog(r),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              tooltip: 'Elimina Ricevuta',
+                              onPressed: () => _deleteRicevuta(r),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   );
                 },

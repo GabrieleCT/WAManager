@@ -16,10 +16,13 @@ let currentQrDataUrl = null;
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 const PORT = 4002;
-const DJANGO_WEBHOOK_URL = 'http://127.0.0.1:8082/api/webhook/poll-vote/';
+const DJANGO_PORT = process.env.DJANGO_PORT || '50082';
+const DJANGO_BASE_URL = process.env.DJANGO_BASE_URL || ('http://127.0.0.1:' + DJANGO_PORT);
+const DJANGO_WEBHOOK_URL = process.env.DJANGO_WEBHOOK_URL || (DJANGO_BASE_URL + '/api/webhook/poll-vote/');
 
 function logToFile(msg) {
     const logMsg = new Date().toISOString() + ' - ' + msg + '\n';
@@ -164,7 +167,7 @@ async function connectToWhatsApp() {
                             action: 'text_message'
                         };
                         try {
-                            axios.post('http://127.0.0.1:8082/api/webhook/whatsapp-message/', payload).catch(() => {});
+                            axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload).catch(() => {});
                         } catch (err) {}
                     } else {
                         logToFile(`Messaggio inviato (o dal bot): ${text} a ${msg.key.remoteJid}`);
@@ -353,7 +356,7 @@ app.post('/api/send', async (req, res) => {
             return Promise.race([
                 promise,
                 new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error(`Timeout: la consegna a ${targetJid} non ha risposto entro 15s. Verifica che il numero sia valido e attivo su WhatsApp.`)), 15000)
+                    setTimeout(() => reject(new Error(`Timeout: la consegna a ${targetJid} non ha risposto entro 60s. Verifica che il numero sia valido e attivo su WhatsApp.`)), 60000)
                 )
             ]);
         };
@@ -372,6 +375,20 @@ app.post('/api/send', async (req, res) => {
             // Salviamo il messaggio in memoria per decifrare i voti successivi
             savePoll(msgId, response.message);
             
+            res.json({ success: true, response: { id: { _serialized: msgId } } });
+        } else if (req.body.fileBase64 || req.body.documentBase64) {
+            const rawB64 = req.body.fileBase64 || req.body.documentBase64;
+            const fileBuffer = Buffer.from(rawB64, 'base64');
+            const fileName = req.body.fileName || 'documento.pdf';
+            const mimetype = req.body.mimetype || 'application/pdf';
+            logToFile(`Invio documento (${fileName}, ${fileBuffer.length} bytes) a ${chatId}...`);
+            const response = await sendWithTimeout(sock.sendMessage(chatId, {
+                document: fileBuffer,
+                mimetype: mimetype,
+                fileName: fileName,
+                caption: message || ''
+            }), chatId);
+            const msgId = response.key.id;
             res.json({ success: true, response: { id: { _serialized: msgId } } });
         } else {
             logToFile(`Invio messaggio testo a ${chatId}...`);

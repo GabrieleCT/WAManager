@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
@@ -685,27 +687,227 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 
-  Widget _buildRuoloBadge(String ruolo) {
-    Color bg;
-    Color fg;
-    String label;
-    if (ruolo == 'leader') {
-      bg = Colors.blue.shade100;
-      fg = Colors.blue.shade900;
-      label = 'Leader';
-    } else if (ruolo == 'follower') {
-      bg = Colors.purple.shade100;
-      fg = Colors.purple.shade900;
-      label = 'Follower';
-    } else {
-      bg = Colors.teal.shade100;
-      fg = Colors.teal.shade900;
-      label = 'Both';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
-      child: Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.bold)),
+  Future<void> _mostraInviaModuloTesseramentoDialog(Allievo a) async {
+    final phoneController = TextEditingController(text: a.telefono);
+    final messageController = TextEditingController(
+      text: 'Gentile ${a.nomeCompleto}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
+    );
+    bool sending = false;
+    bool loadingPreview = false;
+    String? localError;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF25D366).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.chat, color: Color(0xFF25D366), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(a.nomeCompleto, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (localError != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            localError!,
+                            style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.picture_as_pdf, color: Colors.indigo, size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Allegato: Modulo_Tesseramento.pdf',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            Text(
+                              'Allievo: ${a.nomeCompleto} • Stato tessera: ${a.statoTessera}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Numero di Telefono WhatsApp *',
+                    hintText: 'es. 393401234567 o 3401234567',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    helperText: a.telefono.isNotEmpty
+                        ? 'Numero registrato per l\'allievo'
+                        : 'Inserisci il numero con prefisso internazionale (es. 39...)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: messageController,
+                  maxLines: 3,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Messaggio di accompagnamento',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            OutlinedButton.icon(
+              icon: loadingPreview
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.visibility, size: 16),
+              label: const Text('Anteprima PDF'),
+              onPressed: (sending || loadingPreview)
+                  ? null
+                  : () async {
+                      setDlgState(() => loadingPreview = true);
+                      try {
+                        final bytes = await _api.getModuloTesseramentoPdf(a.id);
+                        if (bytes != null && bytes.isNotEmpty) {
+                          await Printing.layoutPdf(
+                            onLayout: (PdfPageFormat format) async => bytes,
+                            name: 'Modulo_Tesseramento_${a.cognome}_${a.nome}.pdf',
+                          );
+                        } else {
+                          setDlgState(() => localError = 'Impossibile caricare il PDF del modulo.');
+                        }
+                      } catch (e) {
+                        setDlgState(() => localError = 'Errore anteprima PDF: $e');
+                      } finally {
+                        setDlgState(() => loadingPreview = false);
+                      }
+                    },
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send, size: 18),
+              label: Text(sending ? 'Invio in corso...' : 'Invia PDF via WhatsApp'),
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final phone = phoneController.text.trim();
+                      if (phone.isEmpty) {
+                        setDlgState(() => localError = 'Inserisci un numero di telefono valido.');
+                        return;
+                      }
+
+                      setDlgState(() {
+                        sending = true;
+                        localError = null;
+                      });
+
+                      final res = await _api.sendModuloTesseramentoWhatsApp(
+                        allievoId: a.id,
+                        telefono: phone,
+                        messaggio: messageController.text.trim(),
+                      );
+
+                      if (ctx.mounted) {
+                        if (res['success'] == true) {
+                          Navigator.pop(ctx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Row(
+                                  children: [
+                                    const Icon(Icons.check_circle, color: Colors.white),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        res['message'] ?? 'Modulo di tesseramento inviato con successo a ${a.nomeCompleto} ($phone)!',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                backgroundColor: Colors.green.shade700,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        } else {
+                          setDlgState(() {
+                            sending = false;
+                            localError = res['error'] ?? 'Errore durante l\'invio del messaggio.';
+                          });
+                        }
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -966,7 +1168,6 @@ class _AllieviScreenState extends State<AllieviScreen> {
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            _buildRuoloBadge(a.ruolo),
             _buildStatoTesseraBadge(a),
             Chip(
               label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 11)),
@@ -976,6 +1177,17 @@ class _AllieviScreenState extends State<AllieviScreen> {
             _buildWhatsappCorsoBadge(a),
             if (a.recensione == 'si')
               const Tooltip(message: 'Recensione rilasciata', child: Icon(Icons.star, color: Colors.amber, size: 18)),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF128C7E),
+                side: const BorderSide(color: Color(0xFF25D366)),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
+              label: const Text('Modulo Tesseramento', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: () => _mostraInviaModuloTesseramentoDialog(a),
+            ),
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
               onPressed: () => _showAddEditDialog(a),
@@ -1013,9 +1225,6 @@ class _AllieviScreenState extends State<AllieviScreen> {
   @override
   Widget build(BuildContext context) {
     final allieviVisualizzati = _filteredAllievi;
-    final int leadersCount = allieviVisualizzati.where((a) => a.ruolo == 'leader').length;
-    final int followersCount = allieviVisualizzati.where((a) => a.ruolo == 'follower').length;
-    final int bothCount = allieviVisualizzati.where((a) => a.ruolo == 'both').length;
 
     final corsiFiltratiPerScuola = _selectedScuolaId == null
         ? _corsi
@@ -1318,25 +1527,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           avatar: const Icon(Icons.people, size: 16),
                           label: Text('Visualizzati: ${allieviVisualizzati.length} / ${_allievi.length}'),
                         ),
-                        Chip(
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: Colors.blue.shade50,
-                          avatar: Icon(Icons.man, size: 16, color: Colors.blue.shade800),
-                          label: Text('Leader: $leadersCount', style: TextStyle(color: Colors.blue.shade900)),
-                        ),
-                        Chip(
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: Colors.purple.shade50,
-                          avatar: Icon(Icons.woman, size: 16, color: Colors.purple.shade800),
-                          label: Text('Follower: $followersCount', style: TextStyle(color: Colors.purple.shade900)),
-                        ),
-                        if (bothCount > 0)
-                          Chip(
-                            visualDensity: VisualDensity.compact,
-                            backgroundColor: Colors.teal.shade50,
-                            avatar: Icon(Icons.people_outline, size: 16, color: Colors.teal.shade800),
-                            label: Text('Both: $bothCount', style: TextStyle(color: Colors.teal.shade900)),
-                          ),
+
                         Chip(
                           visualDensity: VisualDensity.compact,
                           backgroundColor: Colors.green.shade50,

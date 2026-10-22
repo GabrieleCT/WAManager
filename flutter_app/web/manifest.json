@@ -1,11 +1,11 @@
 {
-    "name": "wamanager_flutter",
-    "short_name": "wamanager_flutter",
+    "name": "TantoTango Manager",
+    "short_name": "TantoTango",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#EBE5DA",
+    "theme_color": "#8B2529",
+    "description": "Gestionale scuola di ballo TantoTango ASD",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

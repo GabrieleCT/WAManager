@@ -3,7 +3,8 @@ from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ConfigurazioneASD, MembroDirettivo
 )
 from .wa_client import resolve_group_link
 
@@ -262,14 +263,38 @@ class PagamentoSerializer(serializers.ModelSerializer):
     scuola_id = serializers.UUIDField(source='corso.scuola.id', read_only=True)
     scuola_nome = serializers.CharField(source='corso.scuola.nome', read_only=True)
     trimestre_display = serializers.CharField(source='get_trimestre_display', read_only=True)
+    has_ricevuta = serializers.SerializerMethodField()
+    ricevuta_id = serializers.SerializerMethodField()
+    ricevuta_numero = serializers.SerializerMethodField()
 
     class Meta:
         model = Pagamento
         fields = [
             'id', 'allievo', 'allievo_nome', 'corso', 'corso_descrizione',
             'scuola_id', 'scuola_nome', 'importo', 'trimestre',
-            'trimestre_display', 'data_pagamento', 'causale', 'note'
+            'trimestre_display', 'data_pagamento', 'causale', 'note',
+            'has_ricevuta', 'ricevuta_id', 'ricevuta_numero'
         ]
+
+    def get_has_ricevuta(self, obj):
+        # Utilizza la cache prefetched se disponibile
+        if hasattr(obj, '_prefetched_objects_cache') and 'ricevute' in obj._prefetched_objects_cache:
+            return len(obj.ricevute.all()) > 0
+        return obj.ricevute.exists()
+
+    def get_ricevuta_id(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'ricevute' in obj._prefetched_objects_cache:
+            r = next(iter(obj.ricevute.all()), None)
+        else:
+            r = obj.ricevute.first()
+        return str(r.id) if r else None
+
+    def get_ricevuta_numero(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'ricevute' in obj._prefetched_objects_cache:
+            r = next(iter(obj.ricevute.all()), None)
+        else:
+            r = obj.ricevute.first()
+        return r.numero_display if r else None
 
 
 class MessageTemplateSerializer(serializers.ModelSerializer):
@@ -373,20 +398,28 @@ class RicevutaSerializer(serializers.ModelSerializer):
     numero = serializers.IntegerField(required=False, default=0)
     anno = serializers.IntegerField(required=False, default=0)
     numero_display = serializers.CharField(read_only=True)
+    in_bilancio = serializers.BooleanField(read_only=True)
     allievo_nome = serializers.SerializerMethodField()
+    allievo_telefono = serializers.SerializerMethodField()
 
     class Meta:
         model = Ricevuta
         fields = [
             'id', 'numero', 'anno', 'data', 'intestatario',
             'causale', 'importo', 'note', 'allievo', 'allievo_nome',
-            'numero_display', 'created_at', 'updated_at'
+            'allievo_telefono', 'pagamento', 'movimento_cassa',
+            'in_bilancio', 'numero_display', 'created_at', 'updated_at'
         ]
         validators = []
 
     def get_allievo_nome(self, obj):
         if obj.allievo:
             return f"{obj.allievo.nome} {obj.allievo.cognome}"
+        return ''
+
+    def get_allievo_telefono(self, obj):
+        if obj.allievo and obj.allievo.telefono:
+            return obj.allievo.telefono
         return ''
 
     def validate(self, attrs):
@@ -444,11 +477,20 @@ class GoogleDriveConfigSerializer(serializers.ModelSerializer):
     filename = serializers.ReadOnlyField()
     file_size = serializers.ReadOnlyField()
     is_configured = serializers.ReadOnlyField()
+    is_sa_configured = serializers.ReadOnlyField()
+    is_oauth_connected = serializers.ReadOnlyField()
+    has_oauth_client_secret = serializers.SerializerMethodField()
+
+    def get_has_oauth_client_secret(self, obj):
+        return bool(obj.oauth_client_secret)
 
     class Meta:
         model = GoogleDriveConfig
         fields = [
-            'id', 'is_configured', 'filename', 'file_size',
+            'id', 'auth_type', 'is_configured', 'is_sa_configured', 'is_oauth_connected',
+            'oauth_client_id', 'oauth_user_email', 'oauth_user_name',
+            'has_oauth_client_secret',
+            'filename', 'file_size',
             'client_email', 'project_id', 'private_key_id',
             'folder_id', 'folder_ricevute_id', 'folder_ricevute_nome',
             'folder_tessere_id', 'folder_tessere_nome',
@@ -456,6 +498,63 @@ class GoogleDriveConfigSerializer(serializers.ModelSerializer):
             'last_test_status', 'last_test_message',
             'created_at', 'updated_at'
         ]
+
+
+class MovimentoPrimaNotaSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+
+    class Meta:
+        model = MovimentoPrimaNota
+        fields = [
+            'id', 'data', 'descrizione', 'categoria',
+            'tipo', 'tipo_display', 'importo', 'note',
+            'created_at', 'updated_at'
+        ]
+
+
+class CategoriaBilancioSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    movimenti_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CategoriaBilancio
+        fields = [
+            'id', 'nome', 'tipo', 'tipo_display', 'descrizione',
+            'colore', 'ordine', 'movimenti_count',
+            'created_at', 'updated_at'
+        ]
+
+    def get_movimenti_count(self, obj):
+        return MovimentoPrimaNota.objects.filter(categoria=obj.nome, tipo=obj.tipo).count()
+
+
+class ConfigurazioneASDSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfigurazioneASD
+        fields = [
+            'id', 'nome', 'codice_fiscale', 'partita_iva',
+            'sede_legale', 'sede_operativa', 'telefono',
+            'email', 'pec', 'sito_web', 'codice_affiliazione',
+            'created_at', 'updated_at'
+        ]
+
+
+class MembroDirettivoSerializer(serializers.ModelSerializer):
+    ruolo_display = serializers.CharField(source='get_ruolo_display', read_only=True)
+    nome_completo = serializers.CharField(read_only=True)
+    has_firma = serializers.BooleanField(read_only=True)
+    firma_url = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = MembroDirettivo
+        fields = [
+            'id', 'ruolo', 'ruolo_display', 'nome', 'cognome',
+            'nome_completo', 'codice_fiscale', 'data_nascita',
+            'luogo_nascita', 'telefono', 'email', 'firma_url',
+            'has_firma', 'ordine', 'created_at', 'updated_at'
+        ]
+
+
 
 
 

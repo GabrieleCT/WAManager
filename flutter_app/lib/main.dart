@@ -132,6 +132,9 @@ class WAManagerApp extends StatelessWidget {
           ),
         ),
       ),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      ),
       home: isLoggedIn ? const HomeScreen() : const LoginScreen(),
     );
   }

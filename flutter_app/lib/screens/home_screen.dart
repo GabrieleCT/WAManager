@@ -10,8 +10,43 @@ import 'corsi_screen.dart';
 import 'argomenti_screen.dart';
 import 'pagamenti_screen.dart';
 import 'ricevute_screen.dart';
+import 'bilancio_screen.dart';
+import 'asd_screen.dart';
 import 'login_screen.dart';
 import 'impostazioni_screen.dart';
+
+enum NavSection {
+  presenze,
+  messaggistica,
+  lezioni,
+  anagrafica,
+  scuole,
+  corsi,
+  argomenti,
+  pagamenti,
+  ricevute,
+  bilancio,
+  asd,
+  impostazioni,
+}
+
+class _NavItem {
+  final NavSection section;
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final Widget widget;
+  final bool availableOnMobile;
+
+  const _NavItem({
+    required this.section,
+    required this.label,
+    required this.icon,
+    IconData? selectedIcon,
+    required this.widget,
+    this.availableOnMobile = true,
+  }) : selectedIcon = selectedIcon ?? icon;
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,19 +56,105 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
+  NavSection _currentSection = NavSection.presenze;
 
-  final List<Widget> _pages = const [
-    PresenzeScreen(),
-    MessaggisticaScreen(),
-    LezioniScreen(),
-    AnagraficaAllieviScreen(),
-    ScuoleScreen(),
-    CorsiScreen(),
-    ArgomentiScreen(),
-    PagamentiScreen(),
-    RicevuteScreen(),
-    ImpostazioniScreen(),
+  static const List<_NavItem> _items = [
+    _NavItem(
+      section: NavSection.presenze,
+      label: 'Presenze',
+      icon: Icons.how_to_reg_outlined,
+      selectedIcon: Icons.how_to_reg,
+      widget: PresenzeScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.messaggistica,
+      label: 'Messaggistica',
+      icon: Icons.chat_outlined,
+      selectedIcon: Icons.chat,
+      widget: MessaggisticaScreen(),
+      availableOnMobile: false, // Esclusa da Mobile
+    ),
+    _NavItem(
+      section: NavSection.lezioni,
+      label: 'Lezioni',
+      icon: Icons.event_outlined,
+      selectedIcon: Icons.event,
+      widget: LezioniScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.anagrafica,
+      label: 'Anagrafica',
+      icon: Icons.people_alt_outlined,
+      selectedIcon: Icons.people_alt,
+      widget: AnagraficaAllieviScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.scuole,
+      label: 'Scuole',
+      icon: Icons.business_outlined,
+      selectedIcon: Icons.business,
+      widget: ScuoleScreen(),
+      availableOnMobile: false, // Esclusa da Mobile
+    ),
+    _NavItem(
+      section: NavSection.corsi,
+      label: 'Corsi',
+      icon: Icons.class_outlined,
+      selectedIcon: Icons.class_,
+      widget: CorsiScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.argomenti,
+      label: 'Argomenti',
+      icon: Icons.menu_book_outlined,
+      selectedIcon: Icons.menu_book,
+      widget: ArgomentiScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.pagamenti,
+      label: 'Pagamenti',
+      icon: Icons.euro_outlined,
+      selectedIcon: Icons.euro,
+      widget: PagamentiScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.ricevute,
+      label: 'Ricevute',
+      icon: Icons.receipt_long_outlined,
+      selectedIcon: Icons.receipt_long,
+      widget: RicevuteScreen(),
+      availableOnMobile: true,
+    ),
+    _NavItem(
+      section: NavSection.bilancio,
+      label: 'Bilancio',
+      icon: Icons.account_balance_outlined,
+      selectedIcon: Icons.account_balance,
+      widget: BilancioScreen(),
+      availableOnMobile: false, // Esclusa da Mobile
+    ),
+    _NavItem(
+      section: NavSection.asd,
+      label: 'ASD',
+      icon: Icons.corporate_fare_outlined,
+      selectedIcon: Icons.corporate_fare,
+      widget: AsdScreen(),
+      availableOnMobile: false, // Esclusa da Mobile
+    ),
+    _NavItem(
+      section: NavSection.impostazioni,
+      label: 'Impostazioni',
+      icon: Icons.settings_outlined,
+      selectedIcon: Icons.settings,
+      widget: ImpostazioniScreen(),
+      availableOnMobile: false, // Esclusa da Mobile
+    ),
   ];
 
   void _logout() async {
@@ -61,8 +182,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 800;
 
+    // Se siamo su mobile e la sezione corrente non è disponibile su mobile, fallback a Presenze
+    if (!isDesktop) {
+      final currentItem = _items.firstWhere((i) => i.section == _currentSection);
+      if (!currentItem.availableOnMobile) {
+        _currentSection = NavSection.presenze;
+      }
+    }
+
+    final activeItem = _items.firstWhere((i) => i.section == _currentSection);
+
     if (isDesktop) {
-      // Layout Desktop / Tablet con NavigationRail laterale
+      // Layout Desktop / Tablet con NavigationRail laterale (tutte le 12 sezioni)
+      final desktopSelectedIndex = _items.indexWhere((i) => i.section == _currentSection);
       return Scaffold(
         body: Row(
           children: [
@@ -73,8 +205,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     constraints: BoxConstraints(minHeight: constraints.maxHeight),
                     child: IntrinsicHeight(
                       child: NavigationRail(
-                        selectedIndex: _currentIndex,
-                        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
+                        selectedIndex: desktopSelectedIndex >= 0 ? desktopSelectedIndex : 0,
+                        onDestinationSelected: (idx) => setState(() => _currentSection = _items[idx].section),
                         labelType: NavigationRailLabelType.all,
                         leading: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -118,18 +250,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        destinations: const [
-                          NavigationRailDestination(icon: Icon(Icons.how_to_reg), label: Text('Presenze')),
-                          NavigationRailDestination(icon: Icon(Icons.chat), label: Text('Messaggistica')),
-                          NavigationRailDestination(icon: Icon(Icons.event), label: Text('Lezioni')),
-                          NavigationRailDestination(icon: Icon(Icons.people_alt), label: Text('Anagrafica')),
-                          NavigationRailDestination(icon: Icon(Icons.business), label: Text('Scuole')),
-                          NavigationRailDestination(icon: Icon(Icons.class_), label: Text('Corsi')),
-                          NavigationRailDestination(icon: Icon(Icons.menu_book), label: Text('Argomenti')),
-                          NavigationRailDestination(icon: Icon(Icons.euro), label: Text('Pagamenti')),
-                          NavigationRailDestination(icon: Icon(Icons.receipt_long), label: Text('Ricevute')),
-                          NavigationRailDestination(icon: Icon(Icons.settings), label: Text('Impostazioni')),
-                        ],
+                        destinations: _items.map((item) {
+                          return NavigationRailDestination(
+                            icon: Icon(item.icon),
+                            selectedIcon: Icon(item.selectedIcon),
+                            label: Text(item.label),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
@@ -137,13 +264,15 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             const VerticalDivider(thickness: 1, width: 1),
-            Expanded(child: _pages[_currentIndex]),
+            Expanded(child: activeItem.widget),
           ],
         ),
       );
     }
 
-    // Layout Mobile con BottomNavigationBar
+    // Layout Mobile con BottomNavigationBar e Drawer con SOLO le funzionalità consentite
+    final mobileItems = _items.where((i) => i.availableOnMobile).toList();
+
     return Scaffold(
       drawer: Drawer(
         child: ListView(
@@ -151,119 +280,50 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(color: Theme.of(context).primaryColor),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              margin: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                     child: Container(
                       color: Colors.white,
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(2),
                       child: Image.asset(
                         'assets/images/logo.png',
-                        width: 60,
-                        height: 48,
+                        width: 36,
+                        height: 30,
                         fit: BoxFit.contain,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  const Text('TantoTango Manager', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                  const Text('Gestionale scuola di ballo', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'TantoTango Manager',
+                    style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Gestionale scuola di ballo',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.how_to_reg),
-              title: const Text('Presenze'),
-              selected: _currentIndex == 0,
-              onTap: () {
-                setState(() => _currentIndex = 0);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.chat),
-              title: const Text('Messaggistica'),
-              selected: _currentIndex == 1,
-              onTap: () {
-                setState(() => _currentIndex = 1);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.event),
-              title: const Text('Lezioni'),
-              selected: _currentIndex == 2,
-              onTap: () {
-                setState(() => _currentIndex = 2);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.people_alt),
-              title: const Text('Anagrafica Allievi'),
-              selected: _currentIndex == 3,
-              onTap: () {
-                setState(() => _currentIndex = 3);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.business),
-              title: const Text('Scuole'),
-              selected: _currentIndex == 4,
-              onTap: () {
-                setState(() => _currentIndex = 4);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.class_),
-              title: const Text('Corsi'),
-              selected: _currentIndex == 5,
-              onTap: () {
-                setState(() => _currentIndex = 5);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.menu_book),
-              title: const Text('Argomenti'),
-              selected: _currentIndex == 6,
-              onTap: () {
-                setState(() => _currentIndex = 6);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.euro),
-              title: const Text('Pagamenti'),
-              selected: _currentIndex == 7,
-              onTap: () {
-                setState(() => _currentIndex = 7);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.receipt_long),
-              title: const Text('Ricevute'),
-              selected: _currentIndex == 8,
-              onTap: () {
-                setState(() => _currentIndex = 8);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Impostazioni'),
-              selected: _currentIndex == 9,
-              onTap: () {
-                setState(() => _currentIndex = 9);
-                Navigator.pop(context);
-              },
-            ),
+            ...mobileItems.map((item) {
+              return ListTile(
+                leading: Icon(item.icon),
+                title: Text(item.label == 'Anagrafica' ? 'Anagrafica Allievi' : item.label),
+                selected: _currentSection == item.section,
+                selectedColor: const Color(0xFF8B2529),
+                onTap: () {
+                  setState(() => _currentSection = item.section);
+                  Navigator.pop(context);
+                },
+              );
+            }),
             const Divider(),
             FutureBuilder<PackageInfo>(
               future: PackageInfo.fromPlatform(),
@@ -275,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }
                 return const SizedBox();
-              }
+              },
             ),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -285,25 +345,70 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: _pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
-        onTap: (idx) => setState(() => _currentIndex = idx),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.how_to_reg), label: 'Presenze'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Messaggistica'),
-          BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Lezioni'),
-          BottomNavigationBarItem(icon: Icon(Icons.people_alt), label: 'Anagrafica'),
-          BottomNavigationBarItem(icon: Icon(Icons.business), label: 'Scuole'),
-          BottomNavigationBarItem(icon: Icon(Icons.class_), label: 'Corsi'),
-          BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Argomenti'),
-          BottomNavigationBarItem(icon: Icon(Icons.euro), label: 'Pagamenti'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Ricevute'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
-        ],
+      body: activeItem.widget,
+      bottomNavigationBar: Builder(
+        builder: (ctx) {
+          int navIndex;
+          if (_currentSection == NavSection.presenze) {
+            navIndex = 0;
+          } else if (_currentSection == NavSection.lezioni) {
+            navIndex = 1;
+          } else if (_currentSection == NavSection.anagrafica) {
+            navIndex = 2;
+          } else if (_currentSection == NavSection.pagamenti) {
+            navIndex = 3;
+          } else {
+            // Corsi, Argomenti o Ricevute
+            navIndex = 4;
+          }
+
+          return NavigationBar(
+            selectedIndex: navIndex,
+            backgroundColor: Colors.white,
+            elevation: 8,
+            indicatorColor: const Color(0xFF8B2529).withOpacity(0.15),
+            onDestinationSelected: (idx) {
+              if (idx == 0) {
+                setState(() => _currentSection = NavSection.presenze);
+              } else if (idx == 1) {
+                setState(() => _currentSection = NavSection.lezioni);
+              } else if (idx == 2) {
+                setState(() => _currentSection = NavSection.anagrafica);
+              } else if (idx == 3) {
+                setState(() => _currentSection = NavSection.pagamenti);
+              } else {
+                Scaffold.of(ctx).openDrawer();
+              }
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.how_to_reg_outlined),
+                selectedIcon: Icon(Icons.how_to_reg, color: Color(0xFF8B2529)),
+                label: 'Presenze',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.event_outlined),
+                selectedIcon: Icon(Icons.event, color: Color(0xFF8B2529)),
+                label: 'Lezioni',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.people_alt_outlined),
+                selectedIcon: Icon(Icons.people_alt, color: Color(0xFF8B2529)),
+                label: 'Allievi',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.euro_outlined),
+                selectedIcon: Icon(Icons.euro, color: Color(0xFF8B2529)),
+                label: 'Pagamenti',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.menu_rounded),
+                selectedIcon: Icon(Icons.menu_open_rounded, color: Color(0xFF8B2529)),
+                label: 'Altro...',
+              ),
+            ],
+          );
+        },
       ),
     );
   }

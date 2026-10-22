@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
@@ -19,12 +20,23 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
   bool _testingConnection = false;
   bool _uploading = false;
   bool _savingSettings = false;
+  bool _savingOauthCreds = false;
+  bool _obscureSecret = true;
 
   GoogleDriveConfig? _config;
+  String _selectedAuthTab = 'oauth'; // 'oauth' or 'service_account'
+
+  final TextEditingController _oauthClientIdController = TextEditingController();
+  final TextEditingController _oauthClientSecretController = TextEditingController();
+
   final TextEditingController _folderRicevuteIdController = TextEditingController();
   final TextEditingController _folderRicevuteNomeController = TextEditingController();
   final TextEditingController _folderTessereIdController = TextEditingController();
   final TextEditingController _folderTessereNomeController = TextEditingController();
+
+  static const String _uriLocalhost = 'http://localhost:8082/api/google-drive/oauth-callback/';
+  static const String _uri127 = 'http://127.0.0.1:8082/api/google-drive/oauth-callback/';
+  String _selectedRedirectUri = _uri127;
 
   @override
   void initState() {
@@ -34,6 +46,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
   @override
   void dispose() {
+    _oauthClientIdController.dispose();
+    _oauthClientSecretController.dispose();
     _folderRicevuteIdController.dispose();
     _folderRicevuteNomeController.dispose();
     _folderTessereIdController.dispose();
@@ -49,6 +63,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         setState(() {
           _config = config;
           if (config != null) {
+            _selectedAuthTab = config.authType;
+            if (config.oauthClientId.isNotEmpty) {
+              _oauthClientIdController.text = config.oauthClientId;
+            }
             _folderRicevuteIdController.text = config.folderRicevuteId;
             _folderRicevuteNomeController.text = config.folderRicevuteNome;
             _folderTessereIdController.text = config.folderTessereId;
@@ -66,6 +84,238 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             backgroundColor: Colors.red.shade700,
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _switchAuthTab(String newType) async {
+    if (_selectedAuthTab == newType) return;
+    setState(() => _selectedAuthTab = newType);
+
+    try {
+      final res = await _api.switchGoogleDriveAuthType(newType);
+      if (mounted && res['success'] == true) {
+        _loadConfig();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveOAuthCredentials() async {
+    final clientId = _oauthClientIdController.text.trim();
+    final clientSecret = _oauthClientSecretController.text.trim();
+
+    if (clientId.isEmpty || clientSecret.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inserisci sia il Client ID sia il Client Secret.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _savingOauthCreds = true);
+    try {
+      final res = await _api.saveGoogleDriveOAuthCredentials(
+        clientId: clientId,
+        clientSecret: clientSecret,
+      );
+      if (mounted) {
+        setState(() => _savingOauthCreds = false);
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Credenziali OAuth salvate con successo! Ora puoi connettere il tuo account.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadConfig();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['error'] ?? 'Errore nel salvataggio delle credenziali.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _savingOauthCreds = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _startOAuthFlow() async {
+    final clientId = _oauthClientIdController.text.trim();
+    final clientSecret = _oauthClientSecretController.text.trim();
+
+    setState(() => _testingConnection = true);
+    try {
+      final res = await _api.initGoogleDriveOAuth(
+        clientId: clientId.isNotEmpty ? clientId : null,
+        clientSecret: clientSecret.isNotEmpty ? clientSecret : null,
+        redirectUri: _selectedRedirectUri,
+      );
+
+      if (mounted) {
+        setState(() => _testingConnection = false);
+        if (res['success'] == true && res['auth_url'] != null) {
+          final authUrl = res['auth_url'] as String;
+          final uri = Uri.parse(authUrl);
+
+          // Apre il browser per il login Google
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            await launchUrl(uri);
+          }
+
+          if (mounted) {
+            _showOAuthPendingDialog();
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['error'] ?? 'Impossibile avviare l\'autenticazione OAuth.'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _testingConnection = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore avvio autenticazione Google: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showOAuthPendingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.open_in_new, color: Colors.blue),
+            SizedBox(width: 10),
+            Text('Accesso Google in corso...'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Si è aperta la finestra di autenticazione Google nel tuo browser.\n\n'
+              '1. Seleziona il tuo account Google (es. tanto.tango25@gmail.com)\n'
+              '2. Concedi l\'accesso a Google Drive\n'
+              '3. Una volta visualizzata la pagina di conferma, clicca qui sotto su "Verifica Collegamento".',
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'I file caricati saranno associati al tuo account personale e consumeranno la tua quota di 15 GB.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _loadConfig();
+            },
+            child: const Text('Chiudi'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.check),
+            label: const Text('Verifica Collegamento'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _testConnection();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _disconnectOAuth() async {
+    final conf = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.link_off, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Disconnetti Account Google'),
+          ],
+        ),
+        content: const Text(
+          'Sei sicuro di voler disconnettere l\'account Google OAuth?\n'
+          'Per caricare nuovamente file su Google Drive dovrai rieffettuare l\'accesso.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Disconnetti'),
+          ),
+        ],
+      ),
+    );
+
+    if (conf == true) {
+      final res = await _api.disconnectGoogleDriveOAuth();
+      if (mounted) {
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account Google disconnesso.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadConfig();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['error'] ?? 'Errore durante la disconnessione.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -99,9 +349,14 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
       if (mounted) {
         setState(() => _uploading = false);
         if (res['success'] == true) {
+          final detected = res['detected_type'] ?? '';
+          final msg = detected == 'oauth'
+              ? 'File credenziali OAuth caricato! Ora puoi cliccare su "Connetti con Google".'
+              : 'Chiave Service Account "${result.name}" caricata con successo!';
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Chiave "${result.name}" caricata con successo!'),
+              content: Text(msg),
               backgroundColor: Colors.green.shade700,
             ),
           );
@@ -145,7 +400,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 ],
               ),
               backgroundColor: Colors.green.shade700,
-              duration: const Duration(seconds: 4),
+              duration: const Duration(seconds: 5),
             ),
           );
         } else {
@@ -186,12 +441,11 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red),
             SizedBox(width: 8),
-            Text('Rimuovi Chiave Google Drive'),
+            Text('Rimuovi Chiave Service Account'),
           ],
         ),
         content: const Text(
-          'Sei sicuro di voler eliminare la chiave privata di Google Drive memorizzata sul server?\n'
-          'Le operazioni di sincronizzazione con Google Drive cesseranno fino al caricamento di una nuova chiave.',
+          'Sei sicuro di voler eliminare la chiave privata Service Account di Google Drive memorizzata sul server?',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
@@ -210,7 +464,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Chiave privata rimossa.'),
+              content: Text('Chiave Service Account rimossa.'),
               backgroundColor: Colors.green,
             ),
           );
@@ -232,7 +486,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     if (!isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Carica prima la chiave privata per accedere a Google Drive.'),
+          content: Text('Completa prima l\'accesso a Google Drive per sfogliare le cartelle.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -357,8 +611,15 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                       _buildHeaderCard(),
                       const SizedBox(height: 20),
 
-                      // Status & Key Details Card
-                      _buildKeyDetailsCard(),
+                      // Auth Mode Switcher (OAuth 2.0 vs Service Account)
+                      _buildAuthModeSelector(),
+                      const SizedBox(height: 20),
+
+                      // Primary Auth Card
+                      if (_selectedAuthTab == 'oauth')
+                        _buildOAuthSection()
+                      else
+                        _buildKeyDetailsCard(),
                       const SizedBox(height: 20),
 
                       // Folders Section (Ricevute e Tessere)
@@ -395,6 +656,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
   Widget _buildHeaderCard() {
     final isConfigured = _config?.isConfigured ?? false;
+    final isOAuth = _config?.authType == 'oauth';
+    final userEmail = isOAuth
+        ? (_config?.oauthUserEmail ?? '')
+        : (_config?.clientEmail ?? '');
 
     return Card(
       elevation: 2,
@@ -404,7 +669,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
             colors: isConfigured
-                ? [Colors.blue.shade800, Colors.blue.shade600]
+                ? [Colors.blue.shade900, Colors.blue.shade600]
                 : [Colors.grey.shade800, Colors.grey.shade700],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -457,7 +722,9 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              isConfigured ? 'Configurato' : 'Non configurato',
+                              isConfigured
+                                  ? (isOAuth ? 'OAuth 2.0 Connesso' : 'Service Account Attivo')
+                                  : 'Non configurato',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -472,8 +739,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                   const SizedBox(height: 6),
                   Text(
                     isConfigured
-                        ? 'Account di servizio collegato. Puoi sfogliare l\'alberatura e scegliere le cartelle di destinazione.'
-                        : 'Carica la chiave privata JSON del Service Account Google Drive per iniziare.',
+                        ? (userEmail.isNotEmpty
+                            ? 'Account collegato: $userEmail. I file caricati usano la quota del tuo account personale.'
+                            : 'Google Drive è collegato e pronto per il salvataggio automatico di ricevute e tessere.')
+                        : 'Collega Google Drive per salvare e archiviare le ricevute in automatico.',
                     style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                 ],
@@ -485,8 +754,475 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     );
   }
 
+  Widget _buildAuthModeSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => _switchAuthTab('oauth'),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedAuthTab == 'oauth' ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _selectedAuthTab == 'oauth'
+                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.account_circle,
+                      size: 20,
+                      color: _selectedAuthTab == 'oauth' ? Colors.blue.shade700 : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Account Google Personale (OAuth 2.0)',
+                      style: TextStyle(
+                        fontWeight: _selectedAuthTab == 'oauth' ? FontWeight.bold : FontWeight.normal,
+                        color: _selectedAuthTab == 'oauth' ? Colors.blue.shade900 : Colors.grey.shade700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '15 GB Quota',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: InkWell(
+              onTap: () => _switchAuthTab('service_account'),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedAuthTab == 'service_account' ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _selectedAuthTab == 'service_account'
+                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.vpn_key_outlined,
+                      size: 20,
+                      color: _selectedAuthTab == 'service_account' ? Colors.blue.shade700 : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Service Account (Chiave JSON)',
+                      style: TextStyle(
+                        fontWeight: _selectedAuthTab == 'service_account' ? FontWeight.bold : FontWeight.normal,
+                        color: _selectedAuthTab == 'service_account' ? Colors.blue.shade900 : Colors.grey.shade700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOAuthSection() {
+    final isConnected = _config?.isOauthConnected ?? false;
+    final userEmail = _config?.oauthUserEmail ?? '';
+    final userName = _config?.oauthUserName ?? '';
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.person_pin_outlined,
+                  color: isConnected ? Colors.green.shade700 : Colors.blue.shade700,
+                  size: 26,
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Accesso OAuth 2.0 (Quota Personale Google)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Questo metodo effettua l\'accesso con il tuo account Google reale (es. tanto.tango25@gmail.com). I file caricati saranno di tua proprietà e consumeranno la tua quota personale di 15 GB.',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+
+            if (isConnected) ...[
+              // Stato Connesso
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade300),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green.shade700, size: 28),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                userName.isNotEmpty ? userName : 'Account Google Connesso',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade900,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade600,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  'ATTIVO',
+                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (userEmail.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              userEmail,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          if (_config!.lastTestMessage.isNotEmpty)
+                            Text(
+                              _config!.lastTestMessage,
+                              style: TextStyle(fontSize: 12, color: Colors.green.shade900),
+                            ),
+                          if (_config!.lastTestedAt != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Verificato il: ${_formatDate(_config!.lastTestedAt!)}',
+                                style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: _testingConnection
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.network_check, size: 18),
+                    label: Text(_testingConnection ? 'Test in corso...' : 'Verifica Connessione e Spazio'),
+                    onPressed: _testingConnection ? null : _testConnection,
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue.shade800,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.sync, size: 18),
+                    label: const Text('Ricollega Account Google'),
+                    onPressed: _startOAuthFlow,
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade300),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.link_off, size: 18),
+                    label: const Text('Disconnetti'),
+                    onPressed: _disconnectOAuth,
+                  ),
+                ],
+              ),
+            ] else ...[
+              // Non Connesso - Configurazione Credenziali & Pulsante Accesso
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.security, size: 20, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Credenziali App Google OAuth 2.0 (Client ID & Secret)',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const Spacer(),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                          icon: const Icon(Icons.upload_file, size: 16),
+                          label: const Text('Carica client_secret.json'),
+                          onPressed: _uploading ? null : _pickAndUploadKey,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _oauthClientIdController,
+                      decoration: InputDecoration(
+                        labelText: 'Client ID OAuth 2.0',
+                        hintText: 'es. 123456789-abcdef.apps.googleusercontent.com',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.vpn_key, size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _oauthClientSecretController,
+                      obscureText: _obscureSecret,
+                      decoration: InputDecoration(
+                        labelText: 'Client Secret',
+                        hintText: _config?.hasOauthClientSecret == true
+                            ? '•••••••••••••••• (già memorizzato)'
+                            : 'es. GOCSPX-xxxxxxxxxxxxxxxx',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureSecret ? Icons.visibility : Icons.visibility_off, size: 18),
+                          onPressed: () => setState(() => _obscureSecret = !_obscureSecret),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade800,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                          icon: _savingOauthCreds
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.save, size: 16),
+                          label: const Text('Salva Credenziali'),
+                          onPressed: _savingOauthCreds ? null : _saveOAuthCredentials,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.link, size: 18, color: Colors.amber.shade900),
+                              const SizedBox(width: 8),
+                              Text(
+                                'URI di reindirizzamento autorizzato (Google Cloud Console)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Colors.amber.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Google richiede che l\'indirizzo inserito in Google Cloud Console corrisponda esattamente a quello usato. Seleziona quale indirizzo hai registrato:',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('127.0.0.1 (Consigliato)'),
+                                selected: _selectedRedirectUri == _uri127,
+                                onSelected: (val) {
+                                  if (val) setState(() => _selectedRedirectUri = _uri127);
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('localhost'),
+                                selected: _selectedRedirectUri == _uriLocalhost,
+                                onSelected: (val) {
+                                  if (val) setState(() => _selectedRedirectUri = _uriLocalhost);
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: SelectableText(
+                                    _selectedRedirectUri,
+                                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 18),
+                                tooltip: 'Copia URI selezionato',
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: _selectedRedirectUri));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Copiato negli appunti: $_selectedRedirectUri')),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '💡 Suggerimento: In Google Cloud Console puoi inserire entrambi gli indirizzi (127.0.0.1 e localhost) per evitare qualsiasi errore!',
+                            style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey.shade700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Pulsante Connetti con Google
+              Center(
+                child: SizedBox(
+                  width: 320,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.grey.shade800,
+                      side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: _testingConnection
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.login, color: Colors.blue),
+                    label: Text(
+                      _testingConnection ? 'Apertura in corso...' : 'Connetti con Google',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _testingConnection ? null : _startOAuthFlow,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildKeyDetailsCard() {
-    final isConfigured = _config?.isConfigured ?? false;
+    final isConfigured = _config?.isSaConfigured ?? false;
 
     return Card(
       elevation: 2,
@@ -530,12 +1266,12 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                     Icon(Icons.cloud_upload_outlined, size: 52, color: Colors.blue.shade700),
                     const SizedBox(height: 12),
                     const Text(
-                      'Nessuna chiave privata configurata',
+                      'Nessuna chiave privata Service Account configurata',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Carica il file .json scaricato da Google Cloud Console',
+                      'Carica il file .json del Service Account scaricato da Google Cloud Console',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                     ),
                     const SizedBox(height: 20),
@@ -742,7 +1478,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Sfoglia l\'alberatura delle cartelle condivise con il Service Account e seleziona dove archiviare le ricevute e le tessere emesse.',
+              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare le ricevute e le tessere emesse.',
               style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -975,17 +1711,29 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 Icon(Icons.help_outline, color: Colors.blueGrey.shade800),
                 const SizedBox(width: 10),
                 Text(
-                  'Come condividere le cartelle con il Service Account',
+                  _selectedAuthTab == 'oauth'
+                      ? 'Guida: Come creare il Client ID OAuth 2.0 su Google Cloud Console'
+                      : 'Come condividere le cartelle con il Service Account',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade900),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _buildStepRow('1', 'Crea una cartella nel tuo Google Drive personale o aziendale (es. "Gestione Tango" con sottocartelle "Ricevute" e "Tessere").'),
-            _buildStepRow('2', 'Fai clic destro sulla cartella principale o sottocartella > "Condividi".'),
-            _buildStepRow('3', 'Incolla l\'email del Service Account (puoi copiarla dal riquadro sopra con l\'icona Copia).'),
-            _buildStepRow('4', 'Imposta il ruolo su "Editor" e togli la spunta su "Invia notifica", poi clicca "Condividi".'),
-            _buildStepRow('5', 'Torna qui e clicca "Sfoglia e Seleziona" per scegliere la cartella associata!'),
+            if (_selectedAuthTab == 'oauth') ...[
+              _buildStepRow('1', 'Vai su Google Cloud Console (console.cloud.google.com) nel tuo progetto (es. wamanager).'),
+              _buildStepRow('2', 'Nel menu laterale apri "APIs & Services" > "Credentials" (Credenziali).'),
+              _buildStepRow('3', 'Clicca su "+ CREATE CREDENTIALS" in alto e scegli "OAuth client ID".'),
+              _buildStepRow('4', 'Scegli come Application type: "Web application" (Applicazione web).'),
+              _buildStepRow('5', 'Sotto "Authorized redirect URIs" clicca "+ ADD URI" e inserisci ENTRAMBI i seguenti indirizzi:\n  • http://127.0.0.1:8082/api/google-drive/oauth-callback/\n  • http://localhost:8082/api/google-drive/oauth-callback/'),
+              _buildStepRow('6', 'Clicca "CREATE", poi copia il Client ID e il Client Secret generati e incollali qui sopra (oppure scarica il file JSON e caricalo con il pulsante apposito).'),
+              _buildStepRow('7', 'Infine clicca su "Connetti con Google" per autorizzare il tuo account personale!'),
+            ] else ...[
+              _buildStepRow('1', 'Crea una cartella nel tuo Google Drive personale o aziendale (es. "Gestione Tango" con sottocartelle "Ricevute" e "Tessere").'),
+              _buildStepRow('2', 'Fai clic destro sulla cartella principale o sottocartella > "Condividi".'),
+              _buildStepRow('3', 'Incolla l\'email del Service Account (puoi copiarla dal riquadro sopra con l\'icona Copia).'),
+              _buildStepRow('4', 'Imposta il ruolo su "Editor" e togli la spunta su "Invia notifica", poi clicca "Condividi".'),
+              _buildStepRow('5', 'Torna qui e clicca "Sfoglia e Seleziona" per scegliere la cartella associata!'),
+            ],
           ],
         ),
       ),

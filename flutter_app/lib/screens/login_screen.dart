@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
@@ -20,7 +21,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _urlController.text = ApiService().baseUrl;
+    final api = ApiService();
+    if (kIsWeb) {
+      final uri = Uri.base;
+      if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
+        api.baseUrl = '${uri.scheme}://${uri.host}:50082';
+      }
+    }
+    _urlController.text = api.baseUrl;
   }
 
   void _doLogin() async {
@@ -29,24 +37,42 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
 
-    final api = ApiService();
-    if (_urlController.text.trim().isNotEmpty) {
-      await api.setBaseUrl(_urlController.text.trim());
-    }
+    try {
+      final api = ApiService();
+      if (kIsWeb) {
+        final uri = Uri.base;
+        if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
+          if (_urlController.text.trim().isEmpty || _urlController.text.contains('localhost') || _urlController.text.contains('127.0.0.1')) {
+            _urlController.text = '${uri.scheme}://${uri.host}:50082';
+          }
+        }
+      }
 
-    final success = await api.login(
-      _usernameController.text.trim(),
-      _passwordController.text.trim(),
-    );
+      if (_urlController.text.trim().isNotEmpty) {
+        await api.setBaseUrl(_urlController.text.trim());
+      }
 
-    setState(() => _loading = false);
-
-    if (success && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      final success = await api.login(
+        _usernameController.text.trim(),
+        _passwordController.text.trim(),
       );
-    } else {
-      setState(() => _error = 'Credenziali non valide o server non raggiungibile.');
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      if (success) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      } else {
+        setState(() => _error = 'Credenziali non valide o server non raggiungibile su ' + api.baseUrl);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Errore di connessione: ' + e.toString();
+      });
     }
   }
 

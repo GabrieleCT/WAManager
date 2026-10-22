@@ -681,8 +681,81 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     final leaderCount = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'leader').length;
     final followerCount = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'follower').length;
     final jollyNecessari = (leaderCount - followerCount).abs();
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
+    final Widget lezioneSelectorWidget = _lezioniOggi.isEmpty
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.event_busy, color: Colors.grey.shade600, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Nessuna lezione programmata per oggi',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ),
+          )
+        : DropdownButtonFormField<String>(
+            value: _isCustomSelection ? null : _selectedLezione?.id,
+            hint: const Text('Seleziona lezione di oggi...'),
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: '📅 Lezioni di Oggi (${_lezioniOggi.length})',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            items: _lezioniOggi.map((l) {
+              return DropdownMenuItem(
+                value: l.id,
+                child: Text(
+                  '${l.corsoDescrizione} ${l.titolo.isNotEmpty ? "(${l.titolo})" : ""}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id != null) {
+                final found = _lezioniOggi.firstWhere((l) => l.id == id);
+                setState(() {
+                  _selectedLezione = found;
+                  _isCustomSelection = false;
+                });
+                _loadPresenze(id);
+              }
+            },
+          );
+
+    final Widget scegliAltraLezioneBtn = ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _isCustomSelection ? Colors.deepPurple : Colors.grey.shade800,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      icon: const Icon(Icons.event_note, size: 18),
+      label: const Text('Scegli Altra Lezione'),
+      onPressed: _showSelectAnyLezioneDialog,
+    );
 
     return Scaffold(
+      floatingActionButton: (isMobile && _selectedLezione != null)
+          ? FloatingActionButton.extended(
+              backgroundColor: Colors.amber.shade800,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.star),
+              label: const Text('Aggiungi Jolly'),
+              onPressed: _showAddJollyDialog,
+            )
+          : null,
       appBar: AppBar(
         title: const Text('Gestione Presenze'),
         actions: [
@@ -708,78 +781,26 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // MENU A TENDINA: LEZIONI DEL GIORNO
-                    Expanded(
-                      flex: 6,
-                      child: _lezioniOggi.isEmpty
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.event_busy, color: Colors.grey.shade600, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Nessuna lezione programmata per oggi',
-                                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontStyle: FontStyle.italic),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : DropdownButtonFormField<String>(
-                              value: _isCustomSelection ? null : _selectedLezione?.id,
-                              hint: const Text('Seleziona lezione di oggi...'),
-                              decoration: InputDecoration(
-                                labelText: '📅 Lezioni di Oggi (${_lezioniOggi.length})',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              ),
-                              items: _lezioniOggi.map((l) {
-                                return DropdownMenuItem(
-                                  value: l.id,
-                                  child: Text(
-                                    '${l.corsoDescrizione} ${l.titolo.isNotEmpty ? "(${l.titolo})" : ""}',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (id) {
-                                if (id != null) {
-                                  final found = _lezioniOggi.firstWhere((l) => l.id == id);
-                                  setState(() {
-                                    _selectedLezione = found;
-                                    _isCustomSelection = false;
-                                  });
-                                  _loadPresenze(id);
-                                }
-                              },
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // PULSANTINO PER SCEGLIERE UNA LEZIONE QUALSIASI
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _isCustomSelection ? Colors.deepPurple : Colors.grey.shade800,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                if (isMobile) ...[
+                  lezioneSelectorWidget,
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: scegliAltraLezioneBtn,
+                  ),
+                ] else ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        flex: 6,
+                        child: lezioneSelectorWidget,
                       ),
-                      icon: const Icon(Icons.event_note, size: 18),
-                      label: const Text('Scegli Altra Lezione'),
-                      onPressed: _showSelectAnyLezioneDialog,
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 12),
+                      scegliAltraLezioneBtn,
+                    ],
+                  ),
+                ],
 
                 // BADGE NOTIFICA SE È SELEZIONATA UNA LEZIONE NON DI OGGI
                 if (_isCustomSelection && _selectedLezione != null) ...[
@@ -838,96 +859,101 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                             'Presenti: $presentiCount su ${_presenze.length}',
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.deepPurple.shade900),
                           ),
-                          const SizedBox(width: 10),
-                          if (jollyPresentiCount > 0) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.purple.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.purple.shade300),
+                          if (!isMobile) ...[
+                            const SizedBox(width: 10),
+                            if (jollyPresentiCount > 0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.purple.shade300),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.star, size: 12, color: Colors.purple.shade900),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '$jollyPresentiCount Jolly',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.star, size: 12, color: Colors.purple.shade900),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '$jollyPresentiCount Jolly',
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
-                                  ),
-                                ],
+                              const SizedBox(width: 6),
+                            ],
+                            if (whatsappPresentiCount > 0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '🤖 $whatsappPresentiCount WhatsApp',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
+                              const SizedBox(width: 6),
+                            ],
+                            if (manualePresentiCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '✍️ $manualePresentiCount Manuali',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
+                                ),
+                              ),
                           ],
-                          if (whatsappPresentiCount > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.green.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '🤖 $whatsappPresentiCount WhatsApp',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade900),
-                              ),
-                            ),
-                          const SizedBox(width: 6),
-                          if (manualePresentiCount > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.indigo.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '✍️ $manualePresentiCount Manuali',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
-                              ),
-                            ),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_selectedLezione!.scuolaNome != null ? "${_selectedLezione!.scuolaNome} • " : ""}${_selectedLezione!.corsoDescrizione}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                      ),
+                      if (!isMobile) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_selectedLezione!.scuolaNome != null ? "${_selectedLezione!.scuolaNome} • " : ""}${_selectedLezione!.corsoDescrizione}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
+                      ],
                     ],
                   ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal.shade700,
-                          foregroundColor: Colors.white,
+                  if (!isMobile)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade700,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf, size: 18),
+                          label: const Text('PDF Appello'),
+                          onPressed: _selectedLezione == null
+                              ? null
+                              : () => PdfReportService.generaFoglioAppello(
+                                    context: context,
+                                    lezione: _selectedLezione!,
+                                    presenze: _presenze,
+                                    scuolaNome: _currentScuolaNome,
+                                  ),
                         ),
-                        icon: const Icon(Icons.picture_as_pdf, size: 18),
-                        label: const Text('PDF Appello'),
-                        onPressed: _selectedLezione == null
-                            ? null
-                            : () => PdfReportService.generaFoglioAppello(
-                                  context: context,
-                                  lezione: _selectedLezione!,
-                                  presenze: _presenze,
-                                  scuolaNome: _currentScuolaNome,
-                                ),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.amber.shade800,
-                          foregroundColor: Colors.white,
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade800,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.star, size: 18),
+                          label: const Text('Aggiungi Jolly'),
+                          onPressed: _showAddJollyDialog,
                         ),
-                        icon: const Icon(Icons.star, size: 18),
-                        label: const Text('Aggiungi Jolly'),
-                        onPressed: _showAddJollyDialog,
-                      ),
-
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -980,42 +1006,94 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                     color: Colors.blue.shade50,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Text('Totali Leader: $leaderCount', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('Totali Follower: $followerCount', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text(
-                          'Jolly necessari: $jollyNecessari',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: jollyNecessari > 0 ? Colors.deepOrange.shade800 : Colors.green.shade800,
-                          ),
-                        ),
-                        if (jollyPresentiCount > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.purple.shade100,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.purple.shade300),
-                            ),
-                            child: Text(
-                              '⭐ Jolly presenti: $jollyPresentiCount',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade900,
+                    child: isMobile
+                        ? Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  Text('Totali Leader: $leaderCount', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  Text('Totali Follower: $followerCount', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  Text(
+                                    'Jolly necessari: $jollyNecessari',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: jollyNecessari > 0 ? Colors.deepOrange.shade800 : Colors.green.shade800,
+                                    ),
+                                  ),
+                                  if (jollyPresentiCount > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.shade100,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Colors.purple.shade300),
+                                      ),
+                                      child: Text(
+                                        '⭐ Jolly presenti: $jollyPresentiCount',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Colors.purple.shade900,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      'Jolly presenti: 0',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              Text('Totali Leader: $leaderCount', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Totali Follower: $followerCount', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Text(
+                                'Jolly necessari: $jollyNecessari',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: jollyNecessari > 0 ? Colors.deepOrange.shade800 : Colors.green.shade800,
+                                ),
+                              ),
+                              if (jollyPresentiCount > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade100,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.purple.shade300),
+                                  ),
+                                  child: Text(
+                                    '⭐ Jolly presenti: $jollyPresentiCount',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.purple.shade900,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
                   ),
 
                   // LISTA ALLIEVI CON DIFFERENZIAZIONE VISIVA: MANUALE VS WHATSAPP (GEMINI AI)
                   Expanded(
                     child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: EdgeInsets.fromLTRB(12, 8, 12, isMobile ? 80 : 8),
                       itemCount: _presenze.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 6),
                       itemBuilder: (ctx, i) {
@@ -1087,23 +1165,24 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                                 ),
                                               ),
                                               if (p.isJolly) ...[
-                                                Container(
-                                                  margin: const EdgeInsets.only(right: 8),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.purple.shade100,
-                                                    border: Border.all(color: Colors.purple.shade600),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: Text(
-                                                    'JOLLY',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.bold,
-                                                      color: Colors.purple.shade900,
+                                                if (!isMobile)
+                                                  Container(
+                                                    margin: const EdgeInsets.only(right: 8),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.purple.shade100,
+                                                      border: Border.all(color: Colors.purple.shade600),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      'JOLLY',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.purple.shade900,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
                                                 InkWell(
                                                   onTap: () => _removeJollyPresenza(p),
                                                   borderRadius: BorderRadius.circular(12),
@@ -1164,7 +1243,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                                     ],
                                                   ),
                                                 )
-                                              else if (p.fonte == 'manuale')
+                                              else if (p.fonte == 'manuale' && !isMobile)
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                                   decoration: BoxDecoration(
@@ -1190,21 +1269,25 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                 ),
                                 const SizedBox(height: 12),
                                 SegmentedButton<String>(
-                                  segments: const [
+                                  showSelectedIcon: !isMobile,
+                                  segments: [
                                     ButtonSegment<String>(
                                       value: 'presente',
-                                      label: Text('Presente'),
-                                      icon: Icon(Icons.check),
+                                      label: isMobile ? null : const Text('Presente'),
+                                      icon: const Icon(Icons.check),
+                                      tooltip: 'Presente',
                                     ),
                                     ButtonSegment<String>(
                                       value: 'assente',
-                                      label: Text('Assente'),
-                                      icon: Icon(Icons.close),
+                                      label: isMobile ? null : const Text('Assente'),
+                                      icon: const Icon(Icons.close),
+                                      tooltip: 'Assente',
                                     ),
                                     ButtonSegment<String>(
                                       value: 'non_risposto',
-                                      label: Text('Nessuna risp.'),
-                                      icon: Icon(Icons.help_outline),
+                                      label: isMobile ? null : const Text('Nessuna risp.'),
+                                      icon: const Icon(Icons.help_outline),
+                                      tooltip: 'Nessuna risposta',
                                     ),
                                   ],
                                   selected: {
@@ -1229,6 +1312,12 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                   },
                                   style: ButtonStyle(
                                     visualDensity: VisualDensity.compact,
+                                    backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+                                      if (states.contains(WidgetState.selected)) {
+                                        return const Color(0xFFFFD1D6);
+                                      }
+                                      return null;
+                                    }),
                                   ),
                                 ),
                               ],

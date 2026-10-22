@@ -440,6 +440,9 @@ class Pagamento {
   final String dataPagamento;
   final String causale;
   final String note;
+  final bool hasRicevuta;
+  final String? ricevutaId;
+  final String? ricevutaNumero;
 
   Pagamento({
     required this.id,
@@ -454,6 +457,9 @@ class Pagamento {
     required this.dataPagamento,
     this.causale = '',
     this.note = '',
+    this.hasRicevuta = false,
+    this.ricevutaId,
+    this.ricevutaNumero,
   });
 
   String get causaleDisplay {
@@ -476,6 +482,9 @@ class Pagamento {
       dataPagamento: json['data_pagamento'] ?? '',
       causale: json['causale'] ?? '',
       note: json['note'] ?? '',
+      hasRicevuta: json['has_ricevuta'] ?? false,
+      ricevutaId: json['ricevuta_id'],
+      ricevutaNumero: json['ricevuta_numero'],
     );
   }
 
@@ -624,6 +633,10 @@ class Ricevuta {
   final String note;
   final String? allievoId;
   final String? allievoNome;
+  final String? allievoTelefono;
+  final String? pagamentoId;
+  final String? movimentoCassaId;
+  final bool inBilancio;
   final String numeroDisplay;
   final String createdAt;
   final String updatedAt;
@@ -639,6 +652,10 @@ class Ricevuta {
     this.note = '',
     this.allievoId,
     this.allievoNome,
+    this.allievoTelefono,
+    this.pagamentoId,
+    this.movimentoCassaId,
+    this.inBilancio = false,
     required this.numeroDisplay,
     this.createdAt = '',
     this.updatedAt = '',
@@ -660,9 +677,53 @@ class Ricevuta {
       note: json['note'] ?? '',
       allievoId: json['allievo'],
       allievoNome: json['allievo_nome'],
+      allievoTelefono: json['allievo_telefono'],
+      pagamentoId: json['pagamento'],
+      movimentoCassaId: json['movimento_cassa']?.toString(),
+      inBilancio: json['in_bilancio'] == true || json['movimento_cassa'] != null,
       numeroDisplay: json['numero_display'] ?? 'N. ${json['numero']}/${json['anno']}',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Ricevuta copyWith({
+    String? id,
+    int? numero,
+    int? anno,
+    String? data,
+    String? intestatario,
+    String? causale,
+    double? importo,
+    String? note,
+    String? allievoId,
+    String? allievoNome,
+    String? allievoTelefono,
+    String? pagamentoId,
+    String? movimentoCassaId,
+    bool? inBilancio,
+    String? numeroDisplay,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return Ricevuta(
+      id: id ?? this.id,
+      numero: numero ?? this.numero,
+      anno: anno ?? this.anno,
+      data: data ?? this.data,
+      intestatario: intestatario ?? this.intestatario,
+      causale: causale ?? this.causale,
+      importo: importo ?? this.importo,
+      note: note ?? this.note,
+      allievoId: allievoId ?? this.allievoId,
+      allievoNome: allievoNome ?? this.allievoNome,
+      allievoTelefono: allievoTelefono ?? this.allievoTelefono,
+      pagamentoId: pagamentoId ?? this.pagamentoId,
+      movimentoCassaId: movimentoCassaId ?? this.movimentoCassaId,
+      inBilancio: inBilancio ?? this.inBilancio,
+      numeroDisplay: numeroDisplay ?? this.numeroDisplay,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -675,6 +736,7 @@ class Ricevuta {
     'importo': importo.toStringAsFixed(2),
     'note': note,
     if (allievoId != null) 'allievo': allievoId,
+    if (pagamentoId != null) 'pagamento': pagamentoId,
   };
 }
 
@@ -706,7 +768,14 @@ class ContatoreRicevuteInfo {
 
 class GoogleDriveConfig {
   final String id;
+  final String authType; // 'oauth' or 'service_account'
   final bool isConfigured;
+  final bool isSaConfigured;
+  final bool isOauthConnected;
+  final String oauthClientId;
+  final String oauthUserEmail;
+  final String oauthUserName;
+  final bool hasOauthClientSecret;
   final String filename;
   final int fileSize;
   final String clientEmail;
@@ -726,7 +795,14 @@ class GoogleDriveConfig {
 
   GoogleDriveConfig({
     required this.id,
+    this.authType = 'oauth',
     required this.isConfigured,
+    this.isSaConfigured = false,
+    this.isOauthConnected = false,
+    this.oauthClientId = '',
+    this.oauthUserEmail = '',
+    this.oauthUserName = '',
+    this.hasOauthClientSecret = false,
     required this.filename,
     required this.fileSize,
     required this.clientEmail,
@@ -745,10 +821,19 @@ class GoogleDriveConfig {
     required this.updatedAt,
   });
 
+  bool get isOAuth => authType == 'oauth';
+
   factory GoogleDriveConfig.fromJson(Map<String, dynamic> json) {
     return GoogleDriveConfig(
       id: json['id'] ?? '',
+      authType: json['auth_type'] ?? 'oauth',
       isConfigured: json['is_configured'] ?? false,
+      isSaConfigured: json['is_sa_configured'] ?? false,
+      isOauthConnected: json['is_oauth_connected'] ?? false,
+      oauthClientId: json['oauth_client_id'] ?? '',
+      oauthUserEmail: json['oauth_user_email'] ?? '',
+      oauthUserName: json['oauth_user_name'] ?? '',
+      hasOauthClientSecret: json['has_oauth_client_secret'] ?? false,
       filename: json['filename'] ?? '',
       fileSize: json['file_size'] is int ? json['file_size'] : int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
       clientEmail: json['client_email'] ?? '',
@@ -801,6 +886,523 @@ class GoogleDriveFolderItem {
     );
   }
 }
+
+class MovimentoPrimaNota {
+  final String id;
+  final String data;
+  final String descrizione;
+  final String categoria;
+  final String tipo; // 'entrata' or 'uscita'
+  final String tipoDisplay;
+  final double importo;
+  final String note;
+  final String createdAt;
+  final String updatedAt;
+
+  MovimentoPrimaNota({
+    required this.id,
+    required this.data,
+    required this.descrizione,
+    required this.categoria,
+    required this.tipo,
+    required this.tipoDisplay,
+    required this.importo,
+    this.note = '',
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  bool get isEntrata => tipo == 'entrata';
+  bool get isUscita => tipo == 'uscita';
+
+  factory MovimentoPrimaNota.fromJson(Map<String, dynamic> json) {
+    return MovimentoPrimaNota(
+      id: json['id'] ?? '',
+      data: json['data'] ?? '',
+      descrizione: json['descrizione'] ?? '',
+      categoria: json['categoria'] ?? 'Generale',
+      tipo: json['tipo'] ?? 'entrata',
+      tipoDisplay: json['tipo_display'] ?? (json['tipo'] == 'uscita' ? 'Uscita' : 'Entrata'),
+      importo: double.tryParse(json['importo']?.toString() ?? '0.0') ?? 0.0,
+      note: json['note'] ?? '',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'data': data,
+    'descrizione': descrizione,
+    'categoria': categoria,
+    'tipo': tipo,
+    'importo': importo.toStringAsFixed(2),
+    'note': note,
+  };
+}
+
+class RiepilogoPrimaNota {
+  final int conteggio;
+  final double totaleEntrate;
+  final double totaleUscite;
+  final double saldo;
+  final List<String> categorie;
+  final List<String> categorieEntrate;
+  final List<String> categorieUscite;
+  final List<int> anni;
+
+  RiepilogoPrimaNota({
+    required this.conteggio,
+    required this.totaleEntrate,
+    required this.totaleUscite,
+    required this.saldo,
+    required this.categorie,
+    this.categorieEntrate = const [],
+    this.categorieUscite = const [],
+    required this.anni,
+  });
+
+  factory RiepilogoPrimaNota.fromJson(Map<String, dynamic> json) {
+    final catList = json['categorie'] as List? ?? [];
+    final catEntrateList = json['categorie_entrate'] as List? ?? [];
+    final catUsciteList = json['categorie_uscite'] as List? ?? [];
+    final anniList = json['anni'] as List? ?? [];
+    return RiepilogoPrimaNota(
+      conteggio: json['conteggio'] ?? 0,
+      totaleEntrate: double.tryParse(json['totale_entrate']?.toString() ?? '0.0') ?? 0.0,
+      totaleUscite: double.tryParse(json['totale_uscite']?.toString() ?? '0.0') ?? 0.0,
+      saldo: double.tryParse(json['saldo']?.toString() ?? '0.0') ?? 0.0,
+      categorie: catList.map((e) => e.toString()).toList(),
+      categorieEntrate: catEntrateList.map((e) => e.toString()).toList(),
+      categorieUscite: catUsciteList.map((e) => e.toString()).toList(),
+      anni: anniList.map((e) => int.tryParse(e.toString()) ?? DateTime.now().year).toList(),
+    );
+  }
+}
+
+class CategoriaBilancio {
+  final String id;
+  final String nome;
+  final String tipo; // 'entrata' o 'uscita'
+  final String tipoDisplay;
+  final String descrizione;
+  final String colore;
+  final int ordine;
+  final int movimentiCount;
+  final String createdAt;
+  final String updatedAt;
+
+  CategoriaBilancio({
+    required this.id,
+    required this.nome,
+    required this.tipo,
+    this.tipoDisplay = '',
+    this.descrizione = '',
+    this.colore = '',
+    this.ordine = 0,
+    this.movimentiCount = 0,
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  bool get isEntrata => tipo.toLowerCase() == 'entrata';
+  bool get isUscita => tipo.toLowerCase() == 'uscita';
+
+  factory CategoriaBilancio.fromJson(Map<String, dynamic> json) {
+    return CategoriaBilancio(
+      id: json['id'] ?? '',
+      nome: json['nome'] ?? '',
+      tipo: json['tipo'] ?? 'entrata',
+      tipoDisplay: json['tipo_display'] ?? (json['tipo'] == 'uscita' ? 'Uscita' : 'Entrata'),
+      descrizione: json['descrizione'] ?? '',
+      colore: json['colore'] ?? '',
+      ordine: json['ordine'] is int
+          ? json['ordine']
+          : int.tryParse(json['ordine']?.toString() ?? '0') ?? 0,
+      movimentiCount: json['movimenti_count'] is int
+          ? json['movimenti_count']
+          : int.tryParse(json['movimenti_count']?.toString() ?? '0') ?? 0,
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'nome': nome,
+    'tipo': tipo,
+    'descrizione': descrizione,
+    'colore': colore,
+    'ordine': ordine,
+  };
+}
+
+class MeseBilancio {
+  final int mese;
+  final String nomeMese;
+  final double entrate;
+  final double uscite;
+  final double saldo;
+  final String stato; // 'avanzo', 'perdita', 'pareggio'
+  final String statoDisplay;
+  final int movimentiCount;
+
+  MeseBilancio({
+    required this.mese,
+    required this.nomeMese,
+    required this.entrate,
+    required this.uscite,
+    required this.saldo,
+    required this.stato,
+    required this.statoDisplay,
+    required this.movimentiCount,
+  });
+
+  bool get isAvanzo => stato == 'avanzo';
+  bool get isPerdita => stato == 'perdita';
+  bool get isPareggio => stato == 'pareggio';
+
+  factory MeseBilancio.fromJson(Map<String, dynamic> json) {
+    return MeseBilancio(
+      mese: json['mese'] is int ? json['mese'] : int.tryParse(json['mese']?.toString() ?? '1') ?? 1,
+      nomeMese: json['nome_mese'] ?? '',
+      entrate: double.tryParse(json['entrate']?.toString() ?? '0.0') ?? 0.0,
+      uscite: double.tryParse(json['uscite']?.toString() ?? '0.0') ?? 0.0,
+      saldo: double.tryParse(json['saldo']?.toString() ?? '0.0') ?? 0.0,
+      stato: json['stato'] ?? 'pareggio',
+      statoDisplay: json['stato_display'] ?? (json['stato'] == 'avanzo' ? 'Avanzo' : (json['stato'] == 'perdita' ? 'Perdita' : 'Pareggio')),
+      movimentiCount: json['movimenti_count'] is int ? json['movimenti_count'] : int.tryParse(json['movimenti_count']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class BilancioMensileAnno {
+  final int anno;
+  final List<int> anniDisponibili;
+  final List<MeseBilancio> mesi;
+  final double totaleEntrate;
+  final double totaleUscite;
+  final double saldoTotale;
+  final String statoTotale;
+  final String statoTotaleDisplay;
+
+  BilancioMensileAnno({
+    required this.anno,
+    required this.anniDisponibili,
+    required this.mesi,
+    required this.totaleEntrate,
+    required this.totaleUscite,
+    required this.saldoTotale,
+    required this.statoTotale,
+    required this.statoTotaleDisplay,
+  });
+
+  bool get isAvanzo => statoTotale == 'avanzo';
+  bool get isPerdita => statoTotale == 'perdita';
+  bool get isPareggio => statoTotale == 'pareggio';
+
+  factory BilancioMensileAnno.fromJson(Map<String, dynamic> json) {
+    final mesiList = json['mesi'] as List? ?? [];
+    final anniList = json['anni_disponibili'] as List? ?? [];
+
+    return BilancioMensileAnno(
+      anno: json['anno'] is int ? json['anno'] : int.tryParse(json['anno']?.toString() ?? '') ?? DateTime.now().year,
+      anniDisponibili: anniList.map((e) => int.tryParse(e.toString()) ?? DateTime.now().year).toList(),
+      mesi: mesiList.map((m) => MeseBilancio.fromJson(m)).toList(),
+      totaleEntrate: double.tryParse(json['totale_entrate']?.toString() ?? '0.0') ?? 0.0,
+      totaleUscite: double.tryParse(json['totale_uscite']?.toString() ?? '0.0') ?? 0.0,
+      saldoTotale: double.tryParse(json['saldo_totale']?.toString() ?? '0.0') ?? 0.0,
+      statoTotale: json['stato_totale'] ?? 'pareggio',
+      statoTotaleDisplay: json['stato_totale_display'] ?? 'Pareggio',
+    );
+  }
+}
+
+class RigaBilancioAnnuale {
+  final String categoria;
+  final List<double> mesi;
+  final double totale;
+
+  RigaBilancioAnnuale({
+    required this.categoria,
+    required this.mesi,
+    required this.totale,
+  });
+
+  factory RigaBilancioAnnuale.fromJson(Map<String, dynamic> json) {
+    final mesiRaw = json['mesi'] as List? ?? [];
+    return RigaBilancioAnnuale(
+      categoria: json['categoria'] ?? '',
+      mesi: mesiRaw.map((e) => double.tryParse(e.toString()) ?? 0.0).toList(),
+      totale: double.tryParse(json['totale']?.toString() ?? '0.0') ?? 0.0,
+    );
+  }
+}
+
+class TabellaBilancioAnnuale {
+  final List<RigaBilancioAnnuale> righe;
+  final List<double> totaliMesi;
+  final double totaleComplessivo;
+
+  TabellaBilancioAnnuale({
+    required this.righe,
+    required this.totaliMesi,
+    required this.totaleComplessivo,
+  });
+
+  factory TabellaBilancioAnnuale.fromJson(Map<String, dynamic> json) {
+    final righeRaw = json['righe'] as List? ?? [];
+    final totaliRaw = json['totali_mesi'] as List? ?? [];
+    return TabellaBilancioAnnuale(
+      righe: righeRaw.map((r) => RigaBilancioAnnuale.fromJson(r)).toList(),
+      totaliMesi: totaliRaw.map((e) => double.tryParse(e.toString()) ?? 0.0).toList(),
+      totaleComplessivo: double.tryParse(json['totale_complessivo']?.toString() ?? '0.0') ?? 0.0,
+    );
+  }
+}
+
+class BilancioAnnualeData {
+  final int anno;
+  final List<int> anniDisponibili;
+  final List<String> mesiLabels;
+  final TabellaBilancioAnnuale entrate;
+  final TabellaBilancioAnnuale uscite;
+  final List<double> saldoMesi;
+  final double saldoComplessivo;
+
+  BilancioAnnualeData({
+    required this.anno,
+    required this.anniDisponibili,
+    required this.mesiLabels,
+    required this.entrate,
+    required this.uscite,
+    required this.saldoMesi,
+    required this.saldoComplessivo,
+  });
+
+  factory BilancioAnnualeData.fromJson(Map<String, dynamic> json) {
+    final anniRaw = json['anni_disponibili'] as List? ?? [];
+    final labelsRaw = json['mesi_labels'] as List? ?? [];
+    final saldoRaw = json['saldo_mesi'] as List? ?? [];
+
+    return BilancioAnnualeData(
+      anno: json['anno'] is int ? json['anno'] : int.tryParse(json['anno']?.toString() ?? '') ?? DateTime.now().year,
+      anniDisponibili: anniRaw.map((e) => int.tryParse(e.toString()) ?? DateTime.now().year).toList(),
+      mesiLabels: labelsRaw.map((e) => e.toString()).toList(),
+      entrate: TabellaBilancioAnnuale.fromJson(json['entrate'] ?? {}),
+      uscite: TabellaBilancioAnnuale.fromJson(json['uscite'] ?? {}),
+      saldoMesi: saldoRaw.map((e) => double.tryParse(e.toString()) ?? 0.0).toList(),
+      saldoComplessivo: double.tryParse(json['saldo_complessivo']?.toString() ?? '0.0') ?? 0.0,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONFIGURAZIONE ASD & DIRETTIVO
+// ─────────────────────────────────────────────────────────────
+
+class ConfigurazioneASD {
+  final String id;
+  final String nome;
+  final String codiceFiscale;
+  final String partitaIva;
+  final String sedeLegale;
+  final String sedeOperativa;
+  final String telefono;
+  final String email;
+  final String pec;
+  final String sitoWeb;
+  final String codiceAffiliazione;
+  final String createdAt;
+  final String updatedAt;
+
+  ConfigurazioneASD({
+    required this.id,
+    this.nome = '',
+    this.codiceFiscale = '',
+    this.partitaIva = '',
+    this.sedeLegale = '',
+    this.sedeOperativa = '',
+    this.telefono = '',
+    this.email = '',
+    this.pec = '',
+    this.sitoWeb = '',
+    this.codiceAffiliazione = '',
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  factory ConfigurazioneASD.fromJson(Map<String, dynamic> json) {
+    return ConfigurazioneASD(
+      id: json['id']?.toString() ?? '',
+      nome: json['nome'] ?? '',
+      codiceFiscale: json['codice_fiscale'] ?? '',
+      partitaIva: json['partita_iva'] ?? '',
+      sedeLegale: json['sede_legale'] ?? '',
+      sedeOperativa: json['sede_operativa'] ?? '',
+      telefono: json['telefono'] ?? '',
+      email: json['email'] ?? '',
+      pec: json['pec'] ?? '',
+      sitoWeb: json['sito_web'] ?? '',
+      codiceAffiliazione: json['codice_affiliazione'] ?? '',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'nome': nome,
+    'codice_fiscale': codiceFiscale,
+    'partita_iva': partitaIva,
+    'sede_legale': sedeLegale,
+    'sede_operativa': sedeOperativa,
+    'telefono': telefono,
+    'email': email,
+    'pec': pec,
+    'sito_web': sitoWeb,
+    'codice_affiliazione': codiceAffiliazione,
+  };
+
+  ConfigurazioneASD copyWith({
+    String? id,
+    String? nome,
+    String? codiceFiscale,
+    String? partitaIva,
+    String? sedeLegale,
+    String? sedeOperativa,
+    String? telefono,
+    String? email,
+    String? pec,
+    String? sitoWeb,
+    String? codiceAffiliazione,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return ConfigurazioneASD(
+      id: id ?? this.id,
+      nome: nome ?? this.nome,
+      codiceFiscale: codiceFiscale ?? this.codiceFiscale,
+      partitaIva: partitaIva ?? this.partitaIva,
+      sedeLegale: sedeLegale ?? this.sedeLegale,
+      sedeOperativa: sedeOperativa ?? this.sedeOperativa,
+      telefono: telefono ?? this.telefono,
+      email: email ?? this.email,
+      pec: pec ?? this.pec,
+      sitoWeb: sitoWeb ?? this.sitoWeb,
+      codiceAffiliazione: codiceAffiliazione ?? this.codiceAffiliazione,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+class MembroDirettivo {
+  final String id;
+  final String ruolo; // 'presidente', 'vicepresidente', 'segretario'
+  final String ruoloDisplay;
+  final String nome;
+  final String cognome;
+  final String nomeCompleto;
+  final String codiceFiscale;
+  final String? dataNascita;
+  final String luogoNascita;
+  final String telefono;
+  final String email;
+  final String? firmaUrl;
+  final bool hasFirma;
+  final int ordine;
+  final String createdAt;
+  final String updatedAt;
+
+  MembroDirettivo({
+    required this.id,
+    required this.ruolo,
+    this.ruoloDisplay = '',
+    this.nome = '',
+    this.cognome = '',
+    this.nomeCompleto = '',
+    this.codiceFiscale = '',
+    this.dataNascita,
+    this.luogoNascita = '',
+    this.telefono = '',
+    this.email = '',
+    this.firmaUrl,
+    this.hasFirma = false,
+    this.ordine = 0,
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  factory MembroDirettivo.fromJson(Map<String, dynamic> json) {
+    return MembroDirettivo(
+      id: json['id']?.toString() ?? '',
+      ruolo: json['ruolo'] ?? 'presidente',
+      ruoloDisplay: json['ruolo_display'] ?? '',
+      nome: json['nome'] ?? '',
+      cognome: json['cognome'] ?? '',
+      nomeCompleto: json['nome_completo'] ?? '',
+      codiceFiscale: json['codice_fiscale'] ?? '',
+      dataNascita: json['data_nascita']?.toString(),
+      luogoNascita: json['luogo_nascita'] ?? '',
+      telefono: json['telefono'] ?? '',
+      email: json['email'] ?? '',
+      firmaUrl: json['firma_url'],
+      hasFirma: json['has_firma'] ?? false,
+      ordine: json['ordine'] is int ? json['ordine'] : int.tryParse(json['ordine']?.toString() ?? '0') ?? 0,
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'nome': nome,
+    'cognome': cognome,
+    'codice_fiscale': codiceFiscale,
+    'data_nascita': dataNascita,
+    'luogo_nascita': luogoNascita,
+    'telefono': telefono,
+    'email': email,
+  };
+
+  MembroDirettivo copyWith({
+    String? id,
+    String? ruolo,
+    String? ruoloDisplay,
+    String? nome,
+    String? cognome,
+    String? nomeCompleto,
+    String? codiceFiscale,
+    String? dataNascita,
+    String? luogoNascita,
+    String? telefono,
+    String? email,
+    String? firmaUrl,
+    bool? hasFirma,
+    int? ordine,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return MembroDirettivo(
+      id: id ?? this.id,
+      ruolo: ruolo ?? this.ruolo,
+      ruoloDisplay: ruoloDisplay ?? this.ruoloDisplay,
+      nome: nome ?? this.nome,
+      cognome: cognome ?? this.cognome,
+      nomeCompleto: nomeCompleto ?? this.nomeCompleto,
+      codiceFiscale: codiceFiscale ?? this.codiceFiscale,
+      dataNascita: dataNascita ?? this.dataNascita,
+      luogoNascita: luogoNascita ?? this.luogoNascita,
+      telefono: telefono ?? this.telefono,
+      email: email ?? this.email,
+      firmaUrl: firmaUrl ?? this.firmaUrl,
+      hasFirma: hasFirma ?? this.hasFirma,
+      ordine: ordine ?? this.ordine,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+
+
 
 
 

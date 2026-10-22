@@ -10,13 +10,14 @@ import datetime
 from django.utils import timezone
 
 from django.http import HttpResponse, FileResponse, Http404
-from .pdf_template_service import genera_pdf_ricevuta_da_template
+from .pdf_template_service import genera_pdf_ricevuta_da_template, genera_pdf_modulo_tesseramento
 
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ConfigurazioneASD, MembroDirettivo
 )
 from .serializers import (
     ScuolaSerializer, CorsoSerializer, ArgomentoSerializer,
@@ -24,7 +25,9 @@ from .serializers import (
     PresenzaSerializer, PagamentoSerializer, MessageTemplateSerializer,
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer,
     SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer,
-    ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer
+    ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer,
+    MovimentoPrimaNotaSerializer, CategoriaBilancioSerializer,
+    ConfigurazioneASDSerializer, MembroDirettivoSerializer
 )
 from .services import generate_matches
 from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
@@ -564,6 +567,75 @@ class AllievoViewSet(viewsets.ModelViewSet):
             'error': res.get('error')
         })
 
+    @action(detail=True, methods=['get'], url_path='modulo-tesseramento-pdf')
+    def modulo_tesseramento_pdf(self, request, pk=None):
+        """
+        Ritorna il file PDF del modulo di tesseramento per l'allievo specificato.
+        """
+        import io
+        allievo = self.get_object()
+        pdf_bytes = genera_pdf_modulo_tesseramento(allievo=allievo)
+        if not pdf_bytes:
+            raise Http404("Impossibile generare il modulo di tesseramento.")
+
+        safe_name = "".join(c for c in f"{allievo.cognome}_{allievo.nome}" if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        filename = f"Modulo_Tesseramento_{safe_name}.pdf"
+        return FileResponse(io.BytesIO(pdf_bytes), content_type='application/pdf', filename=filename)
+
+    @action(detail=True, methods=['post'], url_path='send-modulo-tesseramento')
+    def send_modulo_tesseramento(self, request, pk=None):
+        """
+        Invia il modulo di tesseramento via WhatsApp all'allievo specificato.
+        Input:
+          - telefono: str (opzionale, default: allievo.telefono)
+          - messaggio: str (opzionale)
+        """
+        allievo = self.get_object()
+        telefono = request.data.get('telefono') or allievo.telefono
+        if not telefono:
+            return Response(
+                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono associato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        messaggio = request.data.get('messaggio')
+        if not messaggio:
+            messaggio = (
+                f"Gentile {allievo.nome} {allievo.cognome}, ti inviamo in allegato il modulo per la richiesta o il rinnovo "
+                f"del tesseramento all'ASD TantoTango da compilare e firmare. A presto!"
+            )
+
+        try:
+            pdf_bytes = genera_pdf_modulo_tesseramento(allievo=allievo)
+            if not pdf_bytes:
+                return Response({'success': False, 'error': 'Impossibile generare il PDF del modulo.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            from .wa_client import send_whatsapp_document
+            safe_name = "".join(c for c in f"{allievo.cognome}_{allievo.nome}" if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Modulo_Tesseramento_{safe_name}.pdf"
+
+            res = send_whatsapp_document(
+                to=telefono,
+                file_bytes=pdf_bytes,
+                filename=filename,
+                caption=messaggio
+            )
+
+            if res.get('success'):
+                return Response({
+                    'success': True,
+                    'message': f"Modulo di tesseramento inviato con successo via WhatsApp a {telefono}!"
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'error': res.get('error', 'Errore gateway WhatsApp')
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore invio WhatsApp: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 
 
@@ -730,12 +802,22 @@ class PresenzaViewSet(viewsets.ModelViewSet):
 
 
 class PagamentoViewSet(viewsets.ModelViewSet):
-    queryset = Pagamento.objects.select_related('allievo', 'corso', 'corso__scuola').all()
+    queryset = Pagamento.objects.select_related('allievo', 'corso', 'corso__scuola').prefetch_related('ricevute').all()
     serializer_class = PagamentoSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['allievo', 'corso', 'corso__scuola', 'trimestre']
     search_fields = ['allievo__nome', 'allievo__cognome', 'corso__scuola__nome', 'causale', 'note']
     ordering_fields = ['data_pagamento', 'importo']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        has_ricevuta = self.request.query_params.get('has_ricevuta')
+        if has_ricevuta is not None:
+            if str(has_ricevuta).lower() in ['true', '1']:
+                qs = qs.filter(ricevute__isnull=False).distinct()
+            elif str(has_ricevuta).lower() in ['false', '0']:
+                qs = qs.filter(ricevute__isnull=True)
+        return qs
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
@@ -1282,41 +1364,601 @@ class RicevutaViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'], url_path='upload-to-drive')
+    def upload_to_drive(self, request, pk=None):
+        """Salva la ricevuta PDF su Google Drive nella cartella configurata per le Ricevute."""
+        ricevuta = self.get_object()
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Google Drive non configurato. Vai in Impostazioni > Google Drive per caricare la chiave privata.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        target_folder_id = config.folder_ricevute_id or config.folder_id
+        if not target_folder_id:
+            return Response({
+                'success': False,
+                'error': 'Nessuna cartella di destinazione impostata per le Ricevute. Selezionala in Impostazioni > Google Drive.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            pdf_bytes = genera_pdf_ricevuta_da_template(
+                numero=ricevuta.numero,
+                anno=ricevuta.anno,
+                intestatario=ricevuta.intestatario,
+                importo=ricevuta.importo,
+                causale=ricevuta.causale,
+                data_emissione=ricevuta.data
+            )
+            if not pdf_bytes:
+                return Response({'success': False, 'error': 'Impossibile generare il PDF dal template.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            from googleapiclient.http import MediaIoBaseUpload
+            import io
+
+            drive_service = get_google_drive_service(config)
+
+            safe_name = "".join(c for c in ricevuta.intestatario if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Ricevuta_{ricevuta.numero:02d}_{ricevuta.anno}_{safe_name}.pdf"
+
+            file_metadata = {
+                'name': filename,
+                'parents': [target_folder_id],
+                'description': f"Ricevuta {ricevuta.numero_display} per {ricevuta.intestatario} (€ {ricevuta.importo:.2f})"
+            }
+
+            media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
+            uploaded_file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+
+            return Response({
+                'success': True,
+                'file_id': uploaded_file.get('id'),
+                'filename': uploaded_file.get('name'),
+                'webViewLink': uploaded_file.get('webViewLink'),
+                'folder_nome': config.folder_ricevute_nome or target_folder_id
+            })
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore caricamento su Google Drive: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='send-whatsapp')
+    def send_whatsapp(self, request, pk=None):
+        """Invia il PDF della ricevuta via WhatsApp all'intestatario."""
+        ricevuta = self.get_object()
+        telefono = (request.data.get('telefono') or '').strip()
+        if not telefono and ricevuta.allievo and ricevuta.allievo.telefono:
+            telefono = ricevuta.allievo.telefono.strip()
+
+        if not telefono:
+            return Response({
+                'success': False,
+                'error': "Numero di telefono mancante. Specifica il numero WhatsApp dell'intestatario."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        messaggio = request.data.get('messaggio')
+        if not messaggio:
+            messaggio = f"Gentile {ricevuta.intestatario}, ti inviamo in allegato la ricevuta {ricevuta.numero_display} di € {ricevuta.importo:.2f} per '{ricevuta.causale}'."
+
+        try:
+            pdf_bytes = genera_pdf_ricevuta_da_template(
+                numero=ricevuta.numero,
+                anno=ricevuta.anno,
+                intestatario=ricevuta.intestatario,
+                importo=ricevuta.importo,
+                causale=ricevuta.causale,
+                data_emissione=ricevuta.data
+            )
+            if not pdf_bytes:
+                return Response({'success': False, 'error': 'Impossibile generare il PDF dal template.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            from .wa_client import send_whatsapp_document
+            safe_name = "".join(c for c in ricevuta.intestatario if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Ricevuta_{ricevuta.numero:02d}_{ricevuta.anno}_{safe_name}.pdf"
+
+            res = send_whatsapp_document(
+                to=telefono,
+                file_bytes=pdf_bytes,
+                filename=filename,
+                caption=messaggio
+            )
+
+            if res.get('success'):
+                return Response({
+                    'success': True,
+                    'message': f"Ricevuta inviata con successo via WhatsApp a {telefono}!"
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'error': res.get('error', 'Errore gateway WhatsApp')
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore invio WhatsApp: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='inserisci-in-cassa')
+    def inserisci_in_cassa(self, request, pk=None):
+        """
+        Crea un movimento di entrata in Prima Nota Cassa (Bilancio) per questa ricevuta,
+        oppure restituisce errore se è già presente a bilancio.
+        """
+        ricevuta = self.get_object()
+        if ricevuta.in_bilancio:
+            return Response({
+                'error': f'La ricevuta {ricevuta.numero_display} è già stata aggiunta alla Prima Nota Cassa (Bilancio).'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        categoria = request.data.get('categoria')
+        if not categoria:
+            causale_lower = (ricevuta.causale or '').lower()
+            if 'tesser' in causale_lower or 'associat' in causale_lower or 'iscrizion' in causale_lower:
+                categoria = 'Tesseramenti'
+            elif 'stage' in causale_lower or 'workshop' in causale_lower:
+                categoria = 'Stage / Workshop'
+            elif 'privat' in causale_lower:
+                categoria = 'Lezioni private'
+            elif 'milong' in causale_lower or 'serat' in causale_lower:
+                categoria = 'Milonghe / Serate'
+            elif 'donazion' in causale_lower or 'contribut' in causale_lower:
+                categoria = 'Donazioni / Contributi'
+            else:
+                categoria = 'Quote corsi'
+
+        descrizione = request.data.get('descrizione')
+        if not descrizione:
+            descrizione = f"Ricevuta {ricevuta.numero_display} - {ricevuta.intestatario}"
+
+        data_mov = request.data.get('data') or ricevuta.data
+        note_mov = request.data.get('note')
+        if note_mov is None:
+            note_mov = f"Generato automaticamente da Ricevuta {ricevuta.numero_display} ({ricevuta.causale})"
+            if ricevuta.note:
+                note_mov += f". {ricevuta.note}"
+
+        movimento = MovimentoPrimaNota.objects.create(
+            data=data_mov,
+            descrizione=descrizione,
+            categoria=categoria,
+            tipo='entrata',
+            importo=ricevuta.importo,
+            note=note_mov.strip()
+        )
+
+        ricevuta.movimento_cassa = movimento
+        ricevuta.save()
+
+        return Response({
+            'success': True,
+            'message': f"Entrata per Ricevuta {ricevuta.numero_display} inserita con successo in Prima Nota Cassa!",
+            'ricevuta': RicevutaSerializer(ricevuta).data,
+            'movimento_id': str(movimento.id),
+        }, status=status.HTTP_201_CREATED)
+
+
+def get_google_drive_service(config=None):
+    """
+    Inizializza e restituisce il servizio Google Drive v3 autorizzato,
+    utilizzando le credenziali OAuth 2.0 (account personale) o Service Account
+    in base alla configurazione attiva.
+    """
+    if not config:
+        config = GoogleDriveConfig.get_instance()
+    if not config.is_configured:
+        raise ValueError('Google Drive non è configurato. Completa l\'accesso in Impostazioni > Google Drive.')
+
+    from googleapiclient.discovery import build
+
+    if config.auth_type == 'oauth':
+        if not config.oauth_refresh_token:
+            raise ValueError('Nessun token di autorizzazione Google OAuth 2.0 trovato. Connettiti con il tuo account Google.')
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+
+        creds = Credentials(
+            token=config.oauth_access_token or None,
+            refresh_token=config.oauth_refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=config.oauth_client_id,
+            client_secret=config.oauth_client_secret,
+            scopes=[
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/userinfo.email',
+                'https://www.googleapis.com/auth/userinfo.profile',
+                'openid'
+            ]
+        )
+        if not creds.valid:
+            if creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    config.oauth_access_token = creds.token
+                    if creds.expiry:
+                        config.oauth_token_expiry = creds.expiry
+                    config.save(update_fields=['oauth_access_token', 'oauth_token_expiry'])
+                except Exception as e:
+                    raise ValueError(f"Impossibile aggiornare il token di accesso Google: {str(e)}")
+        return build('drive', 'v3', credentials=creds)
+
+    else:
+        # Service Account
+        if not config.is_sa_configured:
+            raise ValueError('Nessun file di credenziali Service Account configurato per Google Drive.')
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(
+            config.credentials_file.path,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        return build('drive', 'v3', credentials=credentials)
+
 
 class GoogleDriveConfigViewSet(viewsets.ViewSet):
     """
-    Gestione della configurazione e chiave privata Google Drive.
+    Gestione della configurazione Google Drive (OAuth 2.0 e Service Account).
     """
     def list(self, request):
         config = GoogleDriveConfig.get_instance()
         serializer = GoogleDriveConfigSerializer(config)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['post'], url_path='switch-auth-type')
+    def switch_auth_type(self, request):
+        """Passa tra OAuth 2.0 e Service Account."""
+        config = GoogleDriveConfig.get_instance()
+        auth_type = request.data.get('auth_type')
+        if auth_type in ['oauth', 'service_account']:
+            config.auth_type = auth_type
+            config.save(update_fields=['auth_type'])
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path='oauth-save-credentials')
+    def oauth_save_credentials(self, request):
+        """
+        Salva Client ID e Client Secret OAuth 2.0 da form o da file client_secret.json.
+        """
+        config = GoogleDriveConfig.get_instance()
+        file_obj = request.FILES.get('file')
+
+        client_id = (request.data.get('client_id') or '').strip()
+        client_secret = (request.data.get('client_secret') or '').strip()
+
+        if file_obj:
+            try:
+                import json
+                raw = file_obj.read().decode('utf-8')
+                data = json.loads(raw)
+                # Formato standard Google Cloud Console OAuth 2.0: {"web": {...}} o {"installed": {...}}
+                root = data.get('web') or data.get('installed') or data
+                client_id = root.get('client_id', '') or client_id
+                client_secret = root.get('client_secret', '') or client_secret
+            except Exception as e:
+                return Response({'success': False, 'error': f"Errore lettura file JSON credenziali: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not client_id or not client_secret:
+            return Response({'success': False, 'error': 'Client ID e Client Secret sono entrambi obbligatori.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        config.auth_type = 'oauth'
+        config.oauth_client_id = client_id
+        config.oauth_client_secret = client_secret
+        config.save()
+
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['get', 'post'], url_path='oauth-init')
+    def oauth_init(self, request):
+        """
+        Genera l'URL di autorizzazione Google OAuth 2.0.
+        """
+        config = GoogleDriveConfig.get_instance()
+        client_id = (request.data.get('client_id') or config.oauth_client_id or '').strip()
+        client_secret = (request.data.get('client_secret') or config.oauth_client_secret or '').strip()
+
+        if not client_id or not client_secret:
+            return Response({
+                'success': False,
+                'error': 'OAuth Client ID e Client Secret non configurati. Inseriscili prima di iniziare l\'autenticazione.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if client_id != config.oauth_client_id or client_secret != config.oauth_client_secret:
+            config.oauth_client_id = client_id
+            config.oauth_client_secret = client_secret
+            config.auth_type = 'oauth'
+            config.save()
+
+        # Determina redirect_uri
+        redirect_uri = request.data.get('redirect_uri')
+        if not redirect_uri:
+            # Costruisci redirect_uri assoluto
+            redirect_uri = request.build_absolute_uri('/api/google-drive/oauth-callback/')
+
+        import urllib.parse
+        scopes = [
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'openid'
+        ]
+        params = {
+            'client_id': config.oauth_client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': ' '.join(scopes),
+            'access_type': 'offline',
+            'prompt': 'consent',
+            'include_granted_scopes': 'true',
+            'state': redirect_uri,
+        }
+        auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
+        return Response({
+            'success': True,
+            'auth_url': auth_url,
+            'redirect_uri': redirect_uri
+        })
+
+    @action(detail=False, methods=['get'], url_path='oauth-callback', permission_classes=[permissions.AllowAny])
+    def oauth_callback(self, request):
+        """
+        Riceve il redirect da Google con il codice di autorizzazione OAuth 2.0.
+        """
+        error = request.query_params.get('error')
+        if error:
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore Google OAuth</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Errore durante l'autenticazione con Google</h2>
+                <p>Messaggio: {error}</p>
+                <p>Puoi chiudere questa finestra e riprovare.</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        code = request.query_params.get('code')
+        if not code:
+            return HttpResponse("""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Nessun codice di autorizzazione fornito</h2>
+                <p>Puoi chiudere questa finestra.</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        config = GoogleDriveConfig.get_instance()
+        if not config.oauth_client_id or not config.oauth_client_secret:
+            return HttpResponse("""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Credenziali mancanti</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Client ID o Client Secret mancanti</h2>
+                <p>Configura prima le credenziali OAuth in WAManager.</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        state = request.query_params.get('state')
+        if state and state.startswith('http'):
+            redirect_uri = state
+        else:
+            redirect_uri = request.build_absolute_uri(request.path)
+
+        try:
+            import requests
+            import datetime
+
+            token_resp = requests.post('https://oauth2.googleapis.com/token', data={
+                'code': code,
+                'client_id': config.oauth_client_id,
+                'client_secret': config.oauth_client_secret,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code'
+            })
+
+            if token_resp.status_code != 200:
+                return HttpResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>Errore Scambio Token</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                    <h2 style="color: #d32f2f;">Impossibile completare lo scambio del token</h2>
+                    <pre style="background: #f5f5f5; padding: 15px; display: inline-block; text-align: left; border-radius: 8px;">{token_resp.text}</pre>
+                </body>
+                </html>
+                """, content_type="text/html; charset=utf-8")
+
+            tokens = token_resp.json()
+            access_token = tokens.get('access_token')
+            refresh_token = tokens.get('refresh_token')
+            expires_in = tokens.get('expires_in', 3600)
+
+            user_email = ''
+            user_name = ''
+            user_resp = requests.get('https://www.googleapis.com/oauth2/v3/userinfo', headers={
+                'Authorization': f'Bearer {access_token}'
+            })
+            if user_resp.status_code == 200:
+                u_info = user_resp.json()
+                user_email = u_info.get('email', '')
+                user_name = u_info.get('name', '')
+
+            config.auth_type = 'oauth'
+            config.oauth_access_token = access_token
+            if refresh_token:
+                config.oauth_refresh_token = refresh_token
+            config.oauth_token_expiry = timezone.now() + datetime.timedelta(seconds=expires_in)
+            config.oauth_user_email = user_email
+            config.oauth_user_name = user_name
+            config.last_test_status = 'success'
+            config.last_test_message = f"Connesso via OAuth 2.0 come {user_email or user_name}"
+            config.last_tested_at = timezone.now()
+            config.save()
+
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Google Drive Connesso!</title>
+                <style>
+                    body {{
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        background-color: #f0f4f9;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }}
+                    .card {{
+                        background: white;
+                        padding: 40px 32px;
+                        border-radius: 20px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+                        text-align: center;
+                        max-width: 440px;
+                        width: 90%;
+                    }}
+                    .icon {{ font-size: 56px; margin-bottom: 12px; }}
+                    h2 {{ color: #1a73e8; margin-bottom: 8px; font-size: 22px; }}
+                    p {{ color: #5f6368; font-size: 14px; line-height: 1.5; }}
+                    .email-badge {{
+                        background: #e8f0fe;
+                        color: #1967d2;
+                        font-weight: 600;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        display: inline-block;
+                        margin: 14px 0;
+                        font-size: 15px;
+                    }}
+                    .close-notice {{ font-size: 12px; color: #9aa0a6; margin-top: 16px; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">✅</div>
+                    <h2>Account Google Connesso!</h2>
+                    <p>L'integrazione Google Drive è attiva per:</p>
+                    <div class="email-badge">{user_email or user_name}</div>
+                    <p>Tutti i caricamenti di ricevute e tessere utilizzeranno ora la tua quota personale di 15 GB.</p>
+                    <p class="close-notice">Questa finestra si chiuderà automaticamente...</p>
+                </div>
+                <script>
+                    if (window.opener) {{
+                        try {{
+                            window.opener.postMessage({{
+                                type: 'GOOGLE_DRIVE_OAUTH_SUCCESS',
+                                email: '{user_email}',
+                                name: '{user_name}'
+                            }}, '*');
+                        }} catch (e) {{}}
+                        setTimeout(function() {{
+                            window.close();
+                        }}, 2000);
+                    }}
+                </script>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        except Exception as e:
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Errore imprevisto durante l'autenticazione</h2>
+                <p>{str(e)}</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+    @action(detail=False, methods=['post'], url_path='oauth-disconnect')
+    def oauth_disconnect(self, request):
+        """
+        Disconnette l'account Google OAuth 2.0 revocando/azzerando i token salvati.
+        """
+        config = GoogleDriveConfig.get_instance()
+        config.oauth_access_token = ''
+        config.oauth_refresh_token = ''
+        config.oauth_token_expiry = None
+        config.oauth_user_email = ''
+        config.oauth_user_name = ''
+        config.last_test_status = ''
+        config.last_test_message = ''
+        config.last_tested_at = None
+        config.save()
+
+        serializer = GoogleDriveConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
     @action(detail=False, methods=['post'], url_path='upload')
     def upload_file(self, request):
+        """
+        Carica un file di credenziali JSON. Rileva automaticamente se si tratta di
+        chiave privata Service Account o file client_secret OAuth 2.0.
+        """
         file_obj = request.FILES.get('file')
         if not file_obj:
             return Response({'success': False, 'error': 'Nessun file fornito.'}, status=status.HTTP_400_BAD_REQUEST)
 
         config = GoogleDriveConfig.get_instance()
-
         content_bytes = file_obj.read()
         file_obj.seek(0)
 
+        import json
+        is_service_account = False
+        is_oauth_client = False
+        client_id = ''
+        client_secret = ''
         client_email = ''
         project_id = ''
         private_key_id = ''
 
         try:
-            import json
             data = json.loads(content_bytes.decode('utf-8'))
             if isinstance(data, dict):
-                client_email = data.get('client_email', '')
-                project_id = data.get('project_id', '')
-                private_key_id = data.get('private_key_id', '')
-        except Exception:
-            pass
+                if data.get('type') == 'service_account':
+                    is_service_account = True
+                    client_email = data.get('client_email', '')
+                    project_id = data.get('project_id', '')
+                    private_key_id = data.get('private_key_id', '')
+                elif 'web' in data or 'installed' in data:
+                    is_oauth_client = True
+                    root = data.get('web') or data.get('installed')
+                    client_id = root.get('client_id', '')
+                    client_secret = root.get('client_secret', '')
+                elif 'client_id' in data and 'client_secret' in data:
+                    is_oauth_client = True
+                    client_id = data.get('client_id', '')
+                    client_secret = data.get('client_secret', '')
+        except Exception as e:
+            return Response({'success': False, 'error': f"File JSON non valido: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
+        if is_oauth_client:
+            config.auth_type = 'oauth'
+            config.oauth_client_id = client_id
+            config.oauth_client_secret = client_secret
+            config.save()
+            serializer = GoogleDriveConfigSerializer(config)
+            return Response({
+                'success': True,
+                'detected_type': 'oauth',
+                'message': 'File credenziali OAuth 2.0 caricato con successo! Clicca su "Connetti con Google" per autorizzare il tuo account.',
+                'config': serializer.data
+            })
+
+        # Altrimenti gestisce come Service Account
         if config.credentials_file:
             try:
                 config.credentials_file.delete(save=False)
@@ -1327,13 +1969,18 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
         config.client_email = client_email
         config.project_id = project_id
         config.private_key_id = private_key_id
+        config.auth_type = 'service_account'
         config.last_test_status = ''
         config.last_test_message = ''
         config.last_tested_at = None
         config.save()
 
         serializer = GoogleDriveConfigSerializer(config)
-        return Response({'success': True, 'config': serializer.data})
+        return Response({
+            'success': True,
+            'detected_type': 'service_account',
+            'config': serializer.data
+        })
 
     @action(detail=False, methods=['post'], url_path='test')
     def test_connection(self, request):
@@ -1341,25 +1988,27 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
         if not config.is_configured:
             return Response({
                 'success': False,
-                'error': 'Nessuna chiave privata caricata per Google Drive.'
+                'error': 'Google Drive non è configurato. Completa l\'accesso prima di testare.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            from google.oauth2 import service_account
-            from googleapiclient.discovery import build
+            drive_service = get_google_drive_service(config)
 
-            credentials = service_account.Credentials.from_service_account_file(
-                config.credentials_file.path,
-                scopes=['https://www.googleapis.com/auth/drive']
-            )
-            drive_service = build('drive', 'v3', credentials=credentials)
-
-            about = drive_service.about().get(fields='user').execute()
+            about = drive_service.about().get(fields='user, storageQuota').execute()
             user_info = about.get('user', {})
-            user_display = user_info.get('displayName') or user_info.get('emailAddress') or config.client_email or 'Google Drive'
+            user_display = user_info.get('displayName') or user_info.get('emailAddress') or config.oauth_user_email or config.client_email or 'Google Drive'
+
+            quota_info = about.get('storageQuota', {})
+            limit = quota_info.get('limit')
+            usage = quota_info.get('usage')
+            quota_str = ""
+            if limit and usage:
+                limit_gb = int(limit) / (1024**3)
+                usage_gb = int(usage) / (1024**3)
+                quota_str = f" • Quota: {usage_gb:.2f} GB usati di {limit_gb:.1f} GB ({int((int(usage)/int(limit))*100)}%)"
 
             config.last_test_status = 'success'
-            config.last_test_message = f"Connessione a Google Drive riuscita! Account: {user_display}"
+            config.last_test_message = f"Connessione riuscita! Account: {user_display}{quota_str}"
             config.last_tested_at = timezone.now()
             config.save()
 
@@ -1394,65 +2043,28 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
         serializer = GoogleDriveConfigSerializer(config)
         return Response({'success': True, 'config': serializer.data})
 
-    def _get_drive_service(self, config=None):
-        if not config:
-            config = GoogleDriveConfig.get_instance()
-        if not config.is_configured:
-            raise ValueError('Nessuna chiave privata valida configurata per Google Drive.')
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
-
-        credentials = service_account.Credentials.from_service_account_file(
-            config.credentials_file.path,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
-        return build('drive', 'v3', credentials=credentials)
-
     @action(detail=False, methods=['get'], url_path='folders')
     def list_folders(self, request):
         """
-        Sfoglia l'alberatura delle cartelle di Google Drive a cui ha accesso il service account.
-        Se parent_id è vuoto o 'root', elenca le cartelle condivise direttamente con il service account,
-        le cartelle radice del suo drive e gli Shared Drives (Team Drives).
-        Se parent_id è specificato, elenca le sottocartelle di quel parent.
+        Sfoglia l'alberatura delle cartelle di Google Drive.
+        Supporta sia OAuth 2.0 (Drive personale e Condivisi con me) sia Service Account.
         """
         config = GoogleDriveConfig.get_instance()
         if not config.is_configured:
             return Response({
                 'success': False,
-                'error': 'Nessuna chiave privata configurata per Google Drive. Carica prima il file delle credenziali.'
+                'error': 'Google Drive non configurato. Completa prima l\'accesso in Impostazioni.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         parent_id = (request.query_params.get('parent_id') or '').strip()
 
         try:
-            drive_service = self._get_drive_service(config)
+            drive_service = get_google_drive_service(config)
 
             if not parent_id or parent_id == 'root':
-                # Radice / Cartelle condivise con il Service Account
                 items_dict = {}
 
-                # 1. Cartelle condivise con il service account
-                try:
-                    q_shared = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and sharedWithMe = true"
-                    res_shared = drive_service.files().list(
-                        q=q_shared,
-                        pageSize=100,
-                        fields='files(id, name, mimeType, parents, owners, modifiedTime)',
-                        supportsAllDrives=True,
-                        includeItemsFromAllDrives=True
-                    ).execute()
-                    for f in res_shared.get('files', []):
-                        items_dict[f['id']] = {
-                            'id': f['id'],
-                            'name': f.get('name', 'Senza nome'),
-                            'is_shared': True,
-                            'parents': f.get('parents', []),
-                        }
-                except Exception as e:
-                    print(f"Avviso cartelle sharedWithMe: {e}")
-
-                # 2. Cartelle radice del Drive del Service Account
+                # 1. Cartelle radice di "Il mio Drive"
                 try:
                     q_root = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
                     res_root = drive_service.files().list(
@@ -1472,13 +2084,33 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
                 except Exception as e:
                     print(f"Avviso cartelle root: {e}")
 
+                # 2. Cartelle condivise (sharedWithMe)
+                try:
+                    q_shared = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and sharedWithMe = true"
+                    res_shared = drive_service.files().list(
+                        q=q_shared,
+                        pageSize=100,
+                        fields='files(id, name, mimeType, parents, owners, modifiedTime)',
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True
+                    ).execute()
+                    for f in res_shared.get('files', []):
+                        items_dict[f['id']] = {
+                            'id': f['id'],
+                            'name': f.get('name', 'Senza nome') + (' (Condivisa)' if f['id'] not in items_dict else ''),
+                            'is_shared': True,
+                            'parents': f.get('parents', []),
+                        }
+                except Exception as e:
+                    print(f"Avviso cartelle sharedWithMe: {e}")
+
                 # 3. Shared Drives (Team Drives)
                 try:
                     res_drives = drive_service.drives().list(pageSize=50).execute()
                     for d in res_drives.get('drives', []):
                         items_dict[d['id']] = {
                             'id': d['id'],
-                            'name': d.get('name', 'Shared Drive'),
+                            'name': d.get('name', 'Shared Drive') + ' (Unità Condivisa)',
                             'is_drive': True,
                             'parents': [],
                         }
@@ -1491,11 +2123,11 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
                     'parent_id': 'root',
                     'current_folder': {
                         'id': 'root',
-                        'name': 'Radice / Cartelle Condivise',
+                        'name': 'Il mio Drive / Condivisi',
                         'parents': [],
                     },
                     'breadcrumbs': [
-                        {'id': 'root', 'name': 'Drive (Radice / Condivisi)'}
+                        {'id': 'root', 'name': 'Drive (Radice)'}
                     ],
                     'folders': folders
                 })
@@ -1561,7 +2193,7 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             return Response({'success': False, 'error': 'Nome della cartella obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            drive_service = self._get_drive_service(config)
+            drive_service = get_google_drive_service(config)
             body = {
                 'name': name,
                 'mimeType': 'application/vnd.google-apps.folder'
@@ -1609,5 +2241,385 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
         config.save()
         serializer = GoogleDriveConfigSerializer(config)
         return Response({'success': True, 'config': serializer.data})
+
+
+# ─── 2.15 Bilancio: Prima Nota Cassa ────────────────────────────
+
+class MovimentoPrimaNotaViewSet(viewsets.ModelViewSet):
+    queryset = MovimentoPrimaNota.objects.all().order_by('-data', '-created_at')
+    serializer_class = MovimentoPrimaNotaSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['tipo', 'categoria']
+    search_fields = ['descrizione', 'categoria', 'note']
+    ordering_fields = ['data', 'importo', 'categoria', 'created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        anno = self.request.query_params.get('anno')
+        if anno:
+            try:
+                qs = qs.filter(data__year=int(anno))
+            except ValueError:
+                pass
+
+        mese = self.request.query_params.get('mese')
+        if mese:
+            try:
+                qs = qs.filter(data__month=int(mese))
+            except ValueError:
+                pass
+
+        data_da = self.request.query_params.get('data_da')
+        if data_da:
+            qs = qs.filter(data__gte=data_da)
+
+        data_a = self.request.query_params.get('data_a')
+        if data_a:
+            qs = qs.filter(data__lte=data_a)
+
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='riepilogo')
+    def riepilogo(self, request):
+        """Restituisce il riepilogo con totale entrate, totale uscite, saldo, categorie e anni."""
+        qs = self.get_queryset()
+        from django.db.models import Sum
+
+        totale_entrate = qs.filter(tipo='entrata').aggregate(tot=Sum('importo'))['tot'] or 0.0
+        totale_uscite = qs.filter(tipo='uscita').aggregate(tot=Sum('importo'))['tot'] or 0.0
+        saldo = float(totale_entrate) - float(totale_uscite)
+
+        CategoriaBilancio.ensure_defaults()
+
+        categorie_entrate = list(CategoriaBilancio.objects.filter(tipo='entrata').order_by('ordine', 'nome').values_list('nome', flat=True))
+        categorie_uscite = list(CategoriaBilancio.objects.filter(tipo='uscita').order_by('ordine', 'nome').values_list('nome', flat=True))
+
+        categorie_db = list(MovimentoPrimaNota.objects.values_list('categoria', flat=True).distinct())
+        categorie_combinate = sorted(list(set([c for c in (categorie_entrate + categorie_uscite + categorie_db) if c and c.strip()])))
+
+        anni = list(MovimentoPrimaNota.objects.dates('data', 'year').values_list('data__year', flat=True))
+        anni = sorted(list(set([y for y in anni if y >= 2026])), reverse=True)
+        cur_year = max(2026, timezone.now().year)
+        if cur_year not in anni:
+            anni.insert(0, cur_year)
+
+        return Response({
+            'conteggio': qs.count(),
+            'totale_entrate': float(totale_entrate),
+            'totale_uscite': float(totale_uscite),
+            'saldo': saldo,
+            'categorie': categorie_combinate,
+            'categorie_entrate': categorie_entrate,
+            'categorie_uscite': categorie_uscite,
+            'anni': anni,
+        })
+
+    @action(detail=False, methods=['get'], url_path='bilancio-mensile')
+    def bilancio_mensile(self, request):
+        """
+        Restituisce il prospetto mensile (1-12) delle entrate, uscite, saldo e stato (avanzo, perdita, pareggio) per un anno.
+        """
+        from django.db.models import Sum
+
+        anno_param = request.query_params.get('anno')
+        try:
+            anno = int(anno_param) if anno_param else max(2026, timezone.now().year)
+        except ValueError:
+            anno = max(2026, timezone.now().year)
+        if anno < 2026:
+            anno = 2026
+
+        qs_anno = MovimentoPrimaNota.objects.filter(data__year=anno)
+
+        nomi_mesi = [
+            'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+            'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+        ]
+
+        prospetto_mesi = []
+        tot_entrate_anno = 0.0
+        tot_uscite_anno = 0.0
+
+        for mese_idx in range(1, 13):
+            qs_mese = qs_anno.filter(data__month=mese_idx)
+            entrate = float(qs_mese.filter(tipo='entrata').aggregate(tot=Sum('importo'))['tot'] or 0.0)
+            uscite = float(qs_mese.filter(tipo='uscita').aggregate(tot=Sum('importo'))['tot'] or 0.0)
+            saldo = entrate - uscite
+
+            if saldo > 0.001:
+                stato = 'avanzo'
+                stato_display = 'Avanzo'
+            elif saldo < -0.001:
+                stato = 'perdita'
+                stato_display = 'Perdita'
+            else:
+                stato = 'pareggio'
+                stato_display = 'Pareggio'
+
+            tot_entrate_anno += entrate
+            tot_uscite_anno += uscite
+
+            prospetto_mesi.append({
+                'mese': mese_idx,
+                'nome_mese': nomi_mesi[mese_idx - 1],
+                'entrate': entrate,
+                'uscite': uscite,
+                'saldo': saldo,
+                'stato': stato,
+                'stato_display': stato_display,
+                'movimenti_count': qs_mese.count(),
+            })
+
+        saldo_totale = tot_entrate_anno - tot_uscite_anno
+        if saldo_totale > 0.001:
+            stato_totale = 'avanzo'
+            stato_totale_display = 'Avanzo'
+        elif saldo_totale < -0.001:
+            stato_totale = 'perdita'
+            stato_totale_display = 'Perdita'
+        else:
+            stato_totale = 'pareggio'
+            stato_totale_display = 'Pareggio'
+
+        anni = list(MovimentoPrimaNota.objects.dates('data', 'year').values_list('data__year', flat=True))
+        anni = sorted(list(set([y for y in anni if y >= 2026])), reverse=True)
+        cur_year = max(2026, timezone.now().year)
+        if cur_year not in anni:
+            anni.insert(0, cur_year)
+
+        return Response({
+            'anno': anno,
+            'anni_disponibili': anni,
+            'mesi': prospetto_mesi,
+            'totale_entrate': tot_entrate_anno,
+            'totale_uscite': tot_uscite_anno,
+            'saldo_totale': saldo_totale,
+            'stato_totale': stato_totale,
+            'stato_totale_display': stato_totale_display,
+        })
+
+    @action(detail=False, methods=['get'], url_path='bilancio-annuale')
+    def bilancio_annuale(self, request):
+        """
+        Restituisce il bilancio annuale con due tabelle distinte (Entrate e Uscite),
+        con colonne: VOCE (categoria), GEN, FEB, MAR, APR, MAG, GIU, LUG, AGO, SET, OTT, NOV, DIC, TOTALE.
+        """
+        from django.db.models import Sum
+
+        anno_param = request.query_params.get('anno')
+        try:
+            anno = int(anno_param) if anno_param else max(2026, timezone.now().year)
+        except ValueError:
+            anno = max(2026, timezone.now().year)
+        if anno < 2026:
+            anno = 2026
+
+        CategoriaBilancio.ensure_defaults()
+        qs_anno = MovimentoPrimaNota.objects.filter(data__year=anno)
+
+        def elabora_tipo(tipo_val):
+            # Categorie configurate
+            cat_config = list(CategoriaBilancio.objects.filter(tipo=tipo_val).order_by('ordine', 'nome').values_list('nome', flat=True))
+            # Categorie presenti nei movimenti dell'anno
+            cat_mov = list(qs_anno.filter(tipo=tipo_val).values_list('categoria', flat=True).distinct())
+
+            tutte_cat = []
+            for c in cat_config:
+                if c not in tutte_cat:
+                    tutte_cat.append(c)
+            for c in sorted(cat_mov):
+                if c and c not in tutte_cat:
+                    tutte_cat.append(c)
+
+            righe = []
+            totali_mesi = [0.0] * 12
+            totale_complessivo = 0.0
+
+            for cat in tutte_cat:
+                importi_mesi = []
+                tot_riga = 0.0
+                for m in range(1, 13):
+                    val = float(qs_anno.filter(tipo=tipo_val, categoria=cat, data__month=m).aggregate(tot=Sum('importo'))['tot'] or 0.0)
+                    importi_mesi.append(val)
+                    tot_riga += val
+                    totali_mesi[m - 1] += val
+
+                totale_complessivo += tot_riga
+                righe.append({
+                    'categoria': cat,
+                    'mesi': importi_mesi,
+                    'totale': tot_riga,
+                })
+
+            return {
+                'righe': righe,
+                'totali_mesi': totali_mesi,
+                'totale_complessivo': totale_complessivo,
+            }
+
+        dati_entrate = elabora_tipo('entrata')
+        dati_uscite = elabora_tipo('uscita')
+
+        saldo_mesi = [
+            round(dati_entrate['totali_mesi'][i] - dati_uscite['totali_mesi'][i], 2)
+            for i in range(12)
+        ]
+        saldo_complessivo = round(dati_entrate['totale_complessivo'] - dati_uscite['totale_complessivo'], 2)
+
+        anni = list(MovimentoPrimaNota.objects.dates('data', 'year').values_list('data__year', flat=True))
+        anni = sorted(list(set([y for y in anni if y >= 2026])), reverse=True)
+        cur_year = max(2026, timezone.now().year)
+        if cur_year not in anni:
+            anni.insert(0, cur_year)
+
+        mesi_labels = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC']
+
+        return Response({
+            'anno': anno,
+            'anni_disponibili': anni,
+            'mesi_labels': mesi_labels,
+            'entrate': dati_entrate,
+            'uscite': dati_uscite,
+            'saldo_mesi': saldo_mesi,
+            'saldo_complessivo': saldo_complessivo,
+        })
+
+
+class CategoriaBilancioViewSet(viewsets.ModelViewSet):
+
+    """
+    CRUD completo per le categorie di Bilancio (Entrate e Uscite).
+    """
+    queryset = CategoriaBilancio.objects.all()
+    serializer_class = CategoriaBilancioSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['tipo']
+    search_fields = ['nome', 'descrizione']
+    ordering_fields = ['tipo', 'ordine', 'nome', 'created_at']
+    ordering = ['tipo', 'ordine', 'nome']
+
+    def get_queryset(self):
+        CategoriaBilancio.ensure_defaults()
+        return super().get_queryset()
+
+    @action(detail=False, methods=['post'], url_path='reset-defaults')
+    def reset_defaults(self, request):
+        """Ripristina o reintegra le categorie predefinite per entrate e uscite."""
+        CategoriaBilancio.ensure_defaults()
+        serializer = self.get_serializer(self.get_queryset(), many=True)
+        return Response({
+            'success': True,
+            'message': 'Categorie predefinite verificate e integrate con successo.',
+            'categorie': serializer.data
+        })
+
+
+# ─── 2.15 Configurazione ASD & Membri Direttivo ─────────────────
+
+class ConfigurazioneASDViewSet(viewsets.ViewSet):
+    """
+    Gestione e configurazione dei dati generali dell'ASD (nome, CF, sede legale, sede operativa, ecc.).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        asd = ConfigurazioneASD.get_instance()
+        serializer = ConfigurazioneASDSerializer(asd)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post', 'put', 'patch'], url_path='salva')
+    def salva(self, request):
+        asd = ConfigurazioneASD.get_instance()
+        serializer = ConfigurazioneASDSerializer(asd, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'success': True,
+                'message': 'Dati ASD aggiornati con successo.',
+                'dati': serializer.data
+            })
+        return Response({
+            'success': False,
+            'error': 'Dati non validi.',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MembroDirettivoViewSet(viewsets.ModelViewSet):
+    """
+    Gestione anagrafiche dei membri del direttivo (Presidente, Vicepresidente, Segretario)
+    e caricamento della loro firma autografa.
+    """
+    queryset = MembroDirettivo.objects.all().order_by('ordine', 'ruolo')
+    serializer_class = MembroDirettivoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        MembroDirettivo.ensure_defaults()
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='upload-firma')
+    def upload_firma(self, request, pk=None):
+        """Carica l'immagine della firma per il membro del direttivo specificato."""
+        membro = self.get_object()
+        file_obj = request.FILES.get('firma') or request.FILES.get('file')
+        if not file_obj:
+            return Response({'success': False, 'error': 'Nessun file immagine fornito.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Rimuovi l'eventuale file precedente
+        if membro.firma:
+            try:
+                membro.firma.delete(save=False)
+            except Exception:
+                pass
+
+        membro.firma = file_obj
+        membro.save()
+
+        serializer = self.get_serializer(membro)
+        return Response({
+            'success': True,
+            'message': f'Firma caricata con successo per {membro.get_ruolo_display()}.',
+            'membro': serializer.data
+        })
+
+    @action(detail=True, methods=['post', 'delete'], url_path='remove-firma')
+    def remove_firma(self, request, pk=None):
+        """Rimuove l'immagine della firma del membro del direttivo specificato."""
+        membro = self.get_object()
+        if membro.firma:
+            try:
+                membro.firma.delete(save=False)
+            except Exception:
+                pass
+            membro.firma = None
+            membro.save()
+
+        serializer = self.get_serializer(membro)
+        return Response({
+            'success': True,
+            'message': f'Firma rimossa con successo per {membro.get_ruolo_display()}.',
+            'membro': serializer.data
+        })
+
+    @action(detail=True, methods=['get'], url_path='firma-file', permission_classes=[permissions.AllowAny])
+    def firma_file(self, request, pk=None):
+        """Serve l'immagine della firma associata al membro."""
+        import os
+        membro = self.get_object()
+        if not membro.firma or not membro.firma.name:
+            raise Http404("Nessuna firma presente per questo membro.")
+        try:
+            filename = os.path.basename(membro.firma.name)
+            ext = os.path.splitext(filename)[1].lower()
+            ct = 'image/png' if ext == '.png' else ('image/jpeg' if ext in ['.jpg', '.jpeg'] else 'image/png')
+            return FileResponse(membro.firma.open('rb'), content_type=ct, filename=filename)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 
 

@@ -558,6 +558,15 @@ class Ricevuta(models.Model):
     importo = models.DecimalField(max_digits=10, decimal_places=2, help_text="Importo in Euro")
     note = models.TextField(blank=True, default='', help_text="Note aggiuntive (es. bonifico, contanti)")
     allievo = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True, related_name='ricevute')
+    pagamento = models.ForeignKey('Pagamento', on_delete=models.SET_NULL, null=True, blank=True, related_name='ricevute', help_text="Pagamento a cui si riferisce la ricevuta")
+    movimento_cassa = models.ForeignKey(
+        'MovimentoPrimaNota',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ricevute',
+        help_text="Movimento di prima nota cassa associato alla ricevuta"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -571,6 +580,10 @@ class Ricevuta(models.Model):
     def numero_display(self):
         return f"N. {self.numero}/{self.anno}"
 
+    @property
+    def in_bilancio(self):
+        return self.movimento_cassa_id is not None
+
     def __str__(self):
         return f"Ricevuta {self.numero_display} - {self.intestatario} (€ {self.importo})"
 
@@ -579,10 +592,32 @@ class Ricevuta(models.Model):
 
 class GoogleDriveConfig(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    auth_type = models.CharField(
+        max_length=20,
+        default='oauth',
+        choices=[
+            ('oauth', 'OAuth 2.0 (Account Google Personale / Google Workspace)'),
+            ('service_account', 'Service Account (Chiave Privata JSON)')
+        ],
+        help_text="Metodo di autenticazione Google Drive"
+    )
+
+    # Campi OAuth 2.0
+    oauth_client_id = models.CharField(max_length=255, blank=True, default='', help_text="OAuth 2.0 Client ID")
+    oauth_client_secret = models.CharField(max_length=255, blank=True, default='', help_text="OAuth 2.0 Client Secret")
+    oauth_access_token = models.TextField(blank=True, default='', help_text="OAuth 2.0 Access Token")
+    oauth_refresh_token = models.TextField(blank=True, default='', help_text="OAuth 2.0 Refresh Token")
+    oauth_token_expiry = models.DateTimeField(null=True, blank=True, help_text="Scadenza Access Token")
+    oauth_user_email = models.CharField(max_length=255, blank=True, default='', help_text="Email account Google autenticato via OAuth")
+    oauth_user_name = models.CharField(max_length=255, blank=True, default='', help_text="Nome account Google")
+
+    # Campi Service Account (Legacy/Workspace)
     credentials_file = models.FileField(upload_to='google_drive/', null=True, blank=True, help_text="File JSON chiave privata / Service Account di Google Drive")
     client_email = models.CharField(max_length=255, blank=True, default='', help_text="Email dell'account di servizio (da abilitare sulle cartelle Drive)")
     project_id = models.CharField(max_length=255, blank=True, default='', help_text="ID Progetto Google Cloud")
     private_key_id = models.CharField(max_length=255, blank=True, default='', help_text="ID chiave privata")
+
+    # Cartelle di destinazione
     folder_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella predefinita Google Drive")
     folder_ricevute_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Ricevute")
     folder_ricevute_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Ricevute")
@@ -601,7 +636,8 @@ class GoogleDriveConfig(models.Model):
 
     def __str__(self):
         status = "Configurato" if self.is_configured else "Non configurato"
-        return f"Google Drive ({status} - {self.client_email or 'Nessun account'})"
+        user_display = self.oauth_user_email if self.auth_type == 'oauth' else self.client_email
+        return f"Google Drive ({status} - {self.auth_type} - {user_display or 'Nessun account'})"
 
     @classmethod
     def get_instance(cls):
@@ -611,9 +647,19 @@ class GoogleDriveConfig(models.Model):
         return inst
 
     @property
-    def is_configured(self):
+    def is_sa_configured(self):
         import os
         return bool(self.credentials_file and self.credentials_file.name and os.path.exists(self.credentials_file.path))
+
+    @property
+    def is_oauth_connected(self):
+        return bool(self.oauth_refresh_token)
+
+    @property
+    def is_configured(self):
+        if self.auth_type == 'service_account':
+            return self.is_sa_configured
+        return self.is_oauth_connected
 
     @property
     def filename(self):
@@ -630,4 +676,194 @@ class GoogleDriveConfig(models.Model):
             except Exception:
                 return 0
         return 0
+
+
+# ─── 1.14 Bilancio: Prima Nota Cassa ────────────────────────────
+
+class MovimentoPrimaNota(models.Model):
+    TIPO_CHOICES = [
+        ('entrata', 'Entrata'),
+        ('uscita', 'Uscita'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    data = models.DateField(default=timezone.now, help_text="Data del movimento")
+    descrizione = models.CharField(max_length=255, help_text="Descrizione del movimento")
+    categoria = models.CharField(max_length=100, default='Generale', help_text="Categoria del movimento")
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='entrata', help_text="Entrata o Uscita")
+    importo = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Importo del movimento in Euro")
+    note = models.TextField(blank=True, default='', help_text="Note aggiuntive")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Movimento Prima Nota"
+        verbose_name_plural = "Prima Nota Cassa"
+        ordering = ['-data', '-created_at']
+
+    def __str__(self):
+        segno = '+' if self.tipo == 'entrata' else '-'
+        return f"[{self.data.strftime('%d/%m/%Y')}] {self.descrizione} ({self.categoria}): {segno}€{self.importo}"
+
+
+class CategoriaBilancio(models.Model):
+    TIPO_CHOICES = [
+        ('entrata', 'Entrata'),
+        ('uscita', 'Uscita'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(max_length=100, help_text="Nome della categoria")
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='entrata', help_text="Tipo: Entrata o Uscita")
+    descrizione = models.CharField(max_length=255, blank=True, default='', help_text="Descrizione opzionale")
+    colore = models.CharField(max_length=20, blank=True, default='', help_text="Colore hex opzionale")
+    ordine = models.IntegerField(default=0, help_text="Ordinamento nella lista")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Categoria Bilancio"
+        verbose_name_plural = "Categorie Bilancio"
+        unique_together = ('nome', 'tipo')
+        ordering = ['tipo', 'ordine', 'nome']
+
+    def __str__(self):
+        return f"[{self.get_tipo_display()}] {self.nome}"
+
+    @classmethod
+    def ensure_defaults(cls):
+        """Inizializza le categorie predefinite se la tabella è vuota."""
+        if cls.objects.exists():
+            return
+
+        defaults_entrate = [
+            ("Quote corsi", "Quote mensili e trimestrali dei corsi ordinari", 1),
+            ("Tesseramenti", "Quote di tesseramento annuale", 2),
+            ("Milonghe / Serate", "Ingressi a milonghe, pratiche e serate danzanti", 3),
+            ("Stage / Workshop", "Quote per stage speciali e lezioni con maestri ospiti", 4),
+            ("Lezioni private", "Corrispettivi per lezioni individuali o di coppia", 5),
+            ("Quote associative", "Quote di adesione all'associazione", 6),
+            ("Donazioni / Contributi", "Donazioni liberali e contributi volontari", 7),
+            ("Varie entrate", "Altre entrate e incassi diversi", 8),
+        ]
+
+        defaults_uscite = [
+            ("Affitto sale", "Canoni di locazione e noleggio sale da ballo", 1),
+            ("Compensi maestri", "Compensi e rimborsi per insegnanti e assistenti", 2),
+            ("SIAE / SCF", "Diritti musicali d'autore e diritti connessi", 3),
+            ("Attrezzatura / Service", "Impianti audio, luci, microfoni e materiale", 4),
+            ("Grafica / Pubblicità / Web", "Volantini, campagne social, sito web e domini", 5),
+            ("Rinfreschi / Bar", "Acquisto bevande e cibo per pratiche e serate", 6),
+            ("Spese bancarie / Gestionali", "Commissioni POS, conto corrente e software", 7),
+            ("Assicurazioni", "Polizze RCT e infortuni per allievi e associazione", 8),
+            ("Varie uscite", "Altre spese operative e imprevisti", 9),
+        ]
+
+        for nome, desc, ord_idx in defaults_entrate:
+            cls.objects.get_or_create(
+                nome=nome,
+                tipo='entrata',
+                defaults={'descrizione': desc, 'ordine': ord_idx}
+            )
+
+        for nome, desc, ord_idx in defaults_uscite:
+            cls.objects.get_or_create(
+                nome=nome,
+                tipo='uscita',
+                defaults={'descrizione': desc, 'ordine': ord_idx}
+            )
+
+
+# ─── 1.15 Dati ASD e Direttivo ─────────────────────────────────
+
+class ConfigurazioneASD(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(max_length=255, default='TantoTango ASD', help_text="Denominazione dell'Associazione")
+    codice_fiscale = models.CharField(max_length=50, blank=True, default='', help_text="Codice Fiscale dell'ASD")
+    partita_iva = models.CharField(max_length=50, blank=True, default='', help_text="Partita IVA (se presente)")
+    sede_legale = models.CharField(max_length=255, blank=True, default='', help_text="Indirizzo della sede legale")
+    sede_operativa = models.CharField(max_length=255, blank=True, default='', help_text="Indirizzo della sede operativa")
+    telefono = models.CharField(max_length=50, blank=True, default='', help_text="Recapito telefonico ASD")
+    email = models.EmailField(blank=True, default='', help_text="Email di contatto ASD")
+    pec = models.EmailField(blank=True, default='', help_text="Indirizzo Posta Elettronica Certificata (PEC)")
+    sito_web = models.CharField(max_length=255, blank=True, default='', help_text="Sito web istituzionale")
+    codice_affiliazione = models.CharField(max_length=100, blank=True, default='', help_text="Codice affiliazione EPS / CONI / Registro Nazionale")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Dati ASD"
+        verbose_name_plural = "Dati ASD"
+
+    def __str__(self):
+        return f"{self.nome} (CF: {self.codice_fiscale or 'N/D'})"
+
+    @classmethod
+    def get_instance(cls):
+        inst = cls.objects.first()
+        if not inst:
+            inst = cls.objects.create(nome='TantoTango ASD')
+        return inst
+
+
+class MembroDirettivo(models.Model):
+    RUOLI = [
+        ('presidente', 'Presidente'),
+        ('vicepresidente', 'Vicepresidente'),
+        ('segretario', 'Segretario'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ruolo = models.CharField(max_length=50, choices=RUOLI, unique=True, help_text="Ruolo all'interno del Direttivo")
+    nome = models.CharField(max_length=100, blank=True, default='', help_text="Nome")
+    cognome = models.CharField(max_length=100, blank=True, default='', help_text="Cognome")
+    codice_fiscale = models.CharField(max_length=16, blank=True, default='', help_text="Codice Fiscale personale")
+    data_nascita = models.DateField(null=True, blank=True, help_text="Data di nascita")
+    luogo_nascita = models.CharField(max_length=100, blank=True, default='', help_text="Luogo di nascita")
+    telefono = models.CharField(max_length=50, blank=True, default='', help_text="Telefono")
+    email = models.EmailField(blank=True, default='', help_text="Email")
+    firma = models.ImageField(upload_to='firme_direttivo/', null=True, blank=True, help_text="Immagine della firma")
+    ordine = models.PositiveIntegerField(default=1, help_text="Ordinamento nella visualizzazione")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Membro del Direttivo"
+        verbose_name_plural = "Direttivo ASD"
+        ordering = ['ordine', 'ruolo']
+
+    def __str__(self):
+        nome_completo = f"{self.nome} {self.cognome}".strip()
+        return f"{self.get_ruolo_display()}: {nome_completo or 'Non assegnato'}"
+
+    @property
+    def nome_completo(self):
+        val = f"{self.nome} {self.cognome}".strip()
+        return val if val else f"[{self.get_ruolo_display()}]"
+
+    @property
+    def has_firma(self):
+        return bool(self.firma and self.firma.name)
+
+    @property
+    def firma_url(self):
+        if self.has_firma:
+            return f"/api/direttivo/{self.id}/firma-file/"
+        return None
+
+    @classmethod
+    def ensure_defaults(cls):
+        """Assicura l'esistenza delle 3 cariche obbligatorie: Presidente, Vicepresidente, Segretario."""
+        defaults = [
+            ('presidente', 1),
+            ('vicepresidente', 2),
+            ('segretario', 3),
+        ]
+        for r, ord_idx in defaults:
+            cls.objects.get_or_create(
+                ruolo=r,
+                defaults={'ordine': ord_idx}
+            )
+
+
 

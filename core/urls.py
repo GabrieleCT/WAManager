@@ -25,6 +25,10 @@ router.register(r'gemini-logs', api_views.GeminiLogViewSet, basename='gemini-log
 router.register(r'document-templates', api_views.DocumentTemplateViewSet, basename='document-template')
 router.register(r'ricevute', api_views.RicevutaViewSet, basename='ricevuta')
 router.register(r'google-drive', api_views.GoogleDriveConfigViewSet, basename='google-drive')
+router.register(r'prima-nota', api_views.MovimentoPrimaNotaViewSet, basename='prima-nota')
+router.register(r'categorie-bilancio', api_views.CategoriaBilancioViewSet, basename='categoria-bilancio')
+router.register(r'asd', api_views.ConfigurazioneASDViewSet, basename='asd')
+router.register(r'direttivo', api_views.MembroDirettivoViewSet, basename='direttivo')
 
 
 urlpatterns = [

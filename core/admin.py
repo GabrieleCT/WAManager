@@ -2,8 +2,26 @@ from django.contrib import admin
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ConfigurazioneASD, MembroDirettivo
 )
+
+
+@admin.register(MovimentoPrimaNota)
+class MovimentoPrimaNotaAdmin(admin.ModelAdmin):
+    list_display = ('data', 'tipo', 'descrizione', 'categoria', 'importo', 'created_at')
+    list_filter = ('tipo', 'categoria', 'data')
+    search_fields = ('descrizione', 'categoria', 'note')
+    date_hierarchy = 'data'
+    ordering = ('-data', '-created_at')
+
+
+@admin.register(CategoriaBilancio)
+class CategoriaBilancioAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'tipo', 'descrizione', 'ordine', 'created_at')
+    list_filter = ('tipo',)
+    search_fields = ('nome', 'descrizione')
+    ordering = ('tipo', 'ordine', 'nome')
 
 
 @admin.register(Scuola)
@@ -105,5 +123,19 @@ class RicevutaAdmin(admin.ModelAdmin):
 class GoogleDriveConfigAdmin(admin.ModelAdmin):
     list_display = ('client_email', 'project_id', 'is_active', 'last_test_status', 'last_tested_at', 'updated_at')
     readonly_fields = ('client_email', 'project_id', 'private_key_id', 'last_test_status', 'last_test_message', 'last_tested_at')
+
+
+@admin.register(ConfigurazioneASD)
+class ConfigurazioneASDAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'codice_fiscale', 'sede_legale', 'sede_operativa', 'telefono', 'email', 'updated_at')
+    search_fields = ('nome', 'codice_fiscale', 'partita_iva', 'sede_legale', 'sede_operativa')
+
+
+@admin.register(MembroDirettivo)
+class MembroDirettivoAdmin(admin.ModelAdmin):
+    list_display = ('ruolo', 'nome_completo', 'codice_fiscale', 'telefono', 'email', 'has_firma', 'ordine', 'updated_at')
+    list_filter = ('ruolo',)
+    search_fields = ('nome', 'cognome', 'codice_fiscale')
+    ordering = ('ordine', 'ruolo')
 
 

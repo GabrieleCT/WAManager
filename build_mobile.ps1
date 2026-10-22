@@ -1,29 +1,26 @@
 # Script per la compilazione del client Mobile (Android) di WAManager
 
-echo "=========================================================="
-echo "Avvio Build Flutter per Android (APK) in modalita' Release"
-echo "=========================================================="
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Avvio Build Flutter per Android (APK) in modalita' Release" -ForegroundColor Cyan
+Write-Host "==========================================================" -ForegroundColor Cyan
 
-cd flutter_app
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location "$scriptDir\flutter_app"
 
-echo "1. Pulizia cache e build precedenti..."
-flutter clean
-
-echo "2. Scaricamento dipendenze..."
+Write-Host "1. Scaricamento e verifica dipendenze..." -ForegroundColor Yellow
 flutter pub get
 
-echo "3. Compilazione APK in corso (potrebbe richiedere alcuni minuti)..."
+Write-Host "2. Compilazione APK in corso (potrebbe richiedere alcuni minuti al primo avvio)..." -ForegroundColor Yellow
 flutter build apk --release
 
 if ($LASTEXITCODE -eq 0) {
-    echo "=========================================================="
-    echo "Build completata con successo! 🎉"
-    echo "L'APK si trova al seguente percorso:"
-    echo ".\flutter_app\build\app\outputs\flutter-apk\app-release.apk"
-    echo "=========================================================="
+    Write-Host "==========================================================" -ForegroundColor Green
+    Write-Host "Build completata con successo! 🎉" -ForegroundColor Green
+    Write-Host "L'APK installabile si trova al seguente percorso:" -ForegroundColor Green
+    Write-Host "$scriptDir\flutter_app\build\app\outputs\flutter-apk\app-release.apk" -ForegroundColor White
+    Write-Host "==========================================================" -ForegroundColor Green
 } else {
-    echo "=========================================================="
-    echo "❌ Errore durante la compilazione. Controlla i log qui sopra."
-    echo "Assicurati di aver installato l'SDK di Android."
-    echo "=========================================================="
+    Write-Host "==========================================================" -ForegroundColor Red
+    Write-Host "❌ Errore durante la compilazione. Controlla i log qui sopra." -ForegroundColor Red
+    Write-Host "==========================================================" -ForegroundColor Red
 }

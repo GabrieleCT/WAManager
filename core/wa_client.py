@@ -49,6 +49,50 @@ def send_whatsapp_message(to: str, message: str, is_group: bool = True, is_poll:
         return {"success": False, "error": str(e)}
 
 
+def send_whatsapp_document(to: str, file_bytes: bytes, filename: str, caption: str = '', is_group: bool = False) -> dict:
+    """
+    Invia un documento/file (es. PDF) via WhatsApp tramite il gateway locale.
+    """
+    import base64
+
+    clean_to = str(to or '').strip()
+    if not is_group and not clean_to.endswith('@g.us') and not clean_to.endswith('@lid'):
+        digits = ''.join(c for c in clean_to if c.isdigit())
+        if digits.startswith('00'):
+            digits = digits[2:]
+        if len(digits) in (9, 10) and digits.startswith('3'):
+            digits = '39' + digits
+        clean_to = digits
+
+    payload = {
+        "to": clean_to,
+        "message": caption,
+        "isGroup": is_group,
+        "fileBase64": base64.b64encode(file_bytes).decode('utf-8'),
+        "fileName": filename,
+        "mimetype": "application/pdf"
+    }
+
+    try:
+        response = requests.post(GATEWAY_URL, json=payload, timeout=65)
+        data = {}
+        try:
+            data = response.json()
+        except Exception:
+            pass
+
+        if response.status_code in (200, 201) and data.get('success'):
+            return {"success": True, "response": data}
+        else:
+            err = data.get('error') or f"HTTP {response.status_code}"
+            return {"success": False, "error": err}
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Timeout durante l'invio al Gateway WhatsApp (la risposta ha impiegato più di 65s)."}
+    except requests.exceptions.RequestException as e:
+        print(f"Errore di comunicazione col Gateway WhatsApp: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def get_whatsapp_status() -> dict:
     """
     Recupera lo stato attuale della connessione WhatsApp dal Gateway.

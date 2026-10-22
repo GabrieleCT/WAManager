@@ -11,15 +11,26 @@ class ApiService {
   ApiService._internal();
 
   // URL del backend Django (modificabile se si testa da emulatore Android o IP LAN)
-  String baseUrl = 'http://localhost:8082';
+  String baseUrl = 'http://localhost:50082';
   String? _token;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString('auth_token');
-    final savedUrl = prefs.getString('api_base_url');
-    if (savedUrl != null && savedUrl.isNotEmpty) {
-      baseUrl = savedUrl;
+    if (kIsWeb) {
+      final uri = Uri.base;
+      if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
+        baseUrl = '${uri.scheme}://${uri.host}:50082';
+      } else {
+        baseUrl = 'http://localhost:50082';
+      }
+    } else {
+      final savedUrl = prefs.getString('api_base_url');
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        baseUrl = savedUrl;
+      } else {
+        baseUrl = 'http://localhost:50082';
+      }
     }
   }
 
@@ -38,19 +49,23 @@ class ApiService {
   Map<String, String> getHeaders() => _headers;
 
   Future<bool> login(String username, String password) async {
-    final url = Uri.parse('$baseUrl/api/auth/login/');
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
-    );
+    try {
+      final url = Uri.parse('$baseUrl/api/auth/login/');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      ).timeout(const Duration(seconds: 8));
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      _token = data['token'];
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', _token!);
-      return true;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _token = data['token'];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', _token!);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Errore durante login: $e');
     }
     return false;
   }
@@ -534,11 +549,12 @@ class ApiService {
 
 
   // ─── Pagamenti ────────────────────────────────────────────
-  Future<List<Pagamento>> getPagamenti({String? corsoId, String? scuolaId, String? trimestre}) async {
+  Future<List<Pagamento>> getPagamenti({String? corsoId, String? scuolaId, String? trimestre, bool? hasRicevuta}) async {
     var params = <String>[];
     if (corsoId != null) params.add('corso=$corsoId');
     if (scuolaId != null) params.add('corso__scuola=$scuolaId');
     if (trimestre != null) params.add('trimestre=$trimestre');
+    if (hasRicevuta != null) params.add('has_ricevuta=$hasRicevuta');
 
     var urlStr = '$baseUrl/api/pagamenti/';
     if (params.isNotEmpty) urlStr += '?${params.join('&')}';
@@ -591,6 +607,14 @@ class ApiService {
       return list.map((e) => Ricevuta.fromJson(e)).toList();
     }
     return [];
+  }
+
+  Future<Ricevuta?> getRicevuta(String id) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/ricevute/$id/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return Ricevuta.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
   }
 
   Future<Ricevuta?> createRicevuta(Map<String, dynamic> data) async {
@@ -654,6 +678,38 @@ class ApiService {
       return ContatoreRicevuteInfo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>> inserisciRicevutaInCassa(String id, {String? categoria, String? descrizione, String? note}) async {
+    try {
+      final body = <String, dynamic>{};
+      if (categoria != null) body['categoria'] = categoria;
+      if (descrizione != null) body['descrizione'] = descrizione;
+      if (note != null) body['note'] = note;
+
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/ricevute/$id/inserisci-in-cassa/'),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        return {
+          'success': true,
+          'message': decoded['message'],
+          'ricevuta': decoded['ricevuta'] != null ? Ricevuta.fromJson(decoded['ricevuta']) : null,
+          'movimento_id': decoded['movimento_id'],
+        };
+      } else {
+        final err = jsonDecode(utf8.decode(res.bodyBytes));
+        return {
+          'success': false,
+          'error': err['error'] ?? 'Errore durante l\'inserimento in cassa.',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
   }
 
   Future<Uint8List?> getRicevutaPdf(String id) async {
@@ -976,6 +1032,67 @@ class ApiService {
     return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
 
+  Future<Map<String, dynamic>> switchGoogleDriveAuthType(String authType) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/switch-auth-type/'),
+      headers: _headers,
+      body: jsonEncode({'auth_type': authType}),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> saveGoogleDriveOAuthCredentials({
+    required String clientId,
+    required String clientSecret,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/oauth-save-credentials/'),
+      headers: _headers,
+      body: jsonEncode({
+        'client_id': clientId,
+        'client_secret': clientSecret,
+      }),
+    );
+    if (res.statusCode == 200 || res.statusCode == 400) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> initGoogleDriveOAuth({
+    String? clientId,
+    String? clientSecret,
+    String? redirectUri,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/oauth-init/'),
+      headers: _headers,
+      body: jsonEncode({
+        if (clientId != null && clientId.isNotEmpty) 'client_id': clientId,
+        if (clientSecret != null && clientSecret.isNotEmpty) 'client_secret': clientSecret,
+        if (redirectUri != null && redirectUri.isNotEmpty) 'redirect_uri': redirectUri,
+      }),
+    );
+    if (res.statusCode == 200 || res.statusCode == 400) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> disconnectGoogleDriveOAuth() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-drive/oauth-disconnect/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
   Future<Map<String, dynamic>> updateGoogleDriveConfig(Map<String, dynamic> data) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/google-drive/update-settings/'),
@@ -1028,7 +1145,362 @@ class ApiService {
       return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
     }
   }
+
+  Future<Map<String, dynamic>> uploadRicevutaToDrive(String ricevutaId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/ricevute/$ricevutaId/upload-to-drive/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Map<String, dynamic>> sendRicevutaWhatsApp({
+    required String ricevutaId,
+    required String telefono,
+    String? messaggio,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/ricevute/$ricevutaId/send-whatsapp/'),
+      headers: _headers,
+      body: jsonEncode({
+        'telefono': telefono,
+        if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
+      }),
+    );
+    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  Future<Uint8List?> getModuloTesseramentoPdf(String allievoId) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/allievi/$allievoId/modulo-tesseramento-pdf/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    debugPrint('Errore getModuloTesseramentoPdf: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<Map<String, dynamic>> sendModuloTesseramentoWhatsApp({
+    required String allievoId,
+    required String telefono,
+    String? messaggio,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/allievi/$allievoId/send-modulo-tesseramento/'),
+      headers: _headers,
+      body: jsonEncode({
+        'telefono': telefono,
+        if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
+      }),
+    );
+    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+  }
+
+  // ─── Bilancio: Prima Nota Cassa ────────────────────────────
+  Future<List<MovimentoPrimaNota>> getMovimentiPrimaNota({
+    String? tipo,
+    String? categoria,
+    int? anno,
+    int? mese,
+    String? dataDa,
+    String? dataA,
+    String? search,
+  }) async {
+    var params = <String>[];
+    if (tipo != null && tipo.isNotEmpty) params.add('tipo=$tipo');
+    if (categoria != null && categoria.isNotEmpty) params.add('categoria=${Uri.encodeComponent(categoria)}');
+    if (anno != null) params.add('anno=$anno');
+    if (mese != null) params.add('mese=$mese');
+    if (dataDa != null && dataDa.isNotEmpty) params.add('data_da=$dataDa');
+    if (dataA != null && dataA.isNotEmpty) params.add('data_a=$dataA');
+    if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+
+    var urlStr = '$baseUrl/api/prima-nota/';
+    if (params.isNotEmpty) urlStr += '?${params.join('&')}';
+
+    final res = await http.get(Uri.parse(urlStr), headers: _headers);
+    if (res.statusCode == 200) {
+      final List list = jsonDecode(utf8.decode(res.bodyBytes));
+      return list.map((e) => MovimentoPrimaNota.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  Future<RiepilogoPrimaNota?> getRiepilogoPrimaNota({
+    String? tipo,
+    String? categoria,
+    int? anno,
+    int? mese,
+    String? dataDa,
+    String? dataA,
+    String? search,
+  }) async {
+    var params = <String>[];
+    if (tipo != null && tipo.isNotEmpty) params.add('tipo=$tipo');
+    if (categoria != null && categoria.isNotEmpty) params.add('categoria=${Uri.encodeComponent(categoria)}');
+    if (anno != null) params.add('anno=$anno');
+    if (mese != null) params.add('mese=$mese');
+    if (dataDa != null && dataDa.isNotEmpty) params.add('data_da=$dataDa');
+    if (dataA != null && dataA.isNotEmpty) params.add('data_a=$dataA');
+    if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+
+    var urlStr = '$baseUrl/api/prima-nota/riepilogo/';
+    if (params.isNotEmpty) urlStr += '?${params.join('&')}';
+
+    final res = await http.get(Uri.parse(urlStr), headers: _headers);
+    if (res.statusCode == 200) {
+      return RiepilogoPrimaNota.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<MovimentoPrimaNota?> createMovimentoPrimaNota(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/prima-nota/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 201) {
+      return MovimentoPrimaNota.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore createMovimentoPrimaNota: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<MovimentoPrimaNota?> updateMovimentoPrimaNota(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/prima-nota/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return MovimentoPrimaNota.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore updateMovimentoPrimaNota: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<bool> deleteMovimentoPrimaNota(String id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/prima-nota/$id/'),
+      headers: _headers,
+    );
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
+  Future<BilancioMensileAnno?> getBilancioMensile({int? anno}) async {
+    final year = anno ?? DateTime.now().year;
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/prima-nota/bilancio-mensile/?anno=$year'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return BilancioMensileAnno.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore getBilancioMensile: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<BilancioAnnualeData?> getBilancioAnnuale({int? anno}) async {
+    final year = anno ?? DateTime.now().year;
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/prima-nota/bilancio-annuale/?anno=$year'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return BilancioAnnualeData.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore getBilancioAnnuale: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+
+
+  // ─── Categorie Bilancio ──────────────────────────────────────────
+
+  Future<List<CategoriaBilancio>> getCategorieBilancio({String? tipo, String? search}) async {
+    final params = <String>[];
+    if (tipo != null && tipo.isNotEmpty) params.add('tipo=$tipo');
+    if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+
+    var urlStr = '$baseUrl/api/categorie-bilancio/';
+    if (params.isNotEmpty) urlStr += '?${params.join('&')}';
+
+    final res = await http.get(Uri.parse(urlStr), headers: _headers);
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(utf8.decode(res.bodyBytes));
+      return data.map((json) => CategoriaBilancio.fromJson(json)).toList();
+    }
+    return [];
+  }
+
+  Future<CategoriaBilancio?> createCategoriaBilancio(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/categorie-bilancio/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 201) {
+      return CategoriaBilancio.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore createCategoriaBilancio: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<CategoriaBilancio?> updateCategoriaBilancio(String id, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/categorie-bilancio/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) {
+      return CategoriaBilancio.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    debugPrint('Errore updateCategoriaBilancio: ${res.statusCode} -> ${res.body}');
+    return null;
+  }
+
+  Future<bool> deleteCategoriaBilancio(String id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/categorie-bilancio/$id/'),
+      headers: _headers,
+    );
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
+  Future<bool> resetDefaultCategorieBilancio() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/categorie-bilancio/reset-defaults/'),
+      headers: _headers,
+    );
+    return res.statusCode == 200;
+  }
+
+  // ─── Configurazione ASD & Direttivo ─────────────────────────
+  Future<ConfigurazioneASD?> getConfigurazioneASD() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/api/asd/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return ConfigurazioneASD.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+      }
+    } catch (e) {
+      debugPrint('Errore getConfigurazioneASD: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> saveConfigurazioneASD(Map<String, dynamic> data) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/asd/salva/'),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } else {
+        return {
+          'success': false,
+          'error': 'Errore HTTP ${res.statusCode}: ${res.body}',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<List<MembroDirettivo>> getDirettivo() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/api/direttivo/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(utf8.decode(res.bodyBytes));
+        return data.map((json) => MembroDirettivo.fromJson(json)).toList();
+      }
+    } catch (e) {
+      debugPrint('Errore getDirettivo: $e');
+    }
+    return [];
+  }
+
+  Future<MembroDirettivo?> updateMembroDirettivo(String id, Map<String, dynamic> data) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$baseUrl/api/direttivo/$id/'),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+      if (res.statusCode == 200) {
+        return MembroDirettivo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+      } else {
+        debugPrint('Errore updateMembroDirettivo: ${res.statusCode} -> ${res.body}');
+      }
+    } catch (e) {
+      debugPrint('Errore updateMembroDirettivo: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> uploadFirmaMembro(String id, List<int> bytes, String filename) async {
+    final uri = Uri.parse('$baseUrl/api/direttivo/$id/upload-firma/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+
+    final multipartFile = http.MultipartFile.fromBytes('firma', bytes, filename: filename);
+    request.files.add(multipartFile);
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        return {'success': false, 'error': 'Errore HTTP ${response.statusCode}: ${response.body}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> removeFirmaMembro(String id) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/direttivo/$id/remove-firma/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      }
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  String getFirmaFullUrl(String? firmaUrl) {
+    if (firmaUrl == null || firmaUrl.isEmpty) return '';
+    if (firmaUrl.startsWith('http://') || firmaUrl.startsWith('https://')) {
+      return firmaUrl;
+    }
+    final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final cleanPath = firmaUrl.startsWith('/') ? firmaUrl : '/$firmaUrl';
+    return '$cleanBase$cleanPath';
+  }
 }
+
 
 
 
