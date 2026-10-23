@@ -81,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       icon: Icons.event_outlined,
       selectedIcon: Icons.event,
       widget: LezioniScreen(),
-      availableOnMobile: true,
+      availableOnMobile: false, // Esclusa da Mobile
     ),
     _NavItem(
       section: NavSection.anagrafica,
@@ -351,14 +351,14 @@ class _HomeScreenState extends State<HomeScreen> {
           int navIndex;
           if (_currentSection == NavSection.presenze) {
             navIndex = 0;
-          } else if (_currentSection == NavSection.lezioni) {
-            navIndex = 1;
           } else if (_currentSection == NavSection.anagrafica) {
-            navIndex = 2;
+            navIndex = 1;
           } else if (_currentSection == NavSection.pagamenti) {
+            navIndex = 2;
+          } else if (_currentSection == NavSection.ricevute) {
             navIndex = 3;
           } else {
-            // Corsi, Argomenti o Ricevute
+            // Corsi o Argomenti
             navIndex = 4;
           }
 
@@ -366,16 +366,16 @@ class _HomeScreenState extends State<HomeScreen> {
             selectedIndex: navIndex,
             backgroundColor: Colors.white,
             elevation: 8,
-            indicatorColor: const Color(0xFF8B2529).withOpacity(0.15),
+            indicatorColor: const Color(0xFF8B2529).withValues(alpha: 0.15),
             onDestinationSelected: (idx) {
               if (idx == 0) {
                 setState(() => _currentSection = NavSection.presenze);
               } else if (idx == 1) {
-                setState(() => _currentSection = NavSection.lezioni);
-              } else if (idx == 2) {
                 setState(() => _currentSection = NavSection.anagrafica);
-              } else if (idx == 3) {
+              } else if (idx == 2) {
                 setState(() => _currentSection = NavSection.pagamenti);
+              } else if (idx == 3) {
+                setState(() => _currentSection = NavSection.ricevute);
               } else {
                 Scaffold.of(ctx).openDrawer();
               }
@@ -387,11 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Presenze',
               ),
               NavigationDestination(
-                icon: Icon(Icons.event_outlined),
-                selectedIcon: Icon(Icons.event, color: Color(0xFF8B2529)),
-                label: 'Lezioni',
-              ),
-              NavigationDestination(
                 icon: Icon(Icons.people_alt_outlined),
                 selectedIcon: Icon(Icons.people_alt, color: Color(0xFF8B2529)),
                 label: 'Allievi',
@@ -400,6 +395,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icon(Icons.euro_outlined),
                 selectedIcon: Icon(Icons.euro, color: Color(0xFF8B2529)),
                 label: 'Pagamenti',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.receipt_long_outlined),
+                selectedIcon: Icon(Icons.receipt_long, color: Color(0xFF8B2529)),
+                label: 'Ricevute',
               ),
               NavigationDestination(
                 icon: Icon(Icons.menu_rounded),

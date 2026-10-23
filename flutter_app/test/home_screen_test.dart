@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wamanager_flutter/screens/home_screen.dart';
+import 'package:wamanager_flutter/screens/anagrafica_allievi_screen.dart';
 
 void main() {
   testWidgets('Mobile HomeScreen excludes forbidden sections', (WidgetTester tester) async {
@@ -29,14 +30,14 @@ void main() {
 
     // Verify allowed mobile sections are in Drawer
     expect(find.text('Presenze'), findsAtLeastNWidgets(1));
-    expect(find.text('Lezioni'), findsAtLeastNWidgets(1));
     expect(find.text('Anagrafica Allievi'), findsOneWidget);
     expect(find.text('Corsi'), findsOneWidget);
     expect(find.text('Argomenti'), findsOneWidget);
     expect(find.text('Pagamenti'), findsAtLeastNWidgets(1));
-    expect(find.text('Ricevute'), findsOneWidget);
+    expect(find.text('Ricevute'), findsAtLeastNWidgets(1));
 
     // Verify forbidden sections are NOT present anywhere on mobile
+    expect(find.text('Lezioni'), findsNothing);
     expect(find.text('Impostazioni'), findsNothing);
     expect(find.text('ASD'), findsNothing);
     expect(find.text('Bilancio'), findsNothing);
@@ -74,6 +75,37 @@ void main() {
     expect(find.text('Bilancio'), findsOneWidget);
     expect(find.text('ASD'), findsOneWidget);
     expect(find.text('Impostazioni'), findsOneWidget);
+  });
+
+  testWidgets('AnagraficaAllieviScreen hides Sincronizzazione on mobile and shows on desktop', (WidgetTester tester) async {
+    // Mobile test
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: AnagraficaAllieviScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Allievi'), findsWidgets);
+    expect(find.text('Prospect'), findsWidgets);
+    expect(find.text('Coppie'), findsWidgets);
+    expect(find.text('Jolly'), findsWidgets);
+    expect(find.text('Sincronizzazione'), findsNothing);
+
+    // Desktop test
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: AnagraficaAllieviScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sincronizzazione'), findsOneWidget);
   });
 }
 
