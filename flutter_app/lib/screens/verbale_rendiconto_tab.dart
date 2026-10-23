@@ -509,7 +509,6 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
       initialDate: _dataAssemblea ?? now,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 5),
-      locale: const Locale('it', 'IT'),
     );
     if (picked != null) {
       setState(() {
@@ -526,7 +525,6 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
       initialDate: _dataAffissione ?? (_dataAssemblea != null ? _dataAssemblea!.subtract(const Duration(days: 15)) : now),
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 5),
-      locale: const Locale('it', 'IT'),
     );
     if (picked != null) {
       setState(() {
