@@ -160,3 +160,77 @@ def resolve_group_link(link_or_code: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+
+
+def remove_group_participant(group_id: str, phone: str) -> dict:
+    """
+    Rimuove un partecipante da un gruppo WhatsApp tramite il Gateway.
+    """
+    try:
+        gid = (group_id or "").strip()
+        if not gid:
+            return {"success": False, "error": "ID o link del gruppo mancante"}
+        r = requests.post(
+            f"{GATEWAY_BASE}/api/groups/{gid}/participants/remove",
+            json={"phone": phone},
+            timeout=15
+        )
+        if r.status_code in (200, 201):
+            return r.json()
+        data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+        return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
+    except Exception as e:
+        logger.error(f"Errore rimozione partecipante WhatsApp: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def delete_whatsapp_chat(phone: str) -> dict:
+    """
+    Elimina la chat WhatsApp individuale con il numero di telefono indicato.
+    """
+    try:
+        p = (phone or "").strip()
+        if not p:
+            return {"success": False, "error": "Numero di telefono mancante"}
+        r = requests.post(
+            f"{GATEWAY_BASE}/api/chats/delete",
+            json={"phone": p},
+            timeout=15
+        )
+        if r.status_code in (200, 201):
+            return r.json()
+        data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+        return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
+    except Exception as e:
+        logger.error(f"Errore eliminazione chat WhatsApp: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def cleanup_whatsapp_contact(phone: str, group_ids: list = None, remove_from_all_groups: bool = True, delete_chat: bool = True) -> dict:
+    """
+    Esegue la rimozione completa del contatto:
+    - Rimuove il contatto dai gruppi specificati (e opzionalmente da tutti i gruppi in cui partecipa il bot)
+    - Elimina la chat WhatsApp individuale
+    """
+    try:
+        p = (phone or "").strip()
+        if not p:
+            return {"success": False, "skipped": True, "message": "Nessun numero di telefono specificato."}
+        payload = {
+            "phone": p,
+            "groups": [g.strip() for g in (group_ids or []) if g and str(g).strip()],
+            "removeFromAllParticipatingGroups": bool(remove_from_all_groups),
+            "deleteChat": bool(delete_chat)
+        }
+        r = requests.post(
+            f"{GATEWAY_BASE}/api/contacts/cleanup",
+            json=payload,
+            timeout=25
+        )
+        if r.status_code in (200, 201):
+            return r.json()
+        data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+        return {"success": False, "error": data.get("error", f"HTTP {r.status_code}")}
+    except Exception as e:
+        logger.error(f"Errore chiamata cleanup WhatsApp per {phone}: {e}")
+        return {"success": False, "error": str(e)}

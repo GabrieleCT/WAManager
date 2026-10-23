@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'gemini_screen.dart';
+import 'google_contacts_screen.dart';
 import 'google_drive_screen.dart';
 import 'import_export_screen.dart';
 import 'template_settings_screen.dart';
@@ -19,9 +20,9 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 3),
+      initialIndex: widget.initialTab.clamp(0, 4),
     );
   }
 
@@ -38,6 +39,8 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
         title: const Text('Impostazioni'),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(
               icon: Icon(Icons.auto_awesome),
@@ -55,6 +58,10 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
               icon: Icon(Icons.add_to_drive),
               text: 'Google Drive',
             ),
+            Tab(
+              icon: Icon(Icons.perm_contact_calendar),
+              text: 'Google Contacts',
+            ),
           ],
         ),
       ),
@@ -65,6 +72,7 @@ class _ImpostazioniScreenState extends State<ImpostazioniScreen> with SingleTick
           ImportExportScreen(embedded: true),
           TemplateSettingsScreen(embedded: true),
           GoogleDriveScreen(embedded: true),
+          GoogleContactsScreen(embedded: true),
         ],
       ),
     );

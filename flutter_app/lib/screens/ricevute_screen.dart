@@ -22,6 +22,8 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   List<int> _anniDisponibili = [DateTime.now().year];
   int? _selectedAnno;
   String _searchQuery = '';
+  DateTime? _filterDataDa;
+  DateTime? _filterDataA;
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _uploadingDriveIds = {};
 
@@ -48,7 +50,12 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
       final anni = await _api.getAnniRicevute();
       final annoTarget = _selectedAnno ?? DateTime.now().year;
       final contatore = await _api.getContatoreRicevute(anno: annoTarget);
-      final ricevute = await _api.getRicevute(anno: _selectedAnno, search: _searchQuery);
+      final ricevute = await _api.getRicevute(
+        anno: _selectedAnno,
+        search: _searchQuery,
+        dataDa: _filterDataDa != null ? DateFormat('yyyy-MM-dd').format(_filterDataDa!) : null,
+        dataA: _filterDataA != null ? DateFormat('yyyy-MM-dd').format(_filterDataA!) : null,
+      );
       final allievi = await _api.getAllievi(isProspect: false);
 
       setState(() {
@@ -71,7 +78,12 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   Future<void> _loadRicevuteOnly() async {
     final annoTarget = _selectedAnno ?? DateTime.now().year;
     final contatore = await _api.getContatoreRicevute(anno: annoTarget);
-    final ricevute = await _api.getRicevute(anno: _selectedAnno, search: _searchQuery);
+    final ricevute = await _api.getRicevute(
+      anno: _selectedAnno,
+      search: _searchQuery,
+      dataDa: _filterDataDa != null ? DateFormat('yyyy-MM-dd').format(_filterDataDa!) : null,
+      dataA: _filterDataA != null ? DateFormat('yyyy-MM-dd').format(_filterDataA!) : null,
+    );
 
     if (mounted) {
       setState(() {
@@ -1031,11 +1043,151 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
     );
   }
 
+  Future<void> _selezionaFiltroData() async {
+    final scelta = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Filtra Ricevute per Data',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.today, color: Colors.teal),
+              title: const Text('Oggi'),
+              subtitle: Text(DateFormat('dd/MM/yyyy').format(DateTime.now())),
+              onTap: () => Navigator.pop(ctx, 'oggi'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today, color: Colors.indigo),
+              title: const Text('Giorno specifico...'),
+              subtitle: const Text('Seleziona una singola data da calendario'),
+              onTap: () => Navigator.pop(ctx, 'giorno'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.date_range, color: Colors.deepPurple),
+              title: const Text('Intervallo di date...'),
+              subtitle: const Text('Seleziona periodo da data a data'),
+              onTap: () => Navigator.pop(ctx, 'intervallo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_month, color: Colors.amber),
+              title: const Text('Questo mese'),
+              subtitle: Text(DateFormat('MMMM yyyy').format(DateTime.now())),
+              onTap: () => Navigator.pop(ctx, 'mese'),
+            ),
+            if (_filterDataDa != null)
+              ListTile(
+                leading: const Icon(Icons.clear, color: Colors.red),
+                title: const Text('Rimuovi filtro data', style: TextStyle(color: Colors.red)),
+                onTap: () => Navigator.pop(ctx, 'clear'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (scelta == 'clear') {
+      setState(() {
+        _filterDataDa = null;
+        _filterDataA = null;
+      });
+      _loadRicevuteOnly();
+      return;
+    }
+
+    if (scelta == 'oggi') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      setState(() {
+        _filterDataDa = today;
+        _filterDataA = today;
+        if (_selectedAnno != null && _selectedAnno != today.year) {
+          _selectedAnno = null;
+        }
+      });
+      _loadRicevuteOnly();
+      return;
+    }
+
+    if (scelta == 'mese') {
+      final now = DateTime.now();
+      final firstDay = DateTime(now.year, now.month, 1);
+      final lastDay = DateTime(now.year, now.month + 1, 0);
+      setState(() {
+        _filterDataDa = firstDay;
+        _filterDataA = lastDay;
+        if (_selectedAnno != null && _selectedAnno != now.year) {
+          _selectedAnno = null;
+        }
+      });
+      _loadRicevuteOnly();
+      return;
+    }
+
+    if (scelta == 'giorno') {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _filterDataDa ?? DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2035),
+        helpText: 'SELEZIONA DATA RICEVUTA',
+      );
+      if (picked != null) {
+        final d = DateTime(picked.year, picked.month, picked.day);
+        setState(() {
+          _filterDataDa = d;
+          _filterDataA = d;
+          if (_selectedAnno != null && _selectedAnno != d.year) {
+            _selectedAnno = null;
+          }
+        });
+        _loadRicevuteOnly();
+      }
+      return;
+    }
+
+    if (scelta == 'intervallo') {
+      final pickedRange = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2035),
+        initialDateRange: (_filterDataDa != null && _filterDataA != null)
+            ? DateTimeRange(start: _filterDataDa!, end: _filterDataA!)
+            : null,
+        helpText: 'SELEZIONA INTERVALLO DATE',
+      );
+      if (pickedRange != null) {
+        setState(() {
+          _filterDataDa = DateTime(pickedRange.start.year, pickedRange.start.month, pickedRange.start.day);
+          _filterDataA = DateTime(pickedRange.end.year, pickedRange.end.month, pickedRange.end.day);
+          if (_selectedAnno != null &&
+              (_selectedAnno! < pickedRange.start.year || _selectedAnno! > pickedRange.end.year)) {
+            _selectedAnno = null;
+          }
+        });
+        _loadRicevuteOnly();
+      }
+      return;
+    }
+  }
+
   void _esportaElenco() {
     PdfReportService.generaReportRicevute(
       context: context,
       ricevute: _ricevute,
       anno: _selectedAnno,
+      filtroData: _filterDataDa != null
+          ? (_filterDataDa == _filterDataA
+              ? 'Data: ${DateFormat('dd/MM/yyyy').format(_filterDataDa!)}'
+              : 'Periodo: ${DateFormat('dd/MM/yyyy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yyyy').format(_filterDataA!)}')
+          : null,
     );
   }
 
@@ -1193,6 +1345,41 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                   ],
                 ),
 
+                // Filtro Data
+                if (_filterDataDa == null)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_month, size: 18),
+                    label: const Text('Filtra per Data'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade800,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: Colors.grey.shade400),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _selezionaFiltroData,
+                  )
+                else
+                  InputChip(
+                    avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
+                    label: Text(
+                      _filterDataDa == _filterDataA
+                          ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
+                          : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                    ),
+                    backgroundColor: Colors.teal.shade50,
+                    deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
+                    onDeleted: () {
+                      setState(() {
+                        _filterDataDa = null;
+                        _filterDataA = null;
+                      });
+                      _loadRicevuteOnly();
+                    },
+                    onPressed: _selezionaFiltroData,
+                  ),
+
                 // Barra Ricerca
                 SizedBox(
                   width: 280,
@@ -1259,9 +1446,11 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                     Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade400),
                     const SizedBox(height: 12),
                     Text(
-                      _selectedAnno != null
-                          ? 'Nessuna ricevuta emessa per l\'anno $_selectedAnno.'
-                          : 'Nessuna ricevuta presente nel sistema.',
+                      _filterDataDa != null
+                          ? 'Nessuna ricevuta trovata per la data/periodo selezionato.'
+                          : (_selectedAnno != null
+                              ? 'Nessuna ricevuta emessa per l\'anno $_selectedAnno.'
+                              : 'Nessuna ricevuta presente nel sistema.'),
                       style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
                     ),
                     const SizedBox(height: 16),

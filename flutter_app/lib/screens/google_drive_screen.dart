@@ -33,6 +33,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
   final TextEditingController _folderRicevuteNomeController = TextEditingController();
   final TextEditingController _folderTessereIdController = TextEditingController();
   final TextEditingController _folderTessereNomeController = TextEditingController();
+  final TextEditingController _folderVerbaliIdController = TextEditingController();
+  final TextEditingController _folderVerbaliNomeController = TextEditingController();
 
   static const String _uriLocalhost = 'http://localhost:8082/api/google-drive/oauth-callback/';
   static const String _uri127 = 'http://127.0.0.1:8082/api/google-drive/oauth-callback/';
@@ -52,6 +54,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     _folderRicevuteNomeController.dispose();
     _folderTessereIdController.dispose();
     _folderTessereNomeController.dispose();
+    _folderVerbaliIdController.dispose();
+    _folderVerbaliNomeController.dispose();
     super.dispose();
   }
 
@@ -71,6 +75,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             _folderRicevuteNomeController.text = config.folderRicevuteNome;
             _folderTessereIdController.text = config.folderTessereId;
             _folderTessereNomeController.text = config.folderTessereNome;
+            _folderVerbaliIdController.text = config.folderVerbaliId;
+            _folderVerbaliNomeController.text = config.folderVerbaliNome;
           }
           _loading = false;
         });
@@ -494,20 +500,28 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     }
 
     final isRicevute = targetType == 'ricevute';
-    final currentFolderId = isRicevute
+    final isTessere = targetType == 'tessere';
+    final isVerbali = targetType == 'verbali';
+
+    final String? currentFolderId = isRicevute
         ? _config?.folderRicevuteId
-        : _config?.folderTessereId;
-    final currentFolderName = isRicevute
+        : (isTessere ? _config?.folderTessereId : _config?.folderVerbaliId);
+    final String? currentFolderName = isRicevute
         ? _config?.folderRicevuteNome
-        : _config?.folderTessereNome;
+        : (isTessere ? _config?.folderTessereNome : _config?.folderVerbaliNome);
+
+    String dialogTitle = 'Seleziona Cartella per le RICEVUTE';
+    if (isTessere) {
+      dialogTitle = 'Seleziona Cartella per le TESSERE';
+    } else if (isVerbali) {
+      dialogTitle = 'Seleziona Cartella per i VERBALI';
+    }
 
     final selected = await showDialog<GoogleDriveFolderItem>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => GoogleDriveFolderPickerDialog(
-        title: isRicevute
-            ? 'Seleziona Cartella per le RICEVUTE'
-            : 'Seleziona Cartella per le TESSERE',
+        title: dialogTitle,
         initialFolderId: currentFolderId,
         initialFolderName: currentFolderName,
       ),
@@ -515,15 +529,27 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
     if (selected != null) {
       setState(() => _savingSettings = true);
-      final updateData = isRicevute
-          ? {
-              'folder_ricevute_id': selected.id,
-              'folder_ricevute_nome': selected.name,
-            }
-          : {
-              'folder_tessere_id': selected.id,
-              'folder_tessere_nome': selected.name,
-            };
+      Map<String, dynamic> updateData;
+      String targetLabel;
+      if (isRicevute) {
+        updateData = {
+          'folder_ricevute_id': selected.id,
+          'folder_ricevute_nome': selected.name,
+        };
+        targetLabel = 'Ricevute';
+      } else if (isTessere) {
+        updateData = {
+          'folder_tessere_id': selected.id,
+          'folder_tessere_nome': selected.name,
+        };
+        targetLabel = 'Tessere';
+      } else {
+        updateData = {
+          'folder_verbali_id': selected.id,
+          'folder_verbali_nome': selected.name,
+        };
+        targetLabel = 'Verbali';
+      }
 
       final res = await _api.updateGoogleDriveConfig(updateData);
       if (mounted) {
@@ -532,7 +558,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Cartella ${isRicevute ? "Ricevute" : "Tessere"} impostata su "${selected.name}"!',
+                'Cartella $targetLabel impostata su "${selected.name}"!',
               ),
               backgroundColor: Colors.green.shade700,
             ),
@@ -552,12 +578,25 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
   Future<void> _clearFolder({required String targetType}) async {
     final isRicevute = targetType == 'ricevute';
+    final isTessere = targetType == 'tessere';
+    final isVerbali = targetType == 'verbali';
+
+    String targetLabel = 'Ricevute';
+    String targetArticle = 'le ricevute';
+    if (isTessere) {
+      targetLabel = 'Tessere';
+      targetArticle = 'le tessere';
+    } else if (isVerbali) {
+      targetLabel = 'Verbali';
+      targetArticle = 'i verbali';
+    }
+
     final conf = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Rimuovi associazione cartella ${isRicevute ? "Ricevute" : "Tessere"}'),
+        title: Text('Rimuovi associazione cartella $targetLabel'),
         content: Text(
-          'Sei sicuro di voler scollegare la cartella per ${isRicevute ? "le ricevute" : "le tessere"}?',
+          'Sei sicuro di voler scollegare la cartella per $targetArticle?',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
@@ -572,9 +611,14 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
     if (conf == true) {
       setState(() => _savingSettings = true);
-      final updateData = isRicevute
-          ? {'folder_ricevute_id': '', 'folder_ricevute_nome': ''}
-          : {'folder_tessere_id': '', 'folder_tessere_nome': ''};
+      Map<String, dynamic> updateData;
+      if (isRicevute) {
+        updateData = {'folder_ricevute_id': '', 'folder_ricevute_nome': ''};
+      } else if (isTessere) {
+        updateData = {'folder_tessere_id': '', 'folder_tessere_nome': ''};
+      } else {
+        updateData = {'folder_verbali_id': '', 'folder_verbali_nome': ''};
+      }
 
       final res = await _api.updateGoogleDriveConfig(updateData);
       if (mounted) {
@@ -582,7 +626,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Cartella ${isRicevute ? "Ricevute" : "Tessere"} scollegata.'),
+              content: Text('Cartella $targetLabel scollegata.'),
               backgroundColor: Colors.green,
             ),
           );
@@ -1478,7 +1522,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare le ricevute e le tessere emesse.',
+              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare ricevute, tessere e verbali.',
               style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -1506,6 +1550,20 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
               folderId: _config?.folderTessereId ?? '',
               folderName: _config?.folderTessereNome ?? '',
               targetType: 'tessere',
+              isConfigured: isConfigured,
+            ),
+
+            const SizedBox(height: 20),
+
+            // Card Cartella Verbali
+            _buildFolderCard(
+              title: 'Cartella Verbali',
+              description: 'Cartella Google Drive per l\'archiviazione dei verbali di assemblea e direttivo.',
+              icon: Icons.article_outlined,
+              color: Colors.amber,
+              folderId: _config?.folderVerbaliId ?? '',
+              folderName: _config?.folderVerbaliNome ?? '',
+              targetType: 'verbali',
               isConfigured: isConfigured,
             ),
           ],

@@ -1,5 +1,7 @@
 import uuid
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -157,6 +159,20 @@ class Allievo(models.Model):
         blank=True,
         help_text="Data di emissione della tessera"
     )
+    email = models.EmailField(
+        max_length=254,
+        blank=True,
+        default='',
+        help_text="Indirizzo email dell'allievo/prospect"
+    )
+    google_contact_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Resource Name del contatto in Google Contacts (People API)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     @property
     def stato_tessera(self):
@@ -231,6 +247,22 @@ class Allievo(models.Model):
                 lezione__corso_id=vecchio_corso_id,
                 is_jolly=False
             ).delete()
+
+
+@receiver(pre_delete, sender=Allievo)
+def allievo_pre_delete_cleanup(sender, instance, **kwargs):
+    """
+    All'eliminazione di un allievo (da qualsiasi punto del gestionale):
+    1. Rimuove l'allievo dai gruppi WhatsApp (corso e scuola)
+    2. Elimina la chat WhatsApp individuale
+    3. Elimina il contatto dalla Rubrica Google (Google Contacts)
+    """
+    try:
+        from .services import cleanup_allievo_on_deletion
+        cleanup_allievo_on_deletion(instance)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Errore pre_delete cleanup per allievo {instance.id}: {e}")
 
 
 
@@ -497,6 +529,7 @@ class DocumentTemplate(models.Model):
     CHIAVI = [
         ('ricevuta', 'Template Ricevuta Pagamento'),
         ('modulo_tesseramento', 'Modulo di Tesseramento'),
+        ('verbale_rendiconto', 'Verbale Approvazione Rendiconto'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -623,6 +656,8 @@ class GoogleDriveConfig(models.Model):
     folder_ricevute_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Ricevute")
     folder_tessere_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Tessere")
     folder_tessere_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Tessere")
+    folder_verbali_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Verbali")
+    folder_verbali_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbali")
     is_active = models.BooleanField(default=True, help_text="Stato attivazione integrazione Google Drive")
     last_tested_at = models.DateTimeField(null=True, blank=True)
     last_test_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error'
@@ -676,6 +711,58 @@ class GoogleDriveConfig(models.Model):
             except Exception:
                 return 0
         return 0
+
+
+# ─── 1.13b Google Contacts Configuration ────────────────────────
+
+class GoogleContactsConfig(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Credenziali OAuth 2.0
+    client_id = models.CharField(max_length=255, blank=True, default='', help_text="OAuth 2.0 Client ID per Google Contacts")
+    client_secret = models.CharField(max_length=255, blank=True, default='', help_text="OAuth 2.0 Client Secret per Google Contacts")
+    
+    # Token di accesso OAuth 2.0
+    access_token = models.TextField(blank=True, default='', help_text="OAuth 2.0 Access Token")
+    refresh_token = models.TextField(blank=True, default='', help_text="OAuth 2.0 Refresh Token")
+    token_expiry = models.DateTimeField(null=True, blank=True, help_text="Scadenza Access Token")
+    user_email = models.CharField(max_length=255, blank=True, default='', help_text="Email account Google autenticato via OAuth")
+    user_name = models.CharField(max_length=255, blank=True, default='', help_text="Nome account Google")
+    
+    # Opzioni di sincronizzazione
+    sync_group_name = models.CharField(max_length=100, blank=True, default='Allievi Tango', help_text="Nome gruppo/etichetta contatti in Google Contacts")
+    is_active = models.BooleanField(default=True, help_text="Stato attivazione integrazione Google Contacts")
+    last_sync_at = models.DateTimeField(null=True, blank=True, help_text="Data e ora ultima sincronizzazione")
+    last_sync_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error', 'in_progress'
+    last_sync_summary = models.TextField(blank=True, default='', help_text="Riepilogo esito ultima sincronizzazione")
+    last_test_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error'
+    last_test_message = models.TextField(blank=True, default='')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configurazione Google Contacts"
+        verbose_name_plural = "Configurazioni Google Contacts"
+
+    def __str__(self):
+        status = "Collegato" if self.is_connected else "Non collegato"
+        return f"Google Contacts ({status} - {self.user_email or 'Nessun account'})"
+
+    @classmethod
+    def get_instance(cls):
+        inst = cls.objects.first()
+        if not inst:
+            inst = cls.objects.create()
+        return inst
+
+    @property
+    def is_connected(self):
+        return bool(self.refresh_token)
+
+    @property
+    def has_client_secret(self):
+        return bool(self.client_secret)
 
 
 # ─── 1.14 Bilancio: Prima Nota Cassa ────────────────────────────
@@ -867,3 +954,24 @@ class MembroDirettivo(models.Model):
 
 
 
+
+
+
+class GoogleContactsSyncLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=50, default='success')  # 'success', 'error', 'partial'
+    action = models.CharField(max_length=100, default='bulk_sync')  # 'bulk_sync', 'push_to_google', 'pull_from_google', 'delete_google', 'import_allievo'
+    details = models.TextField(blank=True, default='')
+    items_created = models.IntegerField(default=0)
+    items_updated = models.IntegerField(default=0)
+    items_deleted = models.IntegerField(default=0)
+    errors_count = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = "Log Sincronizzazione Google Contacts"
+        verbose_name_plural = "Log Sincronizzazioni Google Contacts"
+
+    def __str__(self):
+        return f"SyncLog {self.action} ({self.status}) - {self.timestamp.strftime('%d/%m/%Y %H:%M')}"

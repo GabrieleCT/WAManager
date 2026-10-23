@@ -25,6 +25,8 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
   String? _filterScuolaId;
   String? _filterTrimestre;
   bool? _filterHasRicevuta;
+  DateTime? _filterDataDa;
+  DateTime? _filterDataA;
 
   @override
   void initState() {
@@ -39,6 +41,8 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
       scuolaId: _filterScuolaId,
       trimestre: _filterTrimestre,
       hasRicevuta: _filterHasRicevuta,
+      dataDa: _filterDataDa != null ? DateFormat('yyyy-MM-dd').format(_filterDataDa!) : null,
+      dataA: _filterDataA != null ? DateFormat('yyyy-MM-dd').format(_filterDataA!) : null,
     );
     final corsi = await _api.getCorsi();
     final scuole = await _api.getScuole();
@@ -717,11 +721,140 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     );
   }
 
+  Future<void> _selezionaFiltroData() async {
+    final scelta = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Filtra Pagamenti per Data',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.today, color: Colors.teal),
+              title: const Text('Oggi'),
+              subtitle: Text(DateFormat('dd/MM/yyyy').format(DateTime.now())),
+              onTap: () => Navigator.pop(ctx, 'oggi'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today, color: Colors.indigo),
+              title: const Text('Giorno specifico...'),
+              subtitle: const Text('Seleziona una singola data da calendario'),
+              onTap: () => Navigator.pop(ctx, 'giorno'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.date_range, color: Colors.deepPurple),
+              title: const Text('Intervallo di date...'),
+              subtitle: const Text('Seleziona periodo da data a data'),
+              onTap: () => Navigator.pop(ctx, 'intervallo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_month, color: Colors.amber),
+              title: const Text('Questo mese'),
+              subtitle: Text(DateFormat('MMMM yyyy').format(DateTime.now())),
+              onTap: () => Navigator.pop(ctx, 'mese'),
+            ),
+            if (_filterDataDa != null)
+              ListTile(
+                leading: const Icon(Icons.clear, color: Colors.red),
+                title: const Text('Rimuovi filtro data', style: TextStyle(color: Colors.red)),
+                onTap: () => Navigator.pop(ctx, 'clear'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (scelta == 'clear') {
+      setState(() {
+        _filterDataDa = null;
+        _filterDataA = null;
+      });
+      _loadAll();
+      return;
+    }
+
+    if (scelta == 'oggi') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      setState(() {
+        _filterDataDa = today;
+        _filterDataA = today;
+      });
+      _loadAll();
+      return;
+    }
+
+    if (scelta == 'mese') {
+      final now = DateTime.now();
+      final firstDay = DateTime(now.year, now.month, 1);
+      final lastDay = DateTime(now.year, now.month + 1, 0);
+      setState(() {
+        _filterDataDa = firstDay;
+        _filterDataA = lastDay;
+      });
+      _loadAll();
+      return;
+    }
+
+    if (scelta == 'giorno') {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _filterDataDa ?? DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2035),
+        helpText: 'SELEZIONA DATA PAGAMENTO',
+      );
+      if (picked != null) {
+        final d = DateTime(picked.year, picked.month, picked.day);
+        setState(() {
+          _filterDataDa = d;
+          _filterDataA = d;
+        });
+        _loadAll();
+      }
+      return;
+    }
+
+    if (scelta == 'intervallo') {
+      final pickedRange = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2035),
+        initialDateRange: (_filterDataDa != null && _filterDataA != null)
+            ? DateTimeRange(start: _filterDataDa!, end: _filterDataA!)
+            : null,
+        helpText: 'SELEZIONA INTERVALLO DATE',
+      );
+      if (pickedRange != null) {
+        setState(() {
+          _filterDataDa = DateTime(pickedRange.start.year, pickedRange.start.month, pickedRange.start.day);
+          _filterDataA = DateTime(pickedRange.end.year, pickedRange.end.month, pickedRange.end.day);
+        });
+        _loadAll();
+      }
+      return;
+    }
+  }
+
   void _esportaReportPagamenti() {
     String filtri = '';
     if (_filterScuolaId != null) filtri += 'Scuola, ';
     if (_filterCorsoId != null) filtri += 'Corso, ';
     if (_filterTrimestre != null) filtri += 'Trimestre $_filterTrimestre, ';
+    if (_filterDataDa != null) {
+      if (_filterDataDa == _filterDataA) {
+        filtri += 'Data: ${DateFormat('dd/MM/yyyy').format(_filterDataDa!)}, ';
+      } else {
+        filtri += 'Periodo: ${DateFormat('dd/MM/yyyy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yyyy').format(_filterDataA!)}, ';
+      }
+    }
     if (filtri.isNotEmpty) filtri = filtri.substring(0, filtri.length - 2);
 
     PdfReportService.generaReportPagamenti(
@@ -813,6 +946,40 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                     _loadAll();
                   },
                 ),
+                // Filtro Data
+                if (_filterDataDa == null)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_month, size: 18),
+                    label: const Text('Filtra per Data'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade800,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: Colors.grey.shade400),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _selezionaFiltroData,
+                  )
+                else
+                  InputChip(
+                    avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
+                    label: Text(
+                      _filterDataDa == _filterDataA
+                          ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
+                          : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                    ),
+                    backgroundColor: Colors.teal.shade50,
+                    deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
+                    onDeleted: () {
+                      setState(() {
+                        _filterDataDa = null;
+                        _filterDataA = null;
+                      });
+                      _loadAll();
+                    },
+                    onPressed: _selezionaFiltroData,
+                  ),
               ],
             ),
           ),

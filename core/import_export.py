@@ -546,7 +546,35 @@ from .models import (
 @csrf_exempt
 @auth_required
 def export_global(request):
-    """Esporta tutto il database in un singolo file Excel multi-foglio."""
+    """
+    Esporta un dump completo del database in formato JSON conforme a Django (loaddata/dumpdata).
+    Include automaticamente tutte le entità attuali e future.
+    Supporta anche ?format=xlsx per il download del foglio Excel multi-foglio.
+    """
+    fmt = request.GET.get('format', 'json').lower()
+
+    if fmt == 'json':
+        from django.core.management import call_command
+        out = io.StringIO()
+        call_command(
+            'dumpdata',
+            '--natural-foreign',
+            '--natural-primary',
+            '-e', 'contenttypes',
+            '-e', 'auth.permission',
+            '-e', 'django_q.task',
+            indent=2,
+            stdout=out
+        )
+        dump_content = out.getvalue()
+        filename = f"WAManager_Dump_{datetime.date.today()}.json"
+        response = HttpResponse(
+            dump_content.encode('utf-8'),
+            content_type='application/json; charset=utf-8'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
     wb = openpyxl.Workbook()
     
     # Rimuovi il foglio di default
@@ -678,16 +706,76 @@ def export_global(request):
 @csrf_exempt
 @auth_required
 def import_global(request):
-    """Importa tutto il database da un file Excel multi-foglio, in ordine logico."""
+    """
+    Ripristina il database completo.
+    Supporta:
+    1. File .json: Dump completo del database (Django fixture) caricato tramite call_command('loaddata').
+       Supporta atomicamente qualsiasi modello presente o futuro!
+    2. File .xlsx: Backup Excel legacy multi-foglio.
+    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Richiesto metodo POST'}, status=405)
     
     file_obj = request.FILES.get('file')
     if not file_obj:
         return JsonResponse({'error': 'Nessun file fornito'}, status=400)
-    
-    if not file_obj.name.endswith('.xlsx'):
-        return JsonResponse({'error': 'Il file globale deve essere in formato .xlsx'}, status=400)
+
+    filename = file_obj.name.lower()
+
+    # ─── 1. GESTIONE DUMP COMPLETO JSON (QUALSIASI ENTITÀ PRESENTE O FUTURA) ──
+    if filename.endswith('.json'):
+        import json
+        import tempfile
+        import os
+        from django.core.management import call_command
+        from django.db import transaction
+
+        try:
+            content_bytes = file_obj.read()
+            text_content = content_bytes.decode('utf-8')
+            data = json.loads(text_content)
+
+            if not isinstance(data, list):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Formato JSON non valido: il dump deve essere una lista di record Django fixture.'
+                }, status=400)
+
+            stats = {}
+            for item in data:
+                if isinstance(item, dict) and 'model' in item:
+                    m = item['model']
+                    stats[m] = stats.get(m, 0) + 1
+
+            # Scrittura su file temporaneo con codifica utf-8
+            with tempfile.NamedTemporaryFile('w', delete=False, suffix='.json', encoding='utf-8') as tmp:
+                tmp.write(text_content)
+                tmp_path = tmp.name
+
+            try:
+                with transaction.atomic():
+                    call_command('loaddata', tmp_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+            return JsonResponse({
+                'success': True,
+                'messaggio': f'Ripristino completato con successo: {len(data)} oggetti importati/aggiornati.',
+                'totale_oggetti': len(data),
+                'statistiche': stats,
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Errore durante il ripristino del dump: {str(e)}'
+            }, status=500)
+
+    # ─── 2. GESTIONE FILE EXCEL .XLSX (RETROCOMPATIBILITÀ) ────────────────────
+    if not filename.endswith('.xlsx'):
+        return JsonResponse({
+            'error': 'Il file globale deve essere in formato .json (dump completo) o .xlsx (backup Excel)'
+        }, status=400)
 
     try:
         wb = openpyxl.load_workbook(file_obj)

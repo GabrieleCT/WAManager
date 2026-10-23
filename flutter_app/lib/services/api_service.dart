@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -147,7 +146,7 @@ class ApiService {
 
   Future<bool> deleteScuola(String id) async {
     final res = await http.delete(Uri.parse('$baseUrl/api/scuole/$id/'), headers: _headers);
-    return res.statusCode == 204;
+    return res.statusCode == 204 || res.statusCode == 200;
   }
 
   // ─── Corsi ────────────────────────────────────────────────
@@ -265,13 +264,16 @@ class ApiService {
     return res.statusCode == 204;
   }
 
-  Future<bool> convertProspectToStudent(String allievoId, String corsoId) async {
+  Future<Allievo?> convertProspectToStudent(String allievoId, String corsoId) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/allievi/$allievoId/convert_to_student/'),
       headers: _headers,
       body: jsonEncode({'corso_id': corsoId}),
     );
-    return res.statusCode == 200;
+    if (res.statusCode == 200) {
+      return Allievo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
   }
 
   Future<bool> setPartner(String allievoId, String? partnerId) async {
@@ -549,12 +551,23 @@ class ApiService {
 
 
   // ─── Pagamenti ────────────────────────────────────────────
-  Future<List<Pagamento>> getPagamenti({String? corsoId, String? scuolaId, String? trimestre, bool? hasRicevuta}) async {
+  Future<List<Pagamento>> getPagamenti({
+    String? corsoId,
+    String? scuolaId,
+    String? trimestre,
+    bool? hasRicevuta,
+    String? dataDa,
+    String? dataA,
+    String? data,
+  }) async {
     var params = <String>[];
     if (corsoId != null) params.add('corso=$corsoId');
     if (scuolaId != null) params.add('corso__scuola=$scuolaId');
     if (trimestre != null) params.add('trimestre=$trimestre');
     if (hasRicevuta != null) params.add('has_ricevuta=$hasRicevuta');
+    if (data != null) params.add('data=$data');
+    if (dataDa != null) params.add('data_da=$dataDa');
+    if (dataA != null) params.add('data_a=$dataA');
 
     var urlStr = '$baseUrl/api/pagamenti/';
     if (params.isNotEmpty) urlStr += '?${params.join('&')}';
@@ -593,10 +606,19 @@ class ApiService {
   }
 
   // ─── Ricevute ─────────────────────────────────────────────
-  Future<List<Ricevuta>> getRicevute({int? anno, String? search}) async {
+  Future<List<Ricevuta>> getRicevute({
+    int? anno,
+    String? search,
+    String? dataDa,
+    String? dataA,
+    String? data,
+  }) async {
     var params = <String>[];
     if (anno != null) params.add('anno=$anno');
     if (search != null && search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+    if (data != null) params.add('data=$data');
+    if (dataDa != null) params.add('data_da=$dataDa');
+    if (dataA != null) params.add('data_a=$dataA');
 
     var urlStr = '$baseUrl/api/ricevute/';
     if (params.isNotEmpty) urlStr += '?${params.join('&')}';
@@ -1146,6 +1168,228 @@ class ApiService {
     }
   }
 
+  // ─── Google Contacts (OAuth 2.0) ─────────────────────────
+  Future<GoogleContactsConfig?> getGoogleContactsConfig() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/google-contacts/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return GoogleContactsConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> saveGoogleContactsCredentials({
+    required String clientId,
+    required String clientSecret,
+    List<int>? fileBytes,
+    String? fileName,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/google-contacts/save-credentials/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+    request.fields['client_id'] = clientId;
+    request.fields['client_secret'] = clientSecret;
+
+    if (fileBytes != null && fileName != null) {
+      final multipartFile = http.MultipartFile.fromBytes('file', fileBytes, filename: fileName);
+      request.files.add(multipartFile);
+    }
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        return {'success': false, 'error': 'Errore HTTP ${response.statusCode}: ${response.body}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> initGoogleContactsOAuth({String? redirectUri}) async {
+    var bodyData = <String, dynamic>{};
+    if (redirectUri != null && redirectUri.isNotEmpty) {
+      bodyData['redirect_uri'] = redirectUri;
+    }
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/oauth-init/'),
+      headers: _headers,
+      body: jsonEncode(bodyData),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': res.body};
+  }
+
+  Future<Map<String, dynamic>> disconnectGoogleContacts() async {
+    final res = await http.post(Uri.parse('$baseUrl/api/google-contacts/oauth-disconnect/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': res.body};
+  }
+
+  Future<Map<String, dynamic>> testGoogleContactsConnection() async {
+    final res = await http.post(Uri.parse('$baseUrl/api/google-contacts/test-connection/'), headers: _headers);
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'message': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> saveGoogleContactsSettings({
+    String? syncGroupName,
+    bool? isActive,
+  }) async {
+    var bodyData = <String, dynamic>{};
+    if (syncGroupName != null) bodyData['sync_group_name'] = syncGroupName;
+    if (isActive != null) bodyData['is_active'] = isActive;
+
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/save-settings/'),
+      headers: _headers,
+      body: jsonEncode(bodyData),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': res.body};
+  }
+
+  Future<Map<String, dynamic>> syncAllievoToGoogleContacts(String allievoId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/allievi/$allievoId/sync-google-contacts/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'message': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> syncAllGoogleContacts() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/sync-all-contacts/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'message': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<GoogleContactComparisonReport?> getGoogleContactsComparison() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/google-contacts/comparison/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(res.bodyBytes));
+      return GoogleContactComparisonReport.fromJson(json);
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> runGoogleContactsFullSync() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/run-full-sync/'),
+      headers: _headers,
+    );
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> pushToGoogle(String allievoId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/push-to-google/'),
+      headers: _headers,
+      body: jsonEncode({'allievo_id': allievoId}),
+    );
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> pullFromGoogle(String allievoId, String googleId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/pull-from-google/'),
+      headers: _headers,
+      body: jsonEncode({'allievo_id': allievoId, 'google_id': googleId}),
+    );
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> importFromGoogle(String googleId, {bool? asProspect, String? corsoId}) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/import-from-google/'),
+      headers: _headers,
+      body: jsonEncode({
+        'google_id': googleId,
+        'as_prospect': asProspect,
+        'corso_id': corsoId,
+      }),
+    );
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteGoogleContactAction(String googleId, {String? allievoId}) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/google-contacts/delete-google-contact/'),
+      headers: _headers,
+      body: jsonEncode({
+        'google_id': googleId,
+        'allievo_id': allievoId,
+      }),
+    );
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: ${res.body}'};
+    }
+  }
+
+  Future<List<GoogleContactsSyncLog>> getGoogleContactsSyncLogs() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/google-contacts/sync-logs/'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+      return list.map((item) => GoogleContactsSyncLog.fromJson(item as Map<String, dynamic>)).toList();
+    }
+    return [];
+  }
+
   Future<Map<String, dynamic>> uploadRicevutaToDrive(String ricevutaId) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/ricevute/$ricevutaId/upload-to-drive/'),
@@ -1499,9 +1743,92 @@ class ApiService {
     final cleanPath = firmaUrl.startsWith('/') ? firmaUrl : '/$firmaUrl';
     return '$cleanBase$cleanPath';
   }
+
+  Future<Map<String, dynamic>?> getApkInfo() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/api/app/apk-info/'));
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String getApkDownloadUrl() {
+    final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    return '$cleanBase/api/app/download-apk/';
+  }
+
+  // --- Generazione Verbale Rendiconto ---
+  Future<Map<String, dynamic>> getDatiVerbaleDefault() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/api/asd/dati-verbale-default/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Uint8List?> generaVerbalePdf({
+    required String dataAssemblea,
+    required String orarioAssemblea,
+    required String dataAffissione,
+    int? annoEsercizio,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/asd/genera-verbale/'),
+        headers: _headers,
+        body: jsonEncode({
+          'data_assemblea': dataAssemblea,
+          'orario_assemblea': orarioAssemblea,
+          'data_affissione_convocazione': dataAffissione,
+          if (annoEsercizio != null) 'anno_esercizio': annoEsercizio,
+        }),
+      );
+      if (res.statusCode == 200) {
+        return res.bodyBytes;
+      } else {
+        try {
+          final errJson = jsonDecode(utf8.decode(res.bodyBytes));
+          throw Exception(errJson['error'] ?? 'Errore generazione verbale (${res.statusCode})');
+        } catch (e) {
+          if (e is Exception && !e.toString().contains('FormatException')) rethrow;
+          throw Exception('Errore HTTP ${res.statusCode}');
+        }
+      }
+    } catch (e) {
+      debugPrint('Errore generaVerbalePdf: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> uploadVerbaleDrive({
+    required String dataAssemblea,
+    required String orarioAssemblea,
+    required String dataAffissione,
+    int? annoEsercizio,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/asd/upload-verbale-drive/'),
+        headers: _headers,
+        body: jsonEncode({
+          'data_assemblea': dataAssemblea,
+          'orario_assemblea': orarioAssemblea,
+          'data_affissione_convocazione': dataAffissione,
+          if (annoEsercizio != null) 'anno_esercizio': annoEsercizio,
+        }),
+      );
+      return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 }
-
-
-
-
-

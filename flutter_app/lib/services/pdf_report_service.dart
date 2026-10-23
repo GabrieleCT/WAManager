@@ -913,6 +913,7 @@ class PdfReportService {
     required BuildContext context,
     required List<Ricevuta> ricevute,
     required int? anno,
+    String? filtroData,
   }) async {
     if (ricevute.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -943,9 +944,19 @@ class PdfReportService {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    'Elenco Ricevute Emesse ${anno != null ? "Anno $anno" : ""}',
-                    style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Elenco Ricevute Emesse ${anno != null ? "Anno $anno" : ""}',
+                        style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900),
+                      ),
+                      if (filtroData != null && filtroData.isNotEmpty)
+                        pw.Text(
+                          filtroData,
+                          style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic, color: PdfColors.teal800),
+                        ),
+                    ],
                   ),
                   pw.Text(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
                 ],

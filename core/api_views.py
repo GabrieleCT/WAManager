@@ -6,6 +6,7 @@ from django.contrib.auth import authenticate
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
+import os
 import datetime
 from django.utils import timezone
 
@@ -16,7 +17,7 @@ from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
     ConfigurazioneASD, MembroDirettivo
 )
 from .serializers import (
@@ -25,7 +26,7 @@ from .serializers import (
     PresenzaSerializer, PagamentoSerializer, MessageTemplateSerializer,
     MessageLogSerializer, MatchSerializer, RecurringScheduleSerializer,
     SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer,
-    ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer,
+    ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer, GoogleContactsConfigSerializer,
     MovimentoPrimaNotaSerializer, CategoriaBilancioSerializer,
     ConfigurazioneASDSerializer, MembroDirettivoSerializer
 )
@@ -191,6 +192,59 @@ class AllievoViewSet(viewsets.ModelViewSet):
     search_fields = ['nome', 'cognome', 'telefono', 'note', 'numero_tessera']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        allievo = serializer.save()
+        google_sync = None
+        try:
+            from .google_contacts_service import sync_allievo_to_google_contacts
+            google_sync = sync_allievo_to_google_contacts(allievo)
+        except Exception as e:
+            google_sync = {'success': False, 'error': str(e)}
+
+        data = serializer.data
+        if google_sync:
+            data['google_sync'] = google_sync
+        headers = self.get_success_headers(data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        allievo = serializer.save()
+        google_sync = None
+        try:
+            from .google_contacts_service import sync_allievo_to_google_contacts
+            google_sync = sync_allievo_to_google_contacts(allievo)
+        except Exception as e:
+            google_sync = {'success': False, 'error': str(e)}
+
+        data = serializer.data
+        if google_sync:
+            data['google_sync'] = google_sync
+        return Response(data)
+
+    def perform_destroy(self, instance):
+        # Il signal pre_delete (allievo_pre_delete_cleanup) gestisce automaticamente
+        # la rimozione dai gruppi WhatsApp, l'eliminazione della chat e la rimozione da Google Contacts
+        instance.delete()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='sync-google-contacts')
+    def sync_google_contacts(self, request, pk=None):
+        """Sincronizza manualmente il singolo allievo/prospect in Google Contacts."""
+        allievo = self.get_object()
+        from .google_contacts_service import sync_allievo_to_google_contacts
+        res = sync_allievo_to_google_contacts(allievo)
+        return Response(res)
+
     def get_queryset(self):
         qs = super().get_queryset()
         stato_tessera = self.request.query_params.get('stato_tessera')
@@ -240,7 +294,16 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo.livello = corso.livello
         allievo.is_prospect = False
         allievo.save()
-        return Response(self.get_serializer(allievo).data)
+        google_sync = None
+        try:
+            from .google_contacts_service import sync_allievo_to_google_contacts
+            google_sync = sync_allievo_to_google_contacts(allievo)
+        except Exception as e:
+            google_sync = {'success': False, 'error': str(e)}
+        data = self.get_serializer(allievo).data
+        if google_sync:
+            data['google_sync'] = google_sync
+        return Response(data)
 
     @action(detail=True, methods=['post'])
     def set_partner(self, request, pk=None):
@@ -811,6 +874,17 @@ class PagamentoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        data_da = self.request.query_params.get('data_da') or self.request.query_params.get('data_inizio') or self.request.query_params.get('date_from')
+        data_a = self.request.query_params.get('data_a') or self.request.query_params.get('data_fine') or self.request.query_params.get('date_to')
+        data_esatta = self.request.query_params.get('data') or self.request.query_params.get('data_pagamento')
+        if data_esatta:
+            qs = qs.filter(data_pagamento=data_esatta)
+        else:
+            if data_da:
+                qs = qs.filter(data_pagamento__gte=data_da)
+            if data_a:
+                qs = qs.filter(data_pagamento__lte=data_a)
+
         has_ricevuta = self.request.query_params.get('has_ricevuta')
         if has_ricevuta is not None:
             if str(has_ricevuta).lower() in ['true', '1']:
@@ -1180,7 +1254,8 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
         # Assicura che i template predefiniti esistano
         predefiniti = [
             ('ricevuta', 'Template Ricevuta Pagamento', 'Template PDF utilizzato per la generazione delle ricevute di pagamento quote e corsi.'),
-            ('modulo_tesseramento', 'Modulo di Tesseramento', 'Modulo PDF ufficiale per la richiesta o rinnovo del tesseramento degli allievi.')
+            ('modulo_tesseramento', 'Modulo di Tesseramento', 'Modulo PDF ufficiale per la richiesta o rinnovo del tesseramento degli allievi.'),
+            ('verbale_rendiconto', 'Verbale Approvazione Rendiconto', 'Modello di verbale assembleare per l\'approvazione del rendiconto economico-finanziario annuale.')
         ]
         for chiave, nome, desc in predefiniti:
             DocumentTemplate.objects.get_or_create(
@@ -1229,7 +1304,14 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
         if not template.file:
             raise Http404("Nessun file associato a questo template.")
         try:
-            return FileResponse(template.file.open('rb'), content_type='application/pdf', filename=template.filename)
+            fn = template.filename.lower()
+            if fn.endswith('.docx'):
+                ct = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            elif fn.endswith('.doc'):
+                ct = 'application/msword'
+            else:
+                ct = 'application/pdf'
+            return FileResponse(template.file.open('rb'), content_type=ct, filename=template.filename)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1243,6 +1325,17 @@ class RicevutaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        data_da = self.request.query_params.get('data_da') or self.request.query_params.get('data_inizio') or self.request.query_params.get('date_from')
+        data_a = self.request.query_params.get('data_a') or self.request.query_params.get('data_fine') or self.request.query_params.get('date_to')
+        data_esatta = self.request.query_params.get('data') or self.request.query_params.get('data_ricevuta')
+        if data_esatta:
+            qs = qs.filter(data=data_esatta)
+        else:
+            if data_da:
+                qs = qs.filter(data__gte=data_da)
+            if data_a:
+                qs = qs.filter(data__lte=data_a)
+
         anno = self.request.query_params.get('anno')
         if anno:
             try:
@@ -1581,7 +1674,10 @@ def get_google_drive_service(config=None):
                         config.oauth_token_expiry = creds.expiry
                     config.save(update_fields=['oauth_access_token', 'oauth_token_expiry'])
                 except Exception as e:
-                    raise ValueError(f"Impossibile aggiornare il token di accesso Google: {str(e)}")
+                    err_str = str(e)
+                    if 'invalid_grant' in err_str or 'expired or revoked' in err_str:
+                        raise ValueError("Il token Google OAuth è scaduto o è stato revocato. Clicca su 'Ricollega Account Google' per rinnovare l'accesso.")
+                    raise ValueError(f"Impossibile aggiornare il token di accesso Google: {err_str}")
         return build('drive', 'v3', credentials=creds)
 
     else:
@@ -2015,8 +2111,12 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             serializer = GoogleDriveConfigSerializer(config)
             return Response({'success': True, 'config': serializer.data, 'message': config.last_test_message})
         except Exception as e:
+            err_str = str(e)
             config.last_test_status = 'error'
-            config.last_test_message = f"Errore connessione Google Drive: {str(e)}"
+            if 'invalid_grant' in err_str or 'expired or revoked' in err_str:
+                config.last_test_message = "Token Google scaduto o revocato. Clicca sul pulsante 'Ricollega Account Google' per riattivare la sessione."
+            else:
+                config.last_test_message = f"Errore connessione Google Drive: {err_str}"
             config.last_tested_at = timezone.now()
             config.save()
 
@@ -2229,7 +2329,9 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             'folder_ricevute_id',
             'folder_ricevute_nome',
             'folder_tessere_id',
-            'folder_tessere_nome'
+            'folder_tessere_nome',
+            'folder_verbali_id',
+            'folder_verbali_nome'
         ]
         for f in folder_fields:
             if f in request.data:
@@ -2241,6 +2343,450 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
         config.save()
         serializer = GoogleDriveConfigSerializer(config)
         return Response({'success': True, 'config': serializer.data})
+
+
+# ─── 2.14b Google Contacts Configuration (OAuth 2.0) ─────────────
+
+class GoogleContactsConfigViewSet(viewsets.ViewSet):
+    """
+    Gestione della configurazione Google Contacts (OAuth 2.0).
+    Consente di inserire Client ID e Client Secret e collegare l'account Google.
+    """
+    def list(self, request):
+        config = GoogleContactsConfig.get_instance()
+        serializer = GoogleContactsConfigSerializer(config)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='save-credentials')
+    def save_credentials(self, request):
+        """
+        Salva Client ID e Client Secret OAuth 2.0 (da form o da file JSON caricato).
+        """
+        config = GoogleContactsConfig.get_instance()
+        file_obj = request.FILES.get('file')
+
+        client_id = (request.data.get('client_id') or '').strip()
+        client_secret = (request.data.get('client_secret') or '').strip()
+
+        if file_obj:
+            try:
+                import json
+                raw = file_obj.read().decode('utf-8')
+                data = json.loads(raw)
+                root = data.get('web') or data.get('installed') or data
+                client_id = root.get('client_id', '') or client_id
+                client_secret = root.get('client_secret', '') or client_secret
+            except Exception as e:
+                return Response({'success': False, 'error': f"Errore lettura file JSON credenziali: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not client_id or not client_secret:
+            return Response({'success': False, 'error': 'Client ID e Client Secret sono entrambi obbligatori.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        config.client_id = client_id
+        config.client_secret = client_secret
+        config.save()
+
+        serializer = GoogleContactsConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['get', 'post'], url_path='oauth-init')
+    def oauth_init(self, request):
+        """
+        Genera l'URL di autorizzazione Google OAuth 2.0 per Google Contacts (People API).
+        """
+        config = GoogleContactsConfig.get_instance()
+        client_id = (request.data.get('client_id') or config.client_id or '').strip()
+        client_secret = (request.data.get('client_secret') or config.client_secret or '').strip()
+
+        if not client_id or not client_secret:
+            return Response({
+                'success': False,
+                'error': 'OAuth Client ID e Client Secret non configurati. Inseriscili prima di iniziare l\'autenticazione.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if client_id != config.client_id or client_secret != config.client_secret:
+            config.client_id = client_id
+            config.client_secret = client_secret
+            config.save()
+
+        redirect_uri = request.data.get('redirect_uri')
+        if not redirect_uri:
+            redirect_uri = request.build_absolute_uri('/api/google-contacts/oauth-callback/')
+
+        import urllib.parse
+        scopes = [
+            'https://www.googleapis.com/auth/contacts',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'openid'
+        ]
+        params = {
+            'client_id': config.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': ' '.join(scopes),
+            'access_type': 'offline',
+            'prompt': 'consent',
+            'include_granted_scopes': 'true',
+            'state': redirect_uri,
+        }
+        auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
+        return Response({
+            'success': True,
+            'auth_url': auth_url,
+            'redirect_uri': redirect_uri
+        })
+
+    @action(detail=False, methods=['get'], url_path='oauth-callback', permission_classes=[permissions.AllowAny])
+    def oauth_callback(self, request):
+        """
+        Riceve il redirect da Google con il codice di autorizzazione OAuth 2.0.
+        """
+        error = request.query_params.get('error')
+        if error:
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore Google Contacts OAuth</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Errore durante l'autenticazione con Google Contacts</h2>
+                <p>Messaggio: {error}</p>
+                <p>Puoi chiudere questa finestra e riprovare.</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        code = request.query_params.get('code')
+        if not code:
+            return HttpResponse("""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Nessun codice di autorizzazione ricevuto</h2>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        config = GoogleContactsConfig.get_instance()
+        redirect_uri = request.query_params.get('state') or request.build_absolute_uri('/api/google-contacts/oauth-callback/')
+
+        import requests
+        try:
+            token_url = 'https://oauth2.googleapis.com/token'
+            payload = {
+                'code': code,
+                'client_id': config.client_id,
+                'client_secret': config.client_secret,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code',
+            }
+            resp = requests.post(token_url, data=payload, timeout=15)
+            if resp.status_code != 200:
+                err_data = resp.json() if resp.headers.get('content-type', '').startswith('application/json') else {}
+                err_msg = err_data.get('error_description') or err_data.get('error') or resp.text
+                return HttpResponse(f"""
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>Errore Scambio Token</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                    <h2 style="color: #d32f2f;">Errore scambio token con Google</h2>
+                    <p style="color: #555;">{err_msg}</p>
+                    <p><a href="javascript:window.close()">Chiudi finestra</a></p>
+                </body>
+                </html>
+                """, content_type="text/html; charset=utf-8")
+
+            token_data = resp.json()
+            access_token = token_data.get('access_token')
+            refresh_token = token_data.get('refresh_token')
+            expires_in = token_data.get('expires_in', 3600)
+
+            user_email = ''
+            user_name = ''
+            try:
+                user_info_resp = requests.get(
+                    'https://www.googleapis.com/oauth2/v2/userinfo',
+                    headers={'Authorization': f'Bearer {access_token}'},
+                    timeout=10
+                )
+                if user_info_resp.status_code == 200:
+                    u_data = user_info_resp.json()
+                    user_email = u_data.get('email', '')
+                    user_name = u_data.get('name', '')
+            except Exception:
+                pass
+
+            config.access_token = access_token
+            if refresh_token:
+                config.refresh_token = refresh_token
+            config.token_expiry = timezone.now() + datetime.timedelta(seconds=expires_in)
+            config.user_email = user_email
+            config.user_name = user_name
+            config.last_test_status = 'success'
+            config.last_test_message = 'Autenticazione OAuth 2.0 completata con successo.'
+            config.save()
+
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Google Contacts Collegato</title>
+                <style>
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 40px; background: #f8fafc; color: #1e293b; }}
+                    .card {{ max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); }}
+                    .icon {{ width: 64px; height: 64px; background: #ecfdf5; color: #059669; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 16px; }}
+                    h2 {{ margin: 0 0 8px; color: #065f46; }}
+                    p {{ color: #475569; font-size: 14px; margin-bottom: 24px; }}
+                    .email {{ font-weight: bold; color: #1e293b; background: #f1f5f9; padding: 8px 16px; border-radius: 8px; display: inline-block; margin-bottom: 24px; }}
+                    button {{ background: #059669; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; }}
+                    button:hover {{ background: #047857; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">✓</div>
+                    <h2>Google Contacts Collegato!</h2>
+                    <p>L'account Google è stato collegato con successo al gestionale.</p>
+                    <div class="email">{user_email or 'Account Google'}</div>
+                    <div>
+                        <button onclick="window.close()">Chiudi questa finestra</button>
+                    </div>
+                </div>
+                <script>
+                    setTimeout(function() {{
+                        try {{ window.close(); }} catch(e) {{}}
+                    }}, 2500);
+                </script>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+        except Exception as e:
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Errore</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                <h2 style="color: #d32f2f;">Errore imprevisto durante l'autenticazione</h2>
+                <p>{str(e)}</p>
+            </body>
+            </html>
+            """, content_type="text/html; charset=utf-8")
+
+    @action(detail=False, methods=['post'], url_path='oauth-disconnect')
+    def oauth_disconnect(self, request):
+        """
+        Disconnette l'account Google Contacts revocando/azzerando i token salvati.
+        """
+        config = GoogleContactsConfig.get_instance()
+        config.access_token = ''
+        config.refresh_token = ''
+        config.token_expiry = None
+        config.user_email = ''
+        config.user_name = ''
+        config.last_test_status = ''
+        config.last_test_message = ''
+        config.last_sync_at = None
+        config.save()
+
+        serializer = GoogleContactsConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path='test-connection')
+    def test_connection(self, request):
+        """
+        Verifica la validità del token e l'accesso alla People API di Google.
+        """
+        config = GoogleContactsConfig.get_instance()
+        if not config.refresh_token:
+            return Response({
+                'success': False,
+                'status': 'not_configured',
+                'message': 'Nessun account Google Contacts collegato via OAuth 2.0.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Refresh token se necessario
+        import requests
+        access_token = config.access_token
+        need_refresh = not access_token or not config.token_expiry or config.token_expiry <= timezone.now()
+
+        if need_refresh and config.refresh_token:
+            try:
+                resp = requests.post(
+                    'https://oauth2.googleapis.com/token',
+                    data={
+                        'client_id': config.client_id,
+                        'client_secret': config.client_secret,
+                        'refresh_token': config.refresh_token,
+                        'grant_type': 'refresh_token'
+                    },
+                    timeout=15
+                )
+                if resp.status_code == 200:
+                    t_data = resp.json()
+                    access_token = t_data.get('access_token')
+                    expires_in = t_data.get('expires_in', 3600)
+                    config.access_token = access_token
+                    config.token_expiry = timezone.now() + datetime.timedelta(seconds=expires_in)
+                    config.save()
+                else:
+                    err_msg = resp.text
+                    config.last_test_status = 'error'
+                    config.last_test_message = f"Errore rinnovo token: {err_msg}"
+                    config.save()
+                    return Response({'success': False, 'status': 'error', 'message': config.last_test_message})
+            except Exception as e:
+                config.last_test_status = 'error'
+                config.last_test_message = f"Errore connessione: {str(e)}"
+                config.save()
+                return Response({'success': False, 'status': 'error', 'message': config.last_test_message})
+
+        # Test chiamata People API
+        try:
+            test_resp = requests.get(
+                'https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses',
+                headers={'Authorization': f'Bearer {access_token}'},
+                timeout=15
+            )
+            if test_resp.status_code == 200:
+                p_data = test_resp.json()
+                names = p_data.get('names', [])
+                display_name = names[0].get('displayName') if names else config.user_name
+                config.last_test_status = 'success'
+                config.last_test_message = f"Connessione a Google Contacts attiva e funzionante ({display_name or config.user_email})."
+                config.save()
+                return Response({
+                    'success': True,
+                    'status': 'success',
+                    'message': config.last_test_message,
+                    'config': GoogleContactsConfigSerializer(config).data
+                })
+            else:
+                err_msg = test_resp.json().get('error', {}).get('message') or test_resp.text
+                config.last_test_status = 'error'
+                config.last_test_message = f"Errore People API ({test_resp.status_code}): {err_msg}"
+                config.save()
+                return Response({'success': False, 'status': 'error', 'message': config.last_test_message})
+        except Exception as e:
+            config.last_test_status = 'error'
+            config.last_test_message = f"Eccezione chiamata People API: {str(e)}"
+            config.save()
+            return Response({'success': False, 'status': 'error', 'message': config.last_test_message})
+
+    @action(detail=False, methods=['post'], url_path='save-settings')
+    def save_settings(self, request):
+        """
+        Salva impostazioni aggiuntive (es. nome gruppo etichetta contatti, stato attivo).
+        """
+        config = GoogleContactsConfig.get_instance()
+        if 'sync_group_name' in request.data:
+            config.sync_group_name = str(request.data.get('sync_group_name') or '').strip()
+        if 'is_active' in request.data:
+            config.is_active = bool(request.data.get('is_active'))
+        config.save()
+        serializer = GoogleContactsConfigSerializer(config)
+        return Response({'success': True, 'config': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path='sync-all-contacts')
+    def sync_all_contacts(self, request):
+        """
+        Sincronizza in massa tutti gli allievi e prospect con Google Contacts.
+        """
+        from .google_contacts_service import sync_all_allievi_to_google_contacts
+        result = sync_all_allievi_to_google_contacts()
+        return Response(result)
+
+    @action(detail=False, methods=['get'], url_path='comparison')
+    def comparison(self, request):
+        """
+        Restituisce la tabella di confronto dettagliata tra Gestionale e Google Contacts:
+        Allievi, Prospect e Contatti Google marcati allievo/allieva, con differenze e stato.
+        """
+        from .google_contacts_service import get_contacts_comparison_report
+        report = get_contacts_comparison_report()
+        return Response(report)
+
+    @action(detail=False, methods=['post'], url_path='run-full-sync')
+    def run_full_sync_action(self, request):
+        """
+        Avvia la sincronizzazione completa e bidirezionale tra il sistema e Google Contacts.
+        """
+        from .google_contacts_service import run_full_sync
+        res = run_full_sync()
+        return Response(res)
+
+    @action(detail=False, methods=['post'], url_path='push-to-google')
+    def push_to_google(self, request):
+        """
+        Invia/crea o aggiorna l'allievo locale su Google Contacts.
+        """
+        allievo_id = request.data.get('allievo_id')
+        if not allievo_id:
+            return Response({'success': False, 'error': 'allievo_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        allievo = Allievo.objects.filter(id=allievo_id).first()
+        if not allievo:
+            return Response({'success': False, 'error': 'Allievo non trovato.'}, status=status.HTTP_404_NOT_FOUND)
+        from .google_contacts_service import sync_allievo_to_google_contacts
+        res = sync_allievo_to_google_contacts(allievo)
+        return Response(res)
+
+    @action(detail=False, methods=['post'], url_path='pull-from-google')
+    def pull_from_google(self, request):
+        """
+        Aggiorna l'allievo locale con i dati provenienti da Google Contacts.
+        """
+        allievo_id = request.data.get('allievo_id')
+        google_id = request.data.get('google_id')
+        if not allievo_id:
+            return Response({'success': False, 'error': 'allievo_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        from .google_contacts_service import pull_google_to_system
+        res = pull_google_to_system(allievo_id, google_id)
+        return Response(res)
+
+    @action(detail=False, methods=['post'], url_path='import-from-google')
+    def import_from_google(self, request):
+        """
+        Importa un contatto da Google Contacts nel gestionale creando un Allievo o Prospect.
+        """
+        google_id = request.data.get('google_id')
+        as_prospect = request.data.get('as_prospect')
+        corso_id = request.data.get('corso_id')
+        if not google_id:
+            return Response({'success': False, 'error': 'google_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        from .google_contacts_service import import_google_contact_to_system
+        res = import_google_contact_to_system(google_id, as_prospect=as_prospect, corso_id=corso_id)
+        return Response(res)
+
+    @action(detail=False, methods=['post'], url_path='delete-google-contact')
+    def delete_google_contact_action(self, request):
+        """
+        Elimina il contatto specificato da Google Contacts (previa conferma utente).
+        """
+        google_id = request.data.get('google_id')
+        allievo_id = request.data.get('allievo_id')
+        if not google_id:
+            return Response({'success': False, 'error': 'google_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        from .google_contacts_service import delete_google_contact
+        res = delete_google_contact(google_id)
+        if allievo_id:
+            allievo = Allievo.objects.filter(id=allievo_id).first()
+            if allievo:
+                allievo.google_contact_id = ''
+                allievo.save(update_fields=['google_contact_id'])
+        return Response(res)
+
+    @action(detail=False, methods=['get'], url_path='sync-logs')
+    def sync_logs(self, request):
+        """
+        Restituisce la cronologia dei log di sincronizzazione Google Contacts.
+        """
+        from .models import GoogleContactsSyncLog
+        from .serializers import GoogleContactsSyncLogSerializer
+        logs = GoogleContactsSyncLog.objects.all()[:50]
+        serializer = GoogleContactsSyncLogSerializer(logs, many=True)
+        return Response(serializer.data)
 
 
 # ─── 2.15 Bilancio: Prima Nota Cassa ────────────────────────────
@@ -2546,6 +3092,154 @@ class ConfigurazioneASDViewSet(viewsets.ViewSet):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['get'], url_path='dati-verbale-default')
+    def dati_verbale_default(self, request):
+        """
+        Restituisce i dati iniziali e di verifica per la generazione del verbale di approvazione rendiconto.
+        """
+        import datetime
+        now = timezone.now()
+        cur_year = now.year
+        anno_default = cur_year - 1 if now.month <= 6 else cur_year
+
+        anni = list(MovimentoPrimaNota.objects.dates('data', 'year').values_list('data__year', flat=True))
+        anni = sorted(list(set([y for y in anni if y >= 2024])), reverse=True)
+        if anno_default not in anni:
+            anni.insert(0, anno_default)
+
+        asd = ConfigurazioneASD.get_instance()
+        pres = MembroDirettivo.objects.filter(ruolo='presidente').first()
+        vice = MembroDirettivo.objects.filter(ruolo='vicepresidente').first()
+        seg = MembroDirettivo.objects.filter(ruolo='segretario').first()
+
+        gd_config = GoogleDriveConfig.get_instance()
+        tmpl = DocumentTemplate.objects.filter(chiave='verbale_rendiconto').first()
+        has_tmpl = bool(tmpl and tmpl.file and os.path.exists(tmpl.file.path))
+        if not has_tmpl:
+            from django.conf import settings
+            has_tmpl = os.path.exists(os.path.join(settings.MEDIA_ROOT, 'templates_pdf', 'Verbale.pdf'))
+
+        return Response({
+            'success': True,
+            'anno_esercizio_default': anno_default,
+            'anni_disponibili': anni,
+            'data_assemblea_default': now.strftime('%Y-%m-%d'),
+            'orario_assemblea_default': '20:00',
+            'data_affissione_default': (now - datetime.timedelta(days=15)).strftime('%Y-%m-%d'),
+            'presidente': pres.nome_completo if pres else '',
+            'has_firma_presidente': bool(pres and pres.firma and os.path.exists(pres.firma.path)),
+            'vicepresidente': vice.nome_completo if vice else '',
+            'has_firma_vicepresidente': bool(vice and vice.firma and os.path.exists(vice.firma.path)),
+            'segretario': seg.nome_completo if seg else '',
+            'has_firma_segretario': bool(seg and seg.firma and os.path.exists(seg.firma.path)),
+            'sede_legale': asd.sede_legale or '',
+            'google_drive_configured': gd_config.is_configured,
+            'google_drive_folder_id': gd_config.folder_verbali_id or gd_config.folder_id,
+            'google_drive_folder_nome': gd_config.folder_verbali_nome or gd_config.folder_ricevute_nome or 'Predefinita',
+            'has_template_verbale': has_tmpl,
+        })
+
+    @action(detail=False, methods=['post'], url_path='genera-verbale')
+    def genera_verbale(self, request):
+        """
+        Genera il verbale compilato in formato PDF dai parametri inviati dal form.
+        """
+        data_assemblea = request.data.get('data_assemblea')
+        orario_assemblea = request.data.get('orario_assemblea')
+        data_affissione = request.data.get('data_affissione_convocazione')
+        anno_esercizio = request.data.get('anno_esercizio')
+
+        if not data_assemblea:
+            return Response({'success': False, 'error': 'Il campo "Data assemblea" è obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not orario_assemblea:
+            return Response({'success': False, 'error': 'Il campo "Orario assemblea" è obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not data_affissione:
+            return Response({'success': False, 'error': 'Il campo "Data affissione convocazione" è obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .pdf_template_service import genera_pdf_verbale_rendiconto
+            pdf_bytes, filename, info = genera_pdf_verbale_rendiconto(
+                data_assemblea=data_assemblea,
+                orario_assemblea=orario_assemblea,
+                data_affissione=data_affissione,
+                anno_esercizio=anno_esercizio
+            )
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            response['X-Filename'] = filename
+            return response
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore generazione verbale: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='upload-verbale-drive')
+    def upload_verbale_drive(self, request):
+        """
+        Genera il verbale e lo carica direttamente nella cartella Verbali di Google Drive.
+        """
+        data_assemblea = request.data.get('data_assemblea')
+        orario_assemblea = request.data.get('orario_assemblea')
+        data_affissione = request.data.get('data_affissione_convocazione')
+        anno_esercizio = request.data.get('anno_esercizio')
+
+        if not data_assemblea or not orario_assemblea or not data_affissione:
+            return Response({'success': False, 'error': 'Tutti i campi (Data, Orario e Data affissione) sono obbligatori.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Google Drive non configurato. Vai in Impostazioni > Google Drive per collegare il tuo account.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        target_folder_id = config.folder_verbali_id or config.folder_id
+        if not target_folder_id:
+            return Response({
+                'success': False,
+                'error': 'Nessuna cartella di destinazione impostata per i Verbali. Selezionala in Impostazioni > Google Drive.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .pdf_template_service import genera_pdf_verbale_rendiconto
+            pdf_bytes, filename, info = genera_pdf_verbale_rendiconto(
+                data_assemblea=data_assemblea,
+                orario_assemblea=orario_assemblea,
+                data_affissione=data_affissione,
+                anno_esercizio=anno_esercizio
+            )
+
+            from googleapiclient.http import MediaIoBaseUpload
+            import io
+
+            drive_service = get_google_drive_service(config)
+
+            file_metadata = {
+                'name': filename,
+                'parents': [target_folder_id],
+                'description': f"Verbale di approvazione rendiconto {info['anno_esercizio']} redatto in data {info['data_assemblea']}"
+            }
+
+            media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
+            uploaded_file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+
+            folder_nome = config.folder_verbali_nome or config.folder_ricevute_nome or 'Google Drive'
+
+            return Response({
+                'success': True,
+                'message': f"Verbale caricato con successo su Google Drive nella cartella '{folder_nome}'!",
+                'file_id': uploaded_file.get('id'),
+                'filename': uploaded_file.get('name'),
+                'webViewLink': uploaded_file.get('webViewLink'),
+                'folder_nome': folder_nome,
+                'info': info
+            })
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore caricamento su Google Drive: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class MembroDirettivoViewSet(viewsets.ModelViewSet):
     """
@@ -2623,3 +3317,58 @@ class MembroDirettivoViewSet(viewsets.ModelViewSet):
 
 
 
+
+
+# ─── 2.5 Export / Download Pacchetto Mobile APK ───────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def get_apk_info(request):
+    """Restituisce informazioni sulla disponibilità del file APK Android generato."""
+    import os
+    from django.conf import settings
+
+    candidate_paths = [
+        os.path.join(settings.BASE_DIR, 'flutter_app', 'build', 'app', 'outputs', 'apk', 'release', 'app-release.apk'),
+        os.path.join(settings.BASE_DIR, 'flutter_app', 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk'),
+    ]
+    for apk_path in candidate_paths:
+        if os.path.exists(apk_path):
+            stat = os.stat(apk_path)
+            size_mb = round(stat.st_size / (1024 * 1024), 1)
+            modified_dt = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y %H:%M')
+            return Response({
+                'available': True,
+                'filename': 'TantoTango-Manager.apk',
+                'size_bytes': stat.st_size,
+                'size_mb': size_mb,
+                'modified_at': modified_dt,
+                'download_url': '/api/app/download-apk/',
+            })
+    return Response({
+        'available': False,
+        'message': 'File APK non ancora generato sul server.',
+    })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def download_mobile_apk(request):
+    """Scarica il file APK dell'app Android TantoTango Manager."""
+    import os
+    from django.conf import settings
+
+    candidate_paths = [
+        os.path.join(settings.BASE_DIR, 'flutter_app', 'build', 'app', 'outputs', 'apk', 'release', 'app-release.apk'),
+        os.path.join(settings.BASE_DIR, 'flutter_app', 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk'),
+    ]
+    for apk_path in candidate_paths:
+        if os.path.exists(apk_path):
+            response = FileResponse(
+                open(apk_path, 'rb'),
+                as_attachment=True,
+                filename='TantoTango-Manager.apk',
+                content_type='application/vnd.android.package-archive',
+            )
+            return response
+    raise Http404("File APK non trovato sul server.")

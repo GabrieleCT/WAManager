@@ -3,6 +3,7 @@ import 'allievi_screen.dart';
 import 'prospects_screen.dart';
 import 'coppie_screen.dart';
 import 'jolly_panel_screen.dart';
+import 'sincronizzazione_contatti_screen.dart';
 
 class AnagraficaAllieviScreen extends StatefulWidget {
   final int initialTab;
@@ -19,9 +20,9 @@ class _AnagraficaAllieviScreenState extends State<AnagraficaAllieviScreen> with 
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 3),
+      initialIndex: widget.initialTab.clamp(0, 4),
     );
   }
 
@@ -35,9 +36,11 @@ class _AnagraficaAllieviScreenState extends State<AnagraficaAllieviScreen> with 
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Anagrafica Allievi'),
+        title: const Text('Anagrafica'),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(
               icon: Icon(Icons.people),
@@ -55,6 +58,10 @@ class _AnagraficaAllieviScreenState extends State<AnagraficaAllieviScreen> with 
               icon: Icon(Icons.star),
               text: 'Jolly',
             ),
+            Tab(
+              icon: Icon(Icons.sync_alt),
+              text: 'Sincronizzazione',
+            ),
           ],
         ),
       ),
@@ -65,9 +72,9 @@ class _AnagraficaAllieviScreenState extends State<AnagraficaAllieviScreen> with 
           ProspectsScreen(embedded: true),
           CoppieScreen(embedded: true),
           JollyPanelScreen(embedded: true),
+          SincronizzazioneContattiScreen(embedded: true),
         ],
       ),
     );
   }
 }
-

@@ -68,6 +68,8 @@ class Corso {
     this.pagantiCount = 0,
   });
 
+  String get nomeDisplay => '$scuolaNome - $livelloDisplay ($giornoSettimanaDisplay $orario)';
+
   String get giornoSettimanaDisplay {
     const map = {
       'LUNEDI': 'Lunedì',
@@ -167,6 +169,9 @@ class Allievo {
   final String numeroTessera;
   final String? dataEmissioneTessera;
   final String statoTessera;
+  final String email;
+  final String? googleContactId;
+  final String? googleSyncError;
 
   Allievo({
     required this.id,
@@ -175,6 +180,7 @@ class Allievo {
     required this.ruolo,
     required this.ruoloDisplay,
     required this.telefono,
+    this.email = '',
     this.corsoId,
     this.corsoDescrizione,
     this.scuolaId,
@@ -196,6 +202,8 @@ class Allievo {
     this.numeroTessera = '',
     this.dataEmissioneTessera,
     this.statoTessera = 'NON TESSERATO',
+    this.googleContactId,
+    this.googleSyncError,
   });
 
   String get nomeCompleto => '$nome $cognome';
@@ -213,6 +221,13 @@ class Allievo {
   }
 
   factory Allievo.fromJson(Map<String, dynamic> json) {
+    String? googleSyncError;
+    if (json['google_sync'] != null && json['google_sync'] is Map) {
+      final gs = json['google_sync'] as Map;
+      if (gs['success'] == false && gs['skipped'] != true) {
+        googleSyncError = gs['error']?.toString();
+      }
+    }
     return Allievo(
       id: json['id'] ?? '',
       nome: json['nome'] ?? '',
@@ -220,6 +235,7 @@ class Allievo {
       ruolo: json['ruolo'] ?? 'leader',
       ruoloDisplay: json['ruolo_display'] ?? json['ruolo'] ?? '',
       telefono: json['telefono'] ?? '',
+      email: json['email'] ?? '',
       corsoId: json['corso'],
       corsoDescrizione: json['corso_descrizione'],
       scuolaId: json['scuola_id'],
@@ -241,6 +257,8 @@ class Allievo {
       numeroTessera: json['numero_tessera'] ?? '',
       dataEmissioneTessera: json['data_emissione_tessera'],
       statoTessera: json['stato_tessera'] ?? 'NON TESSERATO',
+      googleContactId: json['google_contact_id'],
+      googleSyncError: googleSyncError,
     );
   }
 
@@ -249,6 +267,7 @@ class Allievo {
     'cognome': cognome,
     'ruolo': ruolo,
     'telefono': telefono,
+    'email': email,
     'corso': corsoId,
     'recensione': recensione,
     'livello': livello,
@@ -786,6 +805,8 @@ class GoogleDriveConfig {
   final String folderRicevuteNome;
   final String folderTessereId;
   final String folderTessereNome;
+  final String folderVerbaliId;
+  final String folderVerbaliNome;
   final bool isActive;
   final String? lastTestedAt;
   final String lastTestStatus;
@@ -813,6 +834,8 @@ class GoogleDriveConfig {
     this.folderRicevuteNome = '',
     this.folderTessereId = '',
     this.folderTessereNome = '',
+    this.folderVerbaliId = '',
+    this.folderVerbaliNome = '',
     required this.isActive,
     this.lastTestedAt,
     required this.lastTestStatus,
@@ -844,6 +867,8 @@ class GoogleDriveConfig {
       folderRicevuteNome: json['folder_ricevute_nome'] ?? '',
       folderTessereId: json['folder_tessere_id'] ?? '',
       folderTessereNome: json['folder_tessere_nome'] ?? '',
+      folderVerbaliId: json['folder_verbali_id'] ?? '',
+      folderVerbaliNome: json['folder_verbali_nome'] ?? '',
       isActive: json['is_active'] ?? true,
       lastTestedAt: json['last_tested_at'],
       lastTestStatus: json['last_test_status'] ?? '',
@@ -858,6 +883,56 @@ class GoogleDriveConfig {
     if (fileSize < 1024) return '$fileSize B';
     if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
     return '${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+}
+
+class GoogleContactsConfig {
+  final String id;
+  final String clientId;
+  final bool hasClientSecret;
+  final bool isConnected;
+  final String userEmail;
+  final String userName;
+  final String syncGroupName;
+  final bool isActive;
+  final String? lastSyncAt;
+  final String lastTestStatus;
+  final String lastTestMessage;
+  final String createdAt;
+  final String updatedAt;
+
+  GoogleContactsConfig({
+    required this.id,
+    this.clientId = '',
+    this.hasClientSecret = false,
+    this.isConnected = false,
+    this.userEmail = '',
+    this.userName = '',
+    this.syncGroupName = 'Allievi Tango',
+    this.isActive = true,
+    this.lastSyncAt,
+    this.lastTestStatus = '',
+    this.lastTestMessage = '',
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory GoogleContactsConfig.fromJson(Map<String, dynamic> json) {
+    return GoogleContactsConfig(
+      id: json['id'] ?? '',
+      clientId: json['client_id'] ?? '',
+      hasClientSecret: json['has_client_secret'] ?? false,
+      isConnected: json['is_connected'] ?? false,
+      userEmail: json['user_email'] ?? '',
+      userName: json['user_name'] ?? '',
+      syncGroupName: json['sync_group_name'] ?? 'Allievi Tango',
+      isActive: json['is_active'] ?? true,
+      lastSyncAt: json['last_sync_at'],
+      lastTestStatus: json['last_test_status'] ?? '',
+      lastTestMessage: json['last_test_message'] ?? '',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+    );
   }
 }
 
@@ -1406,3 +1481,157 @@ class MembroDirettivo {
 
 
 
+
+
+class GoogleContactComparisonRecord {
+  final String? systemId;
+  final String? googleId;
+  final String nome;
+  final String cognome;
+  final String telefono;
+  final String email;
+  final bool isProspect;
+  final String status;
+  final String action;
+  final List<String> differences;
+  final Map<String, dynamic>? systemData;
+  final Map<String, dynamic>? googleData;
+
+  GoogleContactComparisonRecord({
+    this.systemId,
+    this.googleId,
+    required this.nome,
+    required this.cognome,
+    required this.telefono,
+    required this.email,
+    required this.isProspect,
+    required this.status,
+    required this.action,
+    required this.differences,
+    this.systemData,
+    this.googleData,
+  });
+
+  String get nomeCompleto => '$nome $cognome'.trim();
+
+  String get statusDisplay {
+    switch (status) {
+      case 'synced':
+        return 'Sincronizzato';
+      case 'modified_system':
+        return 'Modificato nel sistema';
+      case 'modified_google':
+        return 'Modificato su Google';
+      case 'only_system':
+        return 'Presente solo nel sistema';
+      case 'only_google':
+        return 'Presente solo su Google';
+      default:
+        return status;
+    }
+  }
+
+  factory GoogleContactComparisonRecord.fromJson(Map<String, dynamic> json) {
+    return GoogleContactComparisonRecord(
+      systemId: json['system_id'],
+      googleId: json['google_id'],
+      nome: json['nome'] ?? '',
+      cognome: json['cognome'] ?? '',
+      telefono: json['telefono'] ?? '',
+      email: json['email'] ?? '',
+      isProspect: json['is_prospect'] ?? false,
+      status: json['status'] ?? 'synced',
+      action: json['action'] ?? 'none',
+      differences: (json['differences'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      systemData: json['system_data'] is Map ? Map<String, dynamic>.from(json['system_data']) : null,
+      googleData: json['google_data'] is Map ? Map<String, dynamic>.from(json['google_data']) : null,
+    );
+  }
+}
+
+class GoogleContactComparisonReport {
+  final bool connected;
+  final String? message;
+  final String? error;
+  final String? userEmail;
+  final DateTime? lastSyncAt;
+  final String lastSyncStatus;
+  final String? lastSyncSummary;
+  final Map<String, int> stats;
+  final List<GoogleContactComparisonRecord> records;
+
+  GoogleContactComparisonReport({
+    required this.connected,
+    this.message,
+    this.error,
+    this.userEmail,
+    this.lastSyncAt,
+    required this.lastSyncStatus,
+    this.lastSyncSummary,
+    required this.stats,
+    required this.records,
+  });
+
+  factory GoogleContactComparisonReport.fromJson(Map<String, dynamic> json) {
+    final rawStats = json['stats'] is Map ? json['stats'] as Map : {};
+    final statsMap = {
+      'total': (rawStats['total'] as num?)?.toInt() ?? 0,
+      'synced': (rawStats['synced'] as num?)?.toInt() ?? 0,
+      'modified_system': (rawStats['modified_system'] as num?)?.toInt() ?? 0,
+      'modified_google': (rawStats['modified_google'] as num?)?.toInt() ?? 0,
+      'only_system': (rawStats['only_system'] as num?)?.toInt() ?? 0,
+      'only_google': (rawStats['only_google'] as num?)?.toInt() ?? 0,
+    };
+
+    final rawRecords = json['records'] as List? ?? [];
+    return GoogleContactComparisonReport(
+      connected: json['connected'] ?? false,
+      message: json['message'],
+      error: json['error'],
+      userEmail: json['user_email'],
+      lastSyncAt: json['last_sync_at'] != null ? DateTime.tryParse(json['last_sync_at']) : null,
+      lastSyncStatus: json['last_sync_status'] ?? '',
+      lastSyncSummary: json['last_sync_summary'],
+      stats: statsMap,
+      records: rawRecords.map((r) => GoogleContactComparisonRecord.fromJson(r as Map<String, dynamic>)).toList(),
+    );
+  }
+}
+
+class GoogleContactsSyncLog {
+  final String id;
+  final String timestampDisplay;
+  final String status;
+  final String action;
+  final String details;
+  final int itemsCreated;
+  final int itemsUpdated;
+  final int itemsDeleted;
+  final int errorsCount;
+
+  GoogleContactsSyncLog({
+    required this.id,
+    required this.timestampDisplay,
+    required this.status,
+    required this.action,
+    required this.details,
+    required this.itemsCreated,
+    required this.itemsUpdated,
+    required this.itemsDeleted,
+    required this.errorsCount,
+  });
+
+  factory GoogleContactsSyncLog.fromJson(Map<String, dynamic> json) {
+    return GoogleContactsSyncLog(
+      id: json['id'] ?? '',
+      timestampDisplay: json['timestamp_display'] ?? '',
+      status: json['status'] ?? 'success',
+      action: json['action'] ?? '',
+      details: json['details'] ?? '',
+      itemsCreated: (json['items_created'] as num?)?.toInt() ?? 0,
+      itemsUpdated: (json['items_updated'] as num?)?.toInt() ?? 0,
+      itemsDeleted: (json['items_deleted'] as num?)?.toInt() ?? 0,
+      errorsCount: (json['errors_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

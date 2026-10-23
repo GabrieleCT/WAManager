@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
     ConfigurazioneASD, MembroDirettivo
 )
 
@@ -123,6 +123,12 @@ class RicevutaAdmin(admin.ModelAdmin):
 class GoogleDriveConfigAdmin(admin.ModelAdmin):
     list_display = ('client_email', 'project_id', 'is_active', 'last_test_status', 'last_tested_at', 'updated_at')
     readonly_fields = ('client_email', 'project_id', 'private_key_id', 'last_test_status', 'last_test_message', 'last_tested_at')
+
+
+@admin.register(GoogleContactsConfig)
+class GoogleContactsConfigAdmin(admin.ModelAdmin):
+    list_display = ('user_email', 'user_name', 'is_active', 'last_test_status', 'last_sync_at', 'updated_at')
+    readonly_fields = ('user_email', 'user_name', 'last_test_status', 'last_test_message', 'last_sync_at')
 
 
 @admin.register(ConfigurazioneASD)

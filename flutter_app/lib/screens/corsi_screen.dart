@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
+import '../widgets/google_sync_dialog.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -538,6 +539,18 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     }
                     return;
                   }
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                    checkAndShowGoogleSyncError(
+                      context,
+                      entityType: 'Prospect',
+                      name: res.nomeCompleto,
+                      error: res.googleSyncError,
+                    );
+                  }
+                  _fetchIscritti(c.id);
+                  _loadAll();
+                  return;
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
                 _fetchIscritti(c.id);
@@ -796,6 +809,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     return;
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                    checkAndShowGoogleSyncError(
+                      context,
+                      entityType: a.isProspect ? 'Prospect' : 'Allievo',
+                      name: res.nomeCompleto,
+                      error: res.googleSyncError,
+                    );
+                  }
                   _fetchIscritti(c.id);
                   _loadAll();
                 },
@@ -813,7 +834,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Opzioni Allievo/Prospect'),
-        content: Text('Cosa desideri fare con ${a.nomeCompleto}?'),
+        content: Text(
+          'Cosa desideri fare con ${a.nomeCompleto}?\n\n'
+          'Nota: "Elimina dal DB" rimuoverà l\'allievo anche dai gruppi WhatsApp, dalla chat WhatsApp e dalla Rubrica Google.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx), 
@@ -832,7 +856,21 @@ class _CorsiScreenState extends State<CorsiScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               Navigator.pop(ctx);
-              await _api.deleteAllievo(a.id);
+              final ok = await _api.deleteAllievo(a.id);
+              if (mounted) {
+                if (ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Allievo ${a.nomeCompleto} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
+                      backgroundColor: Colors.green.shade800,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Errore durante l\'eliminazione dal DB.')),
+                  );
+                }
+              }
               _fetchIscritti(c.id);
               _loadAll();
             },
@@ -1561,11 +1599,20 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 icon: const Icon(Icons.school, size: 15),
                                 label: const Text('Converti ad Allievo', style: TextStyle(fontSize: 11)),
                                 onPressed: () async {
-                                  final ok = await _api.convertProspectToStudent(p.id, c.id);
-                                  if (ok && mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
-                                    );
+                                  final res = await _api.convertProspectToStudent(p.id, c.id);
+                                  if (res != null && mounted) {
+                                    if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                                      checkAndShowGoogleSyncError(
+                                        context,
+                                        entityType: 'Allievo',
+                                        name: res.nomeCompleto,
+                                        error: res.googleSyncError,
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
+                                      );
+                                    }
                                     _fetchIscritti(c.id);
                                     _loadAll();
                                   }

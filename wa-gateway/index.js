@@ -5,6 +5,10 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
+const LOG_FILE = path.join(__dirname, 'gateway.log');
+const POLLS_FILE = path.join(__dirname, 'baileys_polls.json');
+const AUTH_DIR = path.join(__dirname, 'baileys_auth_info');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const qrcodeData = require('qrcode');
@@ -26,12 +30,20 @@ const DJANGO_WEBHOOK_URL = process.env.DJANGO_WEBHOOK_URL || (DJANGO_BASE_URL + 
 
 function logToFile(msg) {
     const logMsg = new Date().toISOString() + ' - ' + msg + '\n';
-    fs.appendFileSync('gateway.log', logMsg);
+    fs.appendFileSync(LOG_FILE, logMsg);
     console.log(msg);
 }
 
+process.on('uncaughtException', (err) => {
+    logToFile('[UNCAUGHT EXCEPTION] ' + (err ? (err.message + '\n' + err.stack) : 'Unknown error'));
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    logToFile('[UNHANDLED REJECTION] ' + (reason && reason.stack ? reason.stack : String(reason)));
+});
+
 // Gestione manuale dei sondaggi in memoria per decifrare i voti senza usare makeInMemoryStore
-const POLLS_FILE = './baileys_polls.json';
+// POLLS_FILE defined above
 let sentPolls = {};
 if (fs.existsSync(POLLS_FILE)) {
     try {
@@ -49,7 +61,7 @@ let sock = null;
 
 async function connectToWhatsApp() {
     logToFile("Inizializzazione Baileys...");
-    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     
     sock = makeWASocket({
         auth: state,
@@ -423,6 +435,38 @@ app.listen(PORT, () => {
     console.log(`Gateway API in ascolto su porta ${PORT}`);
 });
 
+// Proxy HTTP porta 8082 -> Django (porta 50082) per callback Google OAuth e retrocompatibilita
+try {
+    const http = require('http');
+    const proxy8082 = http.createServer((req, res) => {
+        const targetPort = parseInt(DJANGO_PORT) || 50082;
+        const options = {
+            hostname: '127.0.0.1',
+            port: targetPort,
+            path: req.url,
+            method: req.method,
+            headers: { ...req.headers, host: `127.0.0.1:${targetPort}` }
+        };
+        const proxyReq = http.request(options, (proxyRes) => {
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            proxyRes.pipe(res, { end: true });
+        });
+        proxyReq.on('error', (err) => {
+            res.writeHead(502, { 'Content-Type': 'text/plain' });
+            res.end('Proxy Error (8082 -> ' + targetPort + '): ' + err.message);
+        });
+        req.pipe(proxyReq, { end: true });
+    });
+    proxy8082.listen(8082, '0.0.0.0', () => {
+        console.log(`Proxy porta 8082 -> Django (${DJANGO_PORT || '50082'}) attivo per callback OAuth.`);
+    });
+    proxy8082.on('error', (err) => {
+        console.log(`Avviso: proxy su porta 8082 non avviato (${err.message})`);
+    });
+} catch (e) {
+    console.log(`Avviso inizializzazione proxy 8082: ${e.message}`);
+}
+
 // Endpoint per stato connessione e QR
 app.get('/api/status', (req, res) => {
     res.json({
@@ -655,6 +699,321 @@ app.post('/api/groups/:groupId/participants/add', async (req, res) => {
     } catch (error) {
         logToFile(`Errore aggiunta partecipante gruppo: ${error.message || error}`);
         res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});
+
+// Funzione helper per normalizzare numero di telefono in JID utente WhatsApp
+function normalizeToUserJid(phone) {
+    if (!phone) return null;
+    let raw = String(phone).trim();
+    if (raw.endsWith('@lid') || raw.endsWith('@s.whatsapp.net')) {
+        return raw;
+    }
+    let digits = raw.replace(/\D/g, '');
+    if (!digits) return null;
+    if (!digits.startsWith('39') && digits.length === 10) {
+        digits = '39' + digits;
+    }
+    return `${digits}@s.whatsapp.net`;
+}
+
+// Funzione helper per trovare tutti i JID (numero reale e LID associati) per un contatto
+async function findAllTargetJidsForContact(phoneOrJid) {
+    const jids = new Set();
+    if (!phoneOrJid) return jids;
+
+    const raw = String(phoneOrJid).trim();
+    if (raw.endsWith('@lid')) {
+        jids.add(raw);
+    } else if (raw.endsWith('@s.whatsapp.net')) {
+        jids.add(raw);
+    }
+
+    const cleanDigits = raw.replace(/\D/g, '');
+    if (cleanDigits) {
+        let phoneDigits = cleanDigits;
+        if (!phoneDigits.startsWith('39') && phoneDigits.length === 10) {
+            phoneDigits = '39' + phoneDigits;
+        }
+        jids.add(`${phoneDigits}@s.whatsapp.net`);
+
+        const shortDigits = phoneDigits.startsWith('39') && phoneDigits.length > 10 ? phoneDigits.substring(2) : phoneDigits;
+
+        // 1. Cerca nei gruppi partecipanti per trovare LID
+        try {
+            if (sock) {
+                const allGroups = await sock.groupFetchAllParticipating();
+                for (const gid of Object.keys(allGroups)) {
+                    const g = allGroups[gid];
+                    if (!g || !g.participants) continue;
+                    for (const part of g.participants) {
+                        const pDigits = (part.phoneNumber || part.id || '').replace(/\D/g, '');
+                        if (pDigits === phoneDigits || pDigits.endsWith(shortDigits) || shortDigits.endsWith(pDigits)) {
+                            if (part.lid) {
+                                jids.add(part.lid.endsWith('@lid') ? part.lid : `${part.lid}@lid`);
+                            }
+                            if (part.id && part.id.endsWith('@lid')) {
+                                jids.add(part.id);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (gErr) {
+            logToFile(`Avviso ricerca LID nei gruppi per ${phoneOrJid}: ${gErr.message}`);
+        }
+
+        // 2. Cerca in gateway.log per estrarre eventuali LID storici associati a questo numero
+        if (fs.existsSync(LOG_FILE)) {
+            try {
+                const logData = fs.readFileSync(LOG_FILE, 'utf8');
+                const logLines = logData.split('\n');
+                for (const line of logLines) {
+                    if (line.includes(phoneDigits) || line.includes(shortDigits)) {
+                        const matchLids = line.match(/(\d+@lid)/g);
+                        if (matchLids) {
+                            matchLids.forEach(l => jids.add(l));
+                        }
+                    }
+                }
+            } catch (lErr) {
+                logToFile(`Avviso ricerca LID in gateway.log: ${lErr.message}`);
+            }
+        }
+    }
+
+    return jids;
+}
+
+// Funzione helper per cancellare definitivamente una chat (clear + delete per ciascun JID)
+async function executeChatDeletion(targetJid) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lastMessagesPayload = {
+        lastMessageTimestamp: nowSec
+    };
+
+    let success = false;
+    // 1. Clear chat messages
+    try {
+        await sock.chatModify({
+            clear: true,
+            lastMessages: lastMessagesPayload
+        }, targetJid);
+        logToFile(`Chat con ${targetJid} ripulita con clearChatAction.`);
+        success = true;
+    } catch (clearErr) {
+        logToFile(`Tentativo clearChatAction per ${targetJid}: ${clearErr.message}`);
+    }
+
+    // 2. Delete chat container
+    try {
+        await sock.chatModify({
+            delete: true,
+            lastMessages: lastMessagesPayload
+        }, targetJid);
+        logToFile(`Chat con ${targetJid} eliminata con deleteChatAction.`);
+        success = true;
+    } catch (delErr) {
+        logToFile(`Tentativo deleteChatAction per ${targetJid}: ${delErr.message}`);
+    }
+
+    return success;
+}
+
+// Funzione helper per risolvere groupId/link d'invito in JID reale del gruppo
+async function resolveTargetGroupId(inputParam) {
+    if (!inputParam) return null;
+    let raw = String(inputParam).trim();
+    if (raw.includes('?')) raw = raw.split('?')[0].trim();
+    let clean = raw.replace('https://chat.whatsapp.com/', '')
+                   .replace('http://chat.whatsapp.com/', '')
+                   .replace('chat.whatsapp.com/', '')
+                   .replace('@g.us', '')
+                   .trim();
+    const isRealJid = (clean.startsWith('120363') && /^\d+$/.test(clean)) || clean.includes('-');
+    if (isRealJid) {
+        let jid = clean.endsWith('@g.us') ? clean : `${clean}@g.us`;
+        return jid.replace('+', '');
+    }
+    if (clean.length >= 18 && clean.length <= 32) {
+        try {
+            const inviteInfo = await sock.groupGetInviteInfo(clean);
+            if (inviteInfo && inviteInfo.id) {
+                let jid = inviteInfo.id.endsWith('@g.us') ? inviteInfo.id : `${inviteInfo.id}@g.us`;
+                return jid.replace('+', '');
+            }
+        } catch (invErr) {
+            logToFile(`Tentativo groupGetInviteInfo fallito per ${clean}: ${invErr.message}`);
+        }
+    }
+    let jid = clean.endsWith('@g.us') ? clean : `${clean}@g.us`;
+    return jid.replace('+', '');
+}
+
+// Endpoint per rimuovere un partecipante da un gruppo WhatsApp
+app.post('/api/groups/:groupId/participants/remove', async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+
+        const { phone } = req.body;
+        if (!phone) {
+            return res.status(400).json({ success: false, error: 'Numero di telefono mancante.' });
+        }
+
+        const userJid = normalizeToUserJid(phone);
+        const targetJid = await resolveTargetGroupId(req.params.groupId);
+
+        logToFile(`Rimozione utente ${userJid} dal gruppo ${targetJid}...`);
+        const result = await sock.groupParticipantsUpdate(targetJid, [userJid], 'remove');
+        logToFile(`Risultato groupParticipantsUpdate (remove): ${JSON.stringify(result)}`);
+
+        return res.json({
+            success: true,
+            message: 'Allievo rimosso con successo dal gruppo WhatsApp!',
+            userJid: userJid,
+            result: result
+        });
+    } catch (error) {
+        logToFile(`Errore rimozione partecipante gruppo: ${error.message || error}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});
+
+// Endpoint per eliminare la chat WhatsApp (singola) con un utente
+app.post('/api/chats/delete', async (req, res) => {
+    try {
+        if (!sock || currentStatus !== 'CONNECTED') {
+            return res.status(503).json({
+                success: false,
+                error: 'Client WhatsApp non connesso (stato attuale: ' + currentStatus + ')'
+            });
+        }
+
+        const { phone } = req.body;
+        if (!phone) {
+            return res.status(400).json({ success: false, error: 'Numero di telefono mancante.' });
+        }
+
+        const targetJids = await findAllTargetJidsForContact(phone);
+        logToFile(`Richiesta eliminazione chat per target JIDs: ${Array.from(targetJids).join(', ')}...`);
+
+        let anySuccess = false;
+        for (const jid of targetJids) {
+            const ok = await executeChatDeletion(jid);
+            if (ok) anySuccess = true;
+        }
+
+        return res.json({
+            success: anySuccess,
+            jids: Array.from(targetJids),
+            message: anySuccess ? 'Chat WhatsApp eliminata con successo.' : 'Tentativo eliminazione chat completato.'
+        });
+    } catch (error) {
+        logToFile(`Errore eliminazione chat: ${error.message || error}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
+    }
+});
+
+// Endpoint unificato per la pulizia completa di un contatto eliminato (gruppi + chat)
+app.post('/api/contacts/cleanup', async (req, res) => {
+    try {
+        const { phone, groups = [], removeFromAllParticipatingGroups = true, deleteChat = true } = req.body;
+        if (!phone) {
+            return res.status(400).json({ success: false, error: 'Numero di telefono mancante.' });
+        }
+
+        if (!sock || currentStatus !== 'CONNECTED') {
+            logToFile(`Cleanup WhatsApp saltato per ${phone}: client non connesso (${currentStatus}).`);
+            return res.status(200).json({
+                success: false,
+                skipped: true,
+                warning: 'Client WhatsApp non connesso. Operazione registrata ma non eseguita su WhatsApp.',
+                phone: phone
+            });
+        }
+
+        const userJid = normalizeToUserJid(phone);
+        const removedFrom = [];
+        const failedFrom = [];
+
+        // 1. Risolvi e raccogli i gruppi specificati
+        const targetGroups = new Set();
+        for (const g of groups) {
+            if (g && String(g).trim()) {
+                const resolved = await resolveTargetGroupId(String(g).trim());
+                if (resolved) targetGroups.add(resolved);
+            }
+        }
+
+        // 2. Se richiesto, scansiona i gruppi in cui il bot partecipa e trova dove l'utente è presente
+        if (removeFromAllParticipatingGroups) {
+            try {
+                const allParticipating = await sock.groupFetchAllParticipating();
+                const userDigits = userJid.split('@')[0];
+                for (const [gid, meta] of Object.entries(allParticipating)) {
+                    if (meta && meta.participants) {
+                        const isMember = meta.participants.some(p => {
+                            const pDigits = (p.id || '').split('@')[0].replace(/\D/g, '');
+                            return p.id === userJid || (pDigits && pDigits === userDigits);
+                        });
+                        if (isMember) {
+                            targetGroups.add(gid);
+                        }
+                    }
+                }
+            } catch (scanErr) {
+                logToFile(`Avviso scansione gruppi partecipanti per ${userJid}: ${scanErr.message}`);
+            }
+        }
+
+        // 3. Rimuovi dai gruppi
+        for (const gid of targetGroups) {
+            try {
+                logToFile(`Rimozione di ${userJid} dal gruppo ${gid}...`);
+                await sock.groupParticipantsUpdate(gid, [userJid], 'remove');
+                removedFrom.push(gid);
+            } catch (remErr) {
+                logToFile(`Impossibile rimuovere ${userJid} dal gruppo ${gid}: ${remErr.message}`);
+                failedFrom.push({ groupId: gid, error: remErr.message });
+            }
+        }
+
+        // 4. Elimina la chat individuale per tutti i JID associati (numero reale e LID)
+        let chatDeleted = false;
+        if (deleteChat) {
+            const targetJids = await findAllTargetJidsForContact(phone);
+            logToFile(`Cleanup eliminazione chat per JIDs: ${Array.from(targetJids).join(', ')}...`);
+            for (const jid of targetJids) {
+                const ok = await executeChatDeletion(jid);
+                if (ok) chatDeleted = true;
+            }
+        }
+
+        return res.json({
+            success: true,
+            userJid: userJid,
+            removedFromGroups: removedFrom,
+            failedGroups: failedFrom,
+            chatDeleted: chatDeleted,
+            message: `Pulizia WhatsApp completata. Rimosso da ${removedFrom.length} gruppi, chat eliminata: ${chatDeleted}.`
+        });
+    } catch (error) {
+        logToFile(`Errore endpoint /api/contacts/cleanup: ${error.message || error}`);
+        return res.status(500).json({
             success: false,
             error: error.message || String(error)
         });

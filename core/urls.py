@@ -25,6 +25,7 @@ router.register(r'gemini-logs', api_views.GeminiLogViewSet, basename='gemini-log
 router.register(r'document-templates', api_views.DocumentTemplateViewSet, basename='document-template')
 router.register(r'ricevute', api_views.RicevutaViewSet, basename='ricevuta')
 router.register(r'google-drive', api_views.GoogleDriveConfigViewSet, basename='google-drive')
+router.register(r'google-contacts', api_views.GoogleContactsConfigViewSet, basename='google-contacts')
 router.register(r'prima-nota', api_views.MovimentoPrimaNotaViewSet, basename='prima-nota')
 router.register(r'categorie-bilancio', api_views.CategoriaBilancioViewSet, basename='categoria-bilancio')
 router.register(r'asd', api_views.ConfigurazioneASDViewSet, basename='asd')
@@ -36,6 +37,10 @@ urlpatterns = [
     path('api/auth/login/', api_views.api_login, name='api_login'),
     path('api/auth/logout/', api_views.api_logout, name='api_logout'),
     path('api/auth/user/', api_views.api_current_user, name='api_current_user'),
+
+    # 2.5 Download & Info Pacchetto Mobile APK
+    path('api/app/apk-info/', api_views.get_apk_info, name='get_apk_info'),
+    path('api/app/download-apk/', api_views.download_mobile_apk, name='download_mobile_apk'),
 
     # 2.4 Invio messaggi Jolly
     path('api/jolly/send-message/', api_views.send_jolly_message, name='api_send_jolly_message'),

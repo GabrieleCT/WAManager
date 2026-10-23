@@ -118,3 +118,59 @@ def generate_matches(lezione_id):
         'rotating_followers': sum(1 for m in matches_to_create if m.is_rotation and m.follower)
     }
 
+
+
+
+def cleanup_allievo_on_deletion(allievo):
+    """
+    Esegue la rimozione coordinata dell'allievo da tutti i servizi esterni:
+    1. Rimozione dai gruppi WhatsApp (corso e scuola dell'allievo, più eventuale scansione gruppi)
+    2. Eliminazione della chat WhatsApp individuale con l'allievo
+    3. Eliminazione del contatto dalla Rubrica Google (Google Contacts / People API)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    results = {
+        'allievo_id': str(allievo.id),
+        'nome': f"{allievo.nome} {allievo.cognome}",
+        'telefono': getattr(allievo, 'telefono', ''),
+        'whatsapp': None,
+        'google_contacts': None
+    }
+
+    # 1 & 2. WhatsApp: rimozione dai gruppi + eliminazione chat
+    phone = getattr(allievo, 'telefono', '')
+    if phone:
+        group_ids = []
+        if getattr(allievo, 'corso', None):
+            if getattr(allievo.corso, 'gruppo_whatsapp', None):
+                group_ids.append(allievo.corso.gruppo_whatsapp)
+            if getattr(allievo.corso, 'scuola', None) and getattr(allievo.corso.scuola, 'gruppo_whatsapp', None):
+                group_ids.append(allievo.corso.scuola.gruppo_whatsapp)
+
+        try:
+            from .wa_client import cleanup_whatsapp_contact
+            wa_res = cleanup_whatsapp_contact(
+                phone=phone,
+                group_ids=group_ids,
+                remove_from_all_groups=True,
+                delete_chat=True
+            )
+            results['whatsapp'] = wa_res
+            logger.info(f"Cleanup WhatsApp per allievo {allievo.id} ({phone}): {wa_res}")
+        except Exception as e:
+            logger.error(f"Errore cleanup WhatsApp per allievo {allievo.id}: {e}")
+            results['whatsapp'] = {'success': False, 'error': str(e)}
+
+    # 3. Rubrica Google (Google Contacts)
+    try:
+        from .google_contacts_service import delete_google_contact_for_allievo
+        google_res = delete_google_contact_for_allievo(allievo)
+        results['google_contacts'] = google_res
+        logger.info(f"Cleanup Google Contacts per allievo {allievo.id}: {google_res}")
+    except Exception as e:
+        logger.error(f"Errore cleanup Google Contacts per allievo {allievo.id}: {e}")
+        results['google_contacts'] = {'success': False, 'error': str(e)}
+
+    return results

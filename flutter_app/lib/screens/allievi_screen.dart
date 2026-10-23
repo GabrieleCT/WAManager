@@ -4,6 +4,7 @@ import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../widgets/google_sync_dialog.dart';
 
 class AllieviScreen extends StatefulWidget {
   final bool embedded;
@@ -669,12 +670,21 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(allievo == null ? 'Allievo salvato con successo!' : 'Allievo aggiornato con successo!'),
-                        backgroundColor: Colors.green.shade800,
-                      ),
-                    );
+                    if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                      checkAndShowGoogleSyncError(
+                        context,
+                        entityType: 'Allievo',
+                        name: res.nomeCompleto,
+                        error: res.googleSyncError,
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(allievo == null ? 'Allievo salvato con successo!' : 'Allievo aggiornato con successo!'),
+                          backgroundColor: Colors.green.shade800,
+                        ),
+                      );
+                    }
                   }
                   _loadAllievi();
                 },
@@ -1200,16 +1210,43 @@ class _AllieviScreenState extends State<AllieviScreen> {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Conferma'),
-                    content: const Text('Sei sicuro di voler eliminare questo allievo?'),
+                    title: const Text('Conferma eliminazione allievo'),
+                    content: Text(
+                      'Sei sicuro di voler eliminare l\'allievo ${a.nome} ${a.cognome}?\n\n'
+                      'L\'operazione comporterà automaticamente:\n'
+                      '• Rimozione dai gruppi WhatsApp (corso e scuola)\n'
+                      '• Eliminazione della chat WhatsApp\n'
+                      '• Eliminazione del contatto dalla Rubrica Google',
+                    ),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Elimina', style: TextStyle(color: Colors.red))),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Elimina definitivamente'),
+                      ),
                     ],
                   ),
                 );
                 if (confirm == true) {
-                  await _api.deleteAllievo(a.id);
+                  final ok = await _api.deleteAllievo(a.id);
+                  if (mounted) {
+                    if (ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Allievo ${a.nome} ${a.cognome} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
+                          backgroundColor: Colors.green.shade800,
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Errore durante l\'eliminazione dell\'allievo.'),
+                          backgroundColor: Colors.red.shade800,
+                        ),
+                      );
+                    }
+                  }
                   _loadAllievi();
                 }
               },

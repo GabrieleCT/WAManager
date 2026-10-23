@@ -53,7 +53,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
     try {
       final file = await FilePicker.pickFile(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'docx', 'doc'],
       );
 
       if (file == null) return;
@@ -203,7 +203,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Identifica i due template specifici
+    // Identifica i tre template specifici
     final ricevutaTmpl = _templates.firstWhere(
       (t) => t.chiave == 'ricevuta',
       orElse: () => DocumentTemplate(
@@ -221,6 +221,16 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
         chiave: 'modulo_tesseramento',
         nome: 'Modulo di Tesseramento',
         descrizione: 'Modulo PDF ufficiale per la richiesta o il rinnovo del tesseramento annuale degli allievi.',
+      ),
+    );
+
+    final verbaleTmpl = _templates.firstWhere(
+      (t) => t.chiave == 'verbale_rendiconto',
+      orElse: () => DocumentTemplate(
+        id: '',
+        chiave: 'verbale_rendiconto',
+        nome: 'Verbale Approvazione Rendiconto',
+        descrizione: 'Modello PDF/DOCX ufficiale per il verbale dell\'assemblea ordinaria dei soci di approvazione del rendiconto economico-finanziario.',
       ),
     );
 
@@ -262,7 +272,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Carica qui i file PDF dei modelli ufficiali. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, mentre il modulo di tesseramento serve per le nuove iscrizioni e rinnovi tessere.',
+                              'Carica qui i file PDF o modelli ufficiali dei documenti. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, il modulo di tesseramento per nuove iscrizioni e rinnovi, e il modello di verbale per l\'approvazione del rendiconto economico-finanziario annuale.',
                               style: TextStyle(fontSize: 13, color: Colors.blue.shade900),
                             ),
                           ],
@@ -294,6 +304,15 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                   icon: Icons.badge_outlined,
                   accentColor: Colors.indigo.shade800,
                   badgeLabel: 'Tesseramento & Iscrizioni',
+                ),
+                const SizedBox(height: 20),
+
+                // Card 3: Verbale Approvazione Rendiconto
+                _buildTemplateCard(
+                  tmpl: verbaleTmpl,
+                  icon: Icons.gavel_rounded,
+                  accentColor: Colors.teal.shade800,
+                  badgeLabel: 'Verbale & Bilancio',
                 ),
               ],
             ),
@@ -400,8 +419,16 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
               child: Row(
                 children: [
                   Icon(
-                    hasFile ? Icons.picture_as_pdf : Icons.upload_file,
-                    color: hasFile ? Colors.red.shade700 : Colors.amber.shade800,
+                    hasFile
+                        ? (tmpl.filename.toLowerCase().endsWith('.doc') || tmpl.filename.toLowerCase().endsWith('.docx')
+                            ? Icons.description
+                            : Icons.picture_as_pdf)
+                        : Icons.upload_file,
+                    color: hasFile
+                        ? (tmpl.filename.toLowerCase().endsWith('.doc') || tmpl.filename.toLowerCase().endsWith('.docx')
+                            ? Colors.blue.shade700
+                            : Colors.red.shade700)
+                        : Colors.amber.shade800,
                     size: 26,
                   ),
                   const SizedBox(width: 14),
@@ -428,7 +455,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                             ],
                           )
                         : Text(
-                            'Nessun file PDF caricato al momento. Clicca su "Carica Template PDF" per inserire il documento.',
+                            'Nessun file caricato al momento. Clicca su "Carica Template" per inserire il modello (PDF o Word).',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.amber.shade900,
@@ -482,7 +509,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                   label: Text(
                     isUploading
                         ? 'Caricamento in corso...'
-                        : (hasFile ? 'Sostituisci File PDF' : 'Carica Template PDF'),
+                        : (hasFile ? 'Sostituisci File' : 'Carica Template'),
                   ),
                 ),
                 if (hasFile) ...[
@@ -495,7 +522,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                     ),
                     onPressed: (isUploading || isRemoving) ? null : () => _downloadOrView(tmpl),
                     icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text('Visualizza / Scarica PDF'),
+                    label: const Text('Visualizza / Scarica'),
                   ),
                   TextButton.icon(
                     style: TextButton.styleFrom(

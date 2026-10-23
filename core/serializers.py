@@ -1,9 +1,10 @@
 from rest_framework import serializers
 from .models import (
+    GoogleContactsSyncLog,
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
-    ContatoreRicevute, Ricevuta, GoogleDriveConfig, MovimentoPrimaNota, CategoriaBilancio,
+    ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
     ConfigurazioneASD, MembroDirettivo
 )
 from .wa_client import resolve_group_link
@@ -151,7 +152,8 @@ class AllievoSerializer(serializers.ModelSerializer):
             'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
             'corso_gruppo_whatsapp', 'corso_has_whatsapp',
-            'numero_tessera', 'data_emissione_tessera', 'stato_tessera'
+            'email', 'numero_tessera', 'data_emissione_tessera', 'stato_tessera', 'google_contact_id',
+            'created_at', 'updated_at'
         ]
 
     def to_internal_value(self, data):
@@ -473,6 +475,23 @@ class RicevutaSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class GoogleContactsConfigSerializer(serializers.ModelSerializer):
+    is_connected = serializers.ReadOnlyField()
+    has_client_secret = serializers.SerializerMethodField()
+
+    def get_has_client_secret(self, obj):
+        return bool(obj.client_secret)
+
+    class Meta:
+        model = GoogleContactsConfig
+        fields = [
+            'id', 'client_id', 'has_client_secret', 'is_connected',
+            'user_email', 'user_name', 'sync_group_name', 'is_active',
+            'last_sync_at', 'last_sync_status', 'last_sync_summary', 'last_test_status', 'last_test_message',
+            'created_at', 'updated_at'
+        ]
+
+
 class GoogleDriveConfigSerializer(serializers.ModelSerializer):
     filename = serializers.ReadOnlyField()
     file_size = serializers.ReadOnlyField()
@@ -494,6 +513,7 @@ class GoogleDriveConfigSerializer(serializers.ModelSerializer):
             'client_email', 'project_id', 'private_key_id',
             'folder_id', 'folder_ricevute_id', 'folder_ricevute_nome',
             'folder_tessere_id', 'folder_tessere_nome',
+            'folder_verbali_id', 'folder_verbali_nome',
             'is_active', 'last_tested_at',
             'last_test_status', 'last_test_message',
             'created_at', 'updated_at'
@@ -558,3 +578,18 @@ class MembroDirettivoSerializer(serializers.ModelSerializer):
 
 
 
+
+
+
+class GoogleContactsSyncLogSerializer(serializers.ModelSerializer):
+    timestamp_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GoogleContactsSyncLog
+        fields = [
+            'id', 'timestamp', 'timestamp_display', 'status', 'action',
+            'details', 'items_created', 'items_updated', 'items_deleted', 'errors_count'
+        ]
+
+    def get_timestamp_display(self, obj):
+        return obj.timestamp.strftime('%d/%m/%Y %H:%M') if obj.timestamp else ''

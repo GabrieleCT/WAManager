@@ -74,7 +74,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
     try {
       final file = await FilePicker.pickFile(
         type: FileType.custom,
-        allowedExtensions: ['xlsx'],
+        allowedExtensions: ['json', 'xlsx'],
       );
       if (file != null) {
         final bytes = await file.readAsBytes();
@@ -101,7 +101,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
   Future<void> _executeGlobalImport() async {
     if (_fileBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona prima un file Excel (.xlsx) di backup.')),
+        const SnackBar(content: Text('Seleziona prima un file di backup (.json o .xlsx).')),
       );
       return;
     }
@@ -261,12 +261,12 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Esportazione Completa del Gestionale',
+                                  'Dump Completo del Database',
                                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  'Scarica un unico file Excel multi-foglio (.xlsx) contenente tutti i dati presenti nel sistema.',
+                                  'Scarica un dump completo del database (.json) conforme a Django. Include il 100% delle tabelle e dei record (Allievi, Corsi, Scuole, Presenze, Pagamenti, Ricevute, Movimenti Cassa, ASD, WhatsApp, ecc.) e includerà automaticamente qualsiasi nuova entità futura.',
                                   style: TextStyle(color: Colors.grey, fontSize: 13),
                                 ),
                               ],
@@ -278,7 +278,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                       const Divider(),
                       const SizedBox(height: 12),
                       const Text(
-                        'Il file di backup include tutti i seguenti archivi:',
+                        'Il dump include l\'intero database senza esclusioni (anche per entità future):',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 12),
@@ -286,18 +286,20 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _buildChip(Icons.business, 'Scuole'),
-                          _buildChip(Icons.school, 'Corsi'),
-                          _buildChip(Icons.menu_book, 'Argomenti'),
+                          _buildChip(Icons.storage, 'Tutto il Database'),
                           _buildChip(Icons.people, 'Allievi & Prospect'),
-                          _buildChip(Icons.star, 'Jolly'),
-                          _buildChip(Icons.calendar_month, 'Lezioni'),
-                          _buildChip(Icons.how_to_reg, 'Presenze'),
+                          _buildChip(Icons.school, 'Corsi & Scuole'),
+                          _buildChip(Icons.how_to_reg, 'Presenze & Lezioni'),
                           _buildChip(Icons.euro, 'Pagamenti'),
-                          _buildChip(Icons.mark_chat_unread, 'Sondaggi'),
+                          _buildChip(Icons.receipt_long, 'Ricevute Fiscali'),
+                          _buildChip(Icons.account_balance, 'Bilancio & Cassa'),
+                          _buildChip(Icons.card_membership, 'Socio ASD & Certificati'),
+                          _buildChip(Icons.chat, 'Messaggistica & WhatsApp'),
+                          _buildChip(Icons.auto_awesome, 'Tutte le future entità'),
                         ],
                       ),
                       const SizedBox(height: 28),
+                      // Pulsante Principale: Dump Completo JSON
                       SizedBox(
                         width: double.infinity,
                         height: 52,
@@ -311,14 +313,38 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                               : const Icon(Icons.download, size: 22),
                           label: Text(
-                            _exporting ? 'Generazione backup in corso...' : 'Scarica Backup Globale (.xlsx)',
+                            _exporting ? 'Generazione dump in corso...' : 'Scarica Dump Completo Database (.json)',
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           onPressed: _exporting
                               ? null
                               : () {
+                                  final url = _api.getExportUrl('global', format: 'json');
+                                  _downloadFile(url, 'Dump Completo Database (.json)');
+                                },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Pulsante Secondario: Backup Excel
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.teal.shade800,
+                            side: BorderSide(color: Colors.teal.shade300),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.table_view_outlined, size: 20),
+                          label: const Text(
+                            'Scarica in formato Excel (.xlsx) per consultazione',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          onPressed: _exporting
+                              ? null
+                              : () {
                                   final url = _api.getExportUrl('global', format: 'xlsx');
-                                  _downloadFile(url, 'Backup Globale (.xlsx)');
+                                  _downloadFile(url, 'Backup Excel (.xlsx)');
                                 },
                         ),
                       ),
@@ -370,12 +396,12 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Ripristino Completo da File Excel',
+                                  'Ripristino Completo del Gestionale',
                                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  'Carica un file di backup (.xlsx) per importare o aggiornare tutti i dati nel database.',
+                                  'Carica un file di dump (.json o .xlsx) per ripristinare o sincronizzare l\'intero database. I file .json contengono il dump completo e ripristinano qualsiasi entità presente o futura.',
                                   style: TextStyle(color: Colors.grey, fontSize: 13),
                                 ),
                               ],
@@ -423,7 +449,7 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                             ),
                             OutlinedButton.icon(
                               icon: const Icon(Icons.attach_file),
-                              label: Text(_fileName != null ? 'Cambia File' : 'Scegli File .xlsx'),
+                              label: Text(_fileName != null ? 'Cambia File' : 'Scegli File (.json / .xlsx)'),
                               onPressed: _importing ? null : _pickFile,
                             ),
                           ],
@@ -503,19 +529,16 @@ class _ImportExportScreenState extends State<ImportExportScreen> with SingleTick
                           ),
                           const SizedBox(height: 12),
                           Wrap(
-                            spacing: 12,
+                            spacing: 10,
                             runSpacing: 10,
-                            children: [
-                              _buildStatBadge('Scuole', stats['scuole'] ?? 0, Colors.blue),
-                              _buildStatBadge('Corsi', stats['corsi'] ?? 0, Colors.teal),
-                              _buildStatBadge('Argomenti', stats['argomenti'] ?? 0, Colors.orange),
-                              _buildStatBadge('Allievi', stats['allievi'] ?? 0, Colors.indigo),
-                              _buildStatBadge('Jolly', stats['jolly'] ?? 0, Colors.purple),
-                              _buildStatBadge('Lezioni', stats['lezioni'] ?? 0, Colors.cyan),
-                              _buildStatBadge('Presenze', stats['presenze'] ?? 0, Colors.green),
-                              _buildStatBadge('Pagamenti', stats['pagamenti'] ?? 0, Colors.amber.shade900),
-                              _buildStatBadge('Sondaggi', stats['sondaggi_mattutini'] ?? 0, Colors.pink),
-                            ],
+                            children: stats.entries.map((entry) {
+                              final label = entry.key
+                                  .replaceAll('core.', '')
+                                  .replaceAll('auth.', '')
+                                  .replaceAll('_', ' ')
+                                  .toUpperCase();
+                              return _buildStatBadge(label, entry.value, Colors.indigo);
+                            }).toList(),
                           ),
                         ],
                       ],
