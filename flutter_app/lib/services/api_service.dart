@@ -213,6 +213,23 @@ class ApiService {
     return res.statusCode == 204 || res.statusCode == 200;
   }
 
+  Future<List<Argomento>?> reorderArgomenti(List<String> ids) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/argomenti/reorder/'),
+        headers: _headers,
+        body: jsonEncode({'ids': ids}),
+      );
+      if (res.statusCode == 200) {
+        final List list = jsonDecode(utf8.decode(res.bodyBytes));
+        return list.map((e) => Argomento.fromJson(e)).toList();
+      }
+    } catch (e) {
+      debugPrint('Errore reorderArgomenti: $e');
+    }
+    return null;
+  }
+
   // ─── Allievi & Prospects ──────────────────────────────────
   Future<List<Allievo>> getAllievi({
     String? corsoId,

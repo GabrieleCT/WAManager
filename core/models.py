@@ -96,10 +96,17 @@ class Argomento(models.Model):
     titolo = models.CharField(max_length=200)
     descrizione = models.TextField(blank=True, default='')
     livello = models.CharField(max_length=20, choices=Level.choices, default=Level.PRINCIPIANTE)
+    ordine = models.PositiveIntegerField(default=0, db_index=True)
 
     class Meta:
         verbose_name_plural = 'Argomenti'
-        ordering = ['titolo']
+        ordering = ['ordine', 'titolo']
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and (self.ordine is None or self.ordine == 0):
+            max_o = Argomento.objects.aggregate(max_o=models.Max('ordine'))['max_o']
+            self.ordine = ((max_o or 0) + 1) if max_o is not None else 1
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.titolo} ({self.get_livello_display()})"

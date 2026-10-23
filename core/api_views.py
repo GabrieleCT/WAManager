@@ -9,6 +9,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 import os
 import datetime
 from django.utils import timezone
+from django.db import transaction
 
 from django.http import HttpResponse, FileResponse, Http404
 from .pdf_template_service import genera_pdf_ricevuta_da_template, genera_pdf_modulo_tesseramento
@@ -168,12 +169,39 @@ class CorsoViewSet(viewsets.ModelViewSet):
 
 
 class ArgomentoViewSet(viewsets.ModelViewSet):
-    queryset = Argomento.objects.all()
+    queryset = Argomento.objects.all().order_by('ordine', 'titolo')
     serializer_class = ArgomentoSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['livello']
     search_fields = ['titolo', 'descrizione']
-    ordering_fields = ['titolo', 'livello']
+    ordering_fields = ['ordine', 'titolo', 'livello']
+    ordering = ['ordine', 'titolo']
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """
+        Aggiorna l'ordinamento degli argomenti tramite drag & drop.
+        Accetta {'ids': ['id1', 'id2', ...]} oppure {'items': [{'id': 'id1', 'ordine': 0}, ...]}
+        """
+        ids = request.data.get('ids')
+        items = request.data.get('items')
+
+        with transaction.atomic():
+            if isinstance(ids, list):
+                for index, item_id in enumerate(ids):
+                    Argomento.objects.filter(id=item_id).update(ordine=index)
+            elif isinstance(items, list):
+                for item in items:
+                    item_id = item.get('id')
+                    ordine = item.get('ordine', 0)
+                    if item_id:
+                        Argomento.objects.filter(id=item_id).update(ordine=ordine)
+            else:
+                return Response({'error': 'Parametro ids o items mancante o non valido'}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated = Argomento.objects.all().order_by('ordine', 'titolo')
+        serializer = self.get_serializer(updated, many=True)
+        return Response(serializer.data)
 
 
 class AllievoViewSet(viewsets.ModelViewSet):

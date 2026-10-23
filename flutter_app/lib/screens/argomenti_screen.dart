@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -12,6 +13,8 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
   final ApiService _api = ApiService();
   List<Argomento> _argomenti = [];
   bool _loading = true;
+  bool _savingOrder = false;
+  Timer? _reorderDebounce;
 
   @override
   void initState() {
@@ -19,9 +22,16 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
     _loadAll();
   }
 
+  @override
+  void dispose() {
+    _reorderDebounce?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     final argomenti = await _api.getArgomenti();
+    if (!mounted) return;
     setState(() {
       _argomenti = argomenti;
       _loading = false;
@@ -44,6 +54,71 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
       }
       return true;
     }).toList();
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    if (oldIndex == newIndex) return;
+
+    final filtered = _filteredArgomenti;
+    final movedItem = filtered[oldIndex];
+    final targetItem = filtered[newIndex];
+
+    setState(() {
+      _argomenti.removeWhere((a) => a.id == movedItem.id);
+      final targetIdxInAll = _argomenti.indexWhere((a) => a.id == targetItem.id);
+      if (targetIdxInAll != -1) {
+        if (oldIndex < newIndex) {
+          _argomenti.insert(targetIdxInAll + 1, movedItem);
+        } else {
+          _argomenti.insert(targetIdxInAll, movedItem);
+        }
+      } else {
+        _argomenti.add(movedItem);
+      }
+    });
+
+    _reorderDebounce?.cancel();
+    _reorderDebounce = Timer(const Duration(milliseconds: 350), () {
+      _saveNewOrder();
+    });
+  }
+
+  Future<void> _saveNewOrder() async {
+    setState(() => _savingOrder = true);
+    final ids = _argomenti.map((a) => a.id).toList();
+    final updated = await _api.reorderArgomenti(ids);
+    if (!mounted) return;
+    setState(() => _savingOrder = false);
+    if (updated != null) {
+      setState(() {
+        _argomenti = updated;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Nuova disposizione salvata con successo!'),
+            ],
+          ),
+          backgroundColor: Colors.green.shade800,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Errore durante il salvataggio dell\'ordinamento.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      _loadAll();
+    }
   }
 
   void _showAddEditArgomentoDialog([Argomento? a]) {
@@ -205,6 +280,17 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
       appBar: AppBar(
         title: const Text('Argomenti Lezioni'),
         actions: [
+          if (_savingOrder)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Ricarica',
@@ -297,7 +383,40 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
                 ),
                 const Divider(height: 1),
 
-                // Lista Argomenti
+                // Barra informativa per Drag & Drop
+                if (filtered.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.amber.shade50.withValues(alpha: 0.6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.swap_vert, size: 18, color: Colors.amber.shade900),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Trascina le voci tenendo premuta l\'icona con i puntini (⠿) per riordinarle. L\'ordine verrà salvato automaticamente.',
+                            style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+                          ),
+                        ),
+                        if (_savingOrder)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber.shade900),
+                              ),
+                              const SizedBox(width: 6),
+                              Text('Salvataggio...', style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                if (filtered.isNotEmpty) const Divider(height: 1),
+
+                // Lista Argomenti con Drag & Drop
                 Expanded(
                   child: filtered.isEmpty
                       ? Center(
@@ -323,46 +442,103 @@ class _ArgomentiScreenState extends State<ArgomentiScreen> {
                             ],
                           ),
                         )
-                      : ListView.separated(
+                      : ReorderableListView.builder(
+                          buildDefaultDragHandles: false,
                           itemCount: filtered.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, i) {
+                          onReorder: _onReorder,
+                          proxyDecorator: (child, index, animation) {
+                            return AnimatedBuilder(
+                              animation: animation,
+                              builder: (context, child) {
+                                return Material(
+                                  elevation: 6,
+                                  color: Colors.transparent,
+                                  shadowColor: Colors.black38,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: child,
+                                );
+                              },
+                              child: child,
+                            );
+                          },
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          itemBuilder: (context, i) {
                             final a = filtered[i];
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.teal.shade50,
-                                foregroundColor: Colors.teal.shade800,
-                                child: const Icon(Icons.menu_book, size: 20),
-                              ),
-                              title: Text(a.titolo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  a.descrizione.isNotEmpty ? a.descrizione : 'Nessuna descrizione specificata',
-                                  style: TextStyle(
-                                    color: a.descrizione.isNotEmpty ? Colors.grey.shade800 : Colors.grey.shade500,
-                                    fontStyle: a.descrizione.isNotEmpty ? FontStyle.normal : FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                              trailing: Wrap(
-                                spacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  _buildLivelloBadge(a.livello, a.livelloDisplay),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                                    tooltip: 'Modifica Argomento',
-                                    onPressed: () => _showAddEditArgomentoDialog(a),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                    tooltip: 'Elimina Argomento',
-                                    onPressed: () => _confirmDeleteArgomento(a),
+                            return Container(
+                              key: ValueKey(a.id),
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade200),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.02),
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
                                   ),
                                 ],
                               ),
-                              onTap: () => _showAddEditArgomentoDialog(a),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                leading: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ReorderableDragStartListener(
+                                      index: i,
+                                      child: Tooltip(
+                                        message: 'Trascina per riordinare',
+                                        child: MouseRegion(
+                                          cursor: SystemMouseCursors.grab,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                            child: Icon(
+                                              Icons.drag_indicator,
+                                              color: Colors.grey.shade500,
+                                              size: 22,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    CircleAvatar(
+                                      backgroundColor: Colors.teal.shade50,
+                                      foregroundColor: Colors.teal.shade800,
+                                      child: const Icon(Icons.menu_book, size: 20),
+                                    ),
+                                  ],
+                                ),
+                                title: Text(a.titolo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    a.descrizione.isNotEmpty ? a.descrizione : 'Nessuna descrizione specificata',
+                                    style: TextStyle(
+                                      color: a.descrizione.isNotEmpty ? Colors.grey.shade800 : Colors.grey.shade500,
+                                      fontStyle: a.descrizione.isNotEmpty ? FontStyle.normal : FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                                trailing: Wrap(
+                                  spacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _buildLivelloBadge(a.livello, a.livelloDisplay),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                      tooltip: 'Modifica Argomento',
+                                      onPressed: () => _showAddEditArgomentoDialog(a),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                      tooltip: 'Elimina Argomento',
+                                      onPressed: () => _confirmDeleteArgomento(a),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () => _showAddEditArgomentoDialog(a),
+                              ),
                             );
                           },
                         ),

@@ -39,7 +39,8 @@ class CorsoAdmin(admin.ModelAdmin):
 
 @admin.register(Argomento)
 class ArgomentoAdmin(admin.ModelAdmin):
-    list_display = ('titolo', 'livello', 'descrizione')
+    list_display = ('ordine', 'titolo', 'livello', 'descrizione')
+    list_editable = ('ordine',)
     list_filter = ('livello',)
     search_fields = ('titolo', 'descrizione')
 

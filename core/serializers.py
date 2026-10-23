@@ -124,7 +124,7 @@ class ArgomentoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Argomento
-        fields = ['id', 'titolo', 'descrizione', 'livello', 'livello_display']
+        fields = ['id', 'titolo', 'descrizione', 'livello', 'livello_display', 'ordine']
 
 
 class AllievoSerializer(serializers.ModelSerializer):

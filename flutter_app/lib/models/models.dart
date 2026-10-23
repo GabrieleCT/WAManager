@@ -116,6 +116,7 @@ class Argomento {
   final String descrizione;
   final String livello;
   final String livelloDisplay;
+  final int ordine;
 
   Argomento({
     required this.id,
@@ -123,6 +124,7 @@ class Argomento {
     required this.descrizione,
     required this.livello,
     required this.livelloDisplay,
+    this.ordine = 0,
   });
 
   factory Argomento.fromJson(Map<String, dynamic> json) {
@@ -132,6 +134,7 @@ class Argomento {
       descrizione: json['descrizione'] ?? '',
       livello: json['livello'] ?? 'principiante',
       livelloDisplay: json['livello_display'] ?? json['livello'] ?? '',
+      ordine: json['ordine'] is int ? json['ordine'] : int.tryParse(json['ordine']?.toString() ?? '0') ?? 0,
     );
   }
 
@@ -139,7 +142,26 @@ class Argomento {
     'titolo': titolo,
     'descrizione': descrizione,
     'livello': livello,
+    'ordine': ordine,
   };
+
+  Argomento copyWith({
+    String? id,
+    String? titolo,
+    String? descrizione,
+    String? livello,
+    String? livelloDisplay,
+    int? ordine,
+  }) {
+    return Argomento(
+      id: id ?? this.id,
+      titolo: titolo ?? this.titolo,
+      descrizione: descrizione ?? this.descrizione,
+      livello: livello ?? this.livello,
+      livelloDisplay: livelloDisplay ?? this.livelloDisplay,
+      ordine: ordine ?? this.ordine,
+    );
+  }
 }
 class Allievo {
   final String id;
