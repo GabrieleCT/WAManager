@@ -244,6 +244,346 @@ def genera_pdf_modulo_tesseramento(allievo=None):
     return pdf_bytes
 
 
+
+def format_valuta_italiana(val):
+    if val is None:
+        val = 0.0
+    return f"{float(val):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def genera_pdf_allegati_bilancio(
+    anno_esercizio,
+    asd=None,
+    data_assemblea="",
+    nome_presidente="",
+    nome_segretario="",
+    tot_entrate=0.0,
+    tot_uscite=0.0,
+    saldo=0.0
+):
+    """
+    Genera le pagine di allegato al Verbale di approvazione:
+    1. Rendiconto Economico-Finanziario Consuntivo (Entrate/Uscite per categoria e Quadro di Sintesi)
+    2. Bilancio Mensile (12 mesi: Entrate, Uscite, Saldo e Risultato)
+    3. Registro Analitico dei Movimenti di Prima Nota Cassa
+    """
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, HRFlowable
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    from django.db.models import Sum
+    from .models import MovimentoPrimaNota
+
+    class NumberedCanvas(canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            num_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self.draw_page_number(num_pages)
+                super().showPage()
+            super().save()
+
+        def draw_page_number(self, page_count):
+            self.saveState()
+            self.setFont("Helvetica", 8)
+            self.setFillColor(colors.HexColor('#64748B'))
+            # Intestazione superiore
+            self.drawString(36, 810, "Tanto Tango ASD — Allegati al Verbale di Approvazione Rendiconto")
+            self.setStrokeColor(colors.HexColor('#CBD5E1'))
+            self.setLineWidth(0.5)
+            self.line(36, 804, 559, 804)
+
+            # Piè di pagina
+            page_text = f"Allegato - Pagina {self._pageNumber} di {page_count}"
+            self.drawRightString(559, 24, page_text)
+            self.drawString(36, 24, "Documento contabile ufficiale generato tramite TantoTango Manager")
+            self.line(36, 32, 559, 32)
+            self.restoreState()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=46,
+        bottomMargin=46
+    )
+
+    styles = getSampleStyleSheet()
+    primary = colors.HexColor('#8B2529')
+    dark = colors.HexColor('#1E293B')
+    gray = colors.HexColor('#64748B')
+    light_bg = colors.HexColor('#F8FAFC')
+    border_col = colors.HexColor('#CBD5E1')
+    green_text = colors.HexColor('#166534')
+    red_text = colors.HexColor('#991B1B')
+
+    h1_style = ParagraphStyle('H1', fontName='Helvetica-Bold', fontSize=14, textColor=primary, alignment=1, spaceAfter=3)
+    sub_style = ParagraphStyle('Sub', fontName='Helvetica', fontSize=9, textColor=gray, alignment=1, spaceAfter=12)
+    sec_style = ParagraphStyle('Sec', fontName='Helvetica-Bold', fontSize=11, textColor=dark, spaceBefore=8, spaceAfter=4)
+    th_style = ParagraphStyle('TH', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=1)
+    td_style = ParagraphStyle('TD', fontName='Helvetica', fontSize=8, textColor=dark)
+    td_r = ParagraphStyle('TDR', fontName='Helvetica', fontSize=8, textColor=dark, alignment=2)
+    td_bold_r = ParagraphStyle('TDBR', fontName='Helvetica-Bold', fontSize=8, textColor=dark, alignment=2)
+    td_center = ParagraphStyle('TDC', fontName='Helvetica', fontSize=8, textColor=dark, alignment=1)
+
+    elements = []
+    qs = MovimentoPrimaNota.objects.filter(data__year=anno_esercizio)
+
+    # =========================================================================
+    # ALLEGATO 1: RENDICONTO ECONOMICO FINANZIARIO ANNUALE (PER CATEGORIA)
+    # =========================================================================
+    elements.append(Paragraph("ALLEGATO 1: RENDICONTO ECONOMICO-FINANZIARIO", h1_style))
+    elements.append(Paragraph(f"Consuntivo per Categorie di Entrata e Spesa — Esercizio {anno_esercizio}", sub_style))
+
+    # Tabella Entrate per Categoria
+    elements.append(Paragraph("Proventi ed Entrate Istituzionali", sec_style))
+    entrate_cat = qs.filter(tipo='entrata').values('categoria').annotate(tot=Sum('importo')).order_by('-tot')
+    t_entrate_data = [[Paragraph('Categoria di Entrata', th_style), Paragraph('Importo (€)', th_style), Paragraph('Incidenza %', th_style)]]
+    
+    tot_e_val = float(tot_entrate or 0.0)
+    if entrate_cat.exists():
+        for item in entrate_cat:
+            cat_nome = item['categoria'] or 'Altro'
+            cat_tot = float(item['tot'] or 0.0)
+            inc = (cat_tot / tot_e_val * 100) if tot_e_val > 0 else 0.0
+            t_entrate_data.append([
+                Paragraph(cat_nome, td_style),
+                Paragraph(format_valuta_italiana(cat_tot), td_r),
+                Paragraph(f"{inc:.1f}%", td_center),
+            ])
+    else:
+        t_entrate_data.append([Paragraph('Nessuna entrata registrata', td_style), Paragraph('0,00', td_r), Paragraph('0,0%', td_center)])
+
+    t_entrate_data.append([
+        Paragraph('<b>TOTALE ENTRATE</b>', td_style),
+        Paragraph(f"<b>{format_valuta_italiana(tot_e_val)}</b>", td_bold_r),
+        Paragraph('<b>100,0%</b>', td_center),
+    ])
+
+    t_entrate = Table(t_entrate_data, colWidths=[310, 110, 103])
+    t_entrate.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), primary),
+        ('GRID', (0,0), (-1,-1), 0.5, border_col),
+        ('BACKGROUND', (0,-1), (-1,-1), light_bg),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_entrate)
+    elements.append(Spacer(1, 10))
+
+    # Tabella Uscite per Categoria
+    elements.append(Paragraph("Oneri e Spese Istituzionali", sec_style))
+    uscite_cat = qs.filter(tipo='uscita').values('categoria').annotate(tot=Sum('importo')).order_by('-tot')
+    t_uscite_data = [[Paragraph('Categoria di Uscita', th_style), Paragraph('Importo (€)', th_style), Paragraph('Incidenza %', th_style)]]
+    
+    tot_u_val = float(tot_uscite or 0.0)
+    if uscite_cat.exists():
+        for item in uscite_cat:
+            cat_nome = item['categoria'] or 'Altro'
+            cat_tot = float(item['tot'] or 0.0)
+            inc = (cat_tot / tot_u_val * 100) if tot_u_val > 0 else 0.0
+            t_uscite_data.append([
+                Paragraph(cat_nome, td_style),
+                Paragraph(format_valuta_italiana(cat_tot), td_r),
+                Paragraph(f"{inc:.1f}%", td_center),
+            ])
+    else:
+        t_uscite_data.append([Paragraph('Nessuna uscita registrata', td_style), Paragraph('0,00', td_r), Paragraph('0,0%', td_center)])
+
+    t_uscite_data.append([
+        Paragraph('<b>TOTALE USCITE</b>', td_style),
+        Paragraph(f"<b>{format_valuta_italiana(tot_u_val)}</b>", td_bold_r),
+        Paragraph('<b>100,0%</b>', td_center),
+    ])
+
+    t_uscite = Table(t_uscite_data, colWidths=[310, 110, 103])
+    t_uscite.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), primary),
+        ('GRID', (0,0), (-1,-1), 0.5, border_col),
+        ('BACKGROUND', (0,-1), (-1,-1), light_bg),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_uscite)
+    elements.append(Spacer(1, 12))
+
+    # Quadro di sintesi di gestione
+    saldo_val = float(saldo or 0.0)
+    is_avanzo = saldo_val >= 0
+    sintesi_label = "AVANZO DI GESTIONE (Utile)" if is_avanzo else "DISAVANZO DI GESTIONE (Perdita)"
+    sintesi_color = green_text if is_avanzo else red_text
+    sintesi_bg = colors.HexColor('#DCFCE7') if is_avanzo else colors.HexColor('#FEE2E2')
+
+    t_sintesi_data = [
+        [Paragraph('<b>QUADRO DI SINTESI ECONOMICA DI ESERCIZIO</b>', ParagraphStyle('QS', fontName='Helvetica-Bold', fontSize=9, textColor=dark)), Paragraph('', td_style)],
+        [Paragraph('Totale Proventi ed Entrate Istituzionali', td_style), Paragraph(f"€ {format_valuta_italiana(tot_e_val)}", td_bold_r)],
+        [Paragraph('Totale Oneri e Spese Istituzionali', td_style), Paragraph(f"€ {format_valuta_italiana(tot_u_val)}", td_bold_r)],
+        [
+            Paragraph(f"<b>{sintesi_label}</b>", ParagraphStyle('SL', fontName='Helvetica-Bold', fontSize=9, textColor=sintesi_color)),
+            Paragraph(f"<b>€ {format_valuta_italiana(saldo_val)}</b>", ParagraphStyle('SV', fontName='Helvetica-Bold', fontSize=10, textColor=sintesi_color, alignment=2))
+        ],
+    ]
+    t_sintesi = Table(t_sintesi_data, colWidths=[360, 163])
+    t_sintesi.setStyle(TableStyle([
+        ('SPAN', (0,0), (1,0)),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+        ('GRID', (0,0), (-1,-1), 0.5, border_col),
+        ('BACKGROUND', (0,-1), (-1,-1), sintesi_bg),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+    ]))
+    elements.append(t_sintesi)
+
+    elements.append(PageBreak())
+
+    # =========================================================================
+    # ALLEGATO 2: BILANCIO MENSILE (12 MESI)
+    # =========================================================================
+    elements.append(Paragraph("ALLEGATO 2: RIEPILOGO MENSILE DI BILANCIO", h1_style))
+    elements.append(Paragraph(f"Andamento e Rendiconto Mensile Cassa — Esercizio {anno_esercizio}", sub_style))
+
+    mesi_nomi = [
+        'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+        'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+    ]
+    t_mesi_data = [[
+        Paragraph('Mese', th_style),
+        Paragraph('Entrate (€)', th_style),
+        Paragraph('Uscite (€)', th_style),
+        Paragraph('Saldo Mensile (€)', th_style),
+        Paragraph('Esito', th_style),
+    ]]
+
+    tot_m_e = 0.0
+    tot_m_u = 0.0
+
+    for idx, m_nome in enumerate(mesi_nomi, start=1):
+        m_e = float(qs.filter(tipo='entrata', data__month=idx).aggregate(s=Sum('importo'))['s'] or 0.0)
+        m_u = float(qs.filter(tipo='uscita', data__month=idx).aggregate(s=Sum('importo'))['s'] or 0.0)
+        m_s = m_e - m_u
+        tot_m_e += m_e
+        tot_m_u += m_u
+
+        if m_s > 0:
+            esito_text = "Utile"
+            esito_col = green_text
+        elif m_s < 0:
+            esito_text = "Perdita"
+            esito_col = red_text
+        else:
+            esito_text = "Pareggio"
+            esito_col = gray
+
+        t_mesi_data.append([
+            Paragraph(m_nome, td_style),
+            Paragraph(format_valuta_italiana(m_e), td_r),
+            Paragraph(format_valuta_italiana(m_u), td_r),
+            Paragraph(format_valuta_italiana(m_s), ParagraphStyle('MS', fontName='Helvetica', fontSize=8, textColor=esito_col, alignment=2)),
+            Paragraph(esito_text, ParagraphStyle('ES', fontName='Helvetica-Bold', fontSize=8, textColor=esito_col, alignment=1)),
+        ])
+
+    tot_m_s = tot_m_e - tot_m_u
+    tot_esito = "Utile" if tot_m_s > 0 else ("Perdita" if tot_m_s < 0 else "Pareggio")
+    tot_col = green_text if tot_m_s > 0 else (red_text if tot_m_s < 0 else gray)
+
+    t_mesi_data.append([
+        Paragraph('<b>TOTALE ANNUALE</b>', td_style),
+        Paragraph(f"<b>{format_valuta_italiana(tot_m_e)}</b>", td_bold_r),
+        Paragraph(f"<b>{format_valuta_italiana(tot_m_u)}</b>", td_bold_r),
+        Paragraph(f"<b>{format_valuta_italiana(tot_m_s)}</b>", ParagraphStyle('MTS', fontName='Helvetica-Bold', fontSize=8, textColor=tot_col, alignment=2)),
+        Paragraph(f"<b>{tot_esito}</b>", ParagraphStyle('MET', fontName='Helvetica-Bold', fontSize=8, textColor=tot_col, alignment=1)),
+    ])
+
+    t_mesi = Table(t_mesi_data, colWidths=[120, 100, 100, 110, 93])
+    t_mesi.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), primary),
+        ('GRID', (0,0), (-1,-1), 0.5, border_col),
+        ('BACKGROUND', (0,-1), (-1,-1), light_bg),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_mesi)
+
+    elements.append(PageBreak())
+
+    # =========================================================================
+    # ALLEGATO 3: REGISTRO DEI MOVIMENTI DI PRIMA NOTA CASSA
+    # =========================================================================
+    elements.append(Paragraph("ALLEGATO 3: REGISTRO MOVIMENTI PRIMA NOTA CASSA", h1_style))
+    elements.append(Paragraph(f"Dettaglio Analitico delle Registrazioni di Cassa — Anno {anno_esercizio}", sub_style))
+
+    movimenti = qs.order_by('data', 'created_at')
+    t_pn_data = [[
+        Paragraph('Data', th_style),
+        Paragraph('Descrizione', th_style),
+        Paragraph('Categoria', th_style),
+        Paragraph('Tipo', th_style),
+        Paragraph('Importo (€)', th_style),
+    ]]
+
+    if movimenti.exists():
+        for m in movimenti:
+            is_e = (m.tipo == 'entrata')
+            tipo_label = "Entrata" if is_e else "Uscita"
+            tipo_color = green_text if is_e else red_text
+            sign = "+" if is_e else "-"
+            t_pn_data.append([
+                Paragraph(m.data.strftime('%d/%m/%Y'), td_center),
+                Paragraph(m.descrizione or '-', td_style),
+                Paragraph(m.categoria or '-', td_style),
+                Paragraph(tipo_label, ParagraphStyle('MT', fontName='Helvetica', fontSize=8, textColor=tipo_color, alignment=1)),
+                Paragraph(f"{sign}{format_valuta_italiana(m.importo)}", ParagraphStyle('MI', fontName='Helvetica', fontSize=8, textColor=tipo_color, alignment=2)),
+            ])
+    else:
+        t_pn_data.append([
+            Paragraph('-', td_center),
+            Paragraph('Nessun movimento registrato in prima nota per questo esercizio.', td_style),
+            Paragraph('-', td_style),
+            Paragraph('-', td_center),
+            Paragraph('0,00', td_r),
+        ])
+
+    t_pn_data.append([
+        Paragraph('<b>TOTALE</b>', td_center),
+        Paragraph(f"<b>N. {movimenti.count()} movimenti registrati</b>", td_style),
+        Paragraph('-', td_center),
+        Paragraph('<b>SALDO CASSA</b>', td_center),
+        Paragraph(f"<b>{format_valuta_italiana(tot_m_s)}</b>", ParagraphStyle('PNS', fontName='Helvetica-Bold', fontSize=8, textColor=tot_col, alignment=2)),
+    ])
+
+    t_pn = Table(t_pn_data, colWidths=[70, 183, 140, 60, 70], repeatRows=1)
+    t_pn.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), primary),
+        ('GRID', (0,0), (-1,-1), 0.5, border_col),
+        ('BACKGROUND', (0,-1), (-1,-1), light_bg),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_pn)
+
+    doc.build(elements, canvasmaker=NumberedCanvas)
+    return buf.getvalue()
+
+
 def genera_pdf_verbale_rendiconto(data_assemblea, orario_assemblea, data_affissione, anno_esercizio=None):
     """
     Compila il template PDF 'verbale_rendiconto' con i dati dell'assemblea, dell'ASD,
@@ -410,15 +750,35 @@ def genera_pdf_verbale_rendiconto(data_assemblea, orario_assemblea, data_affissi
 
         # 5. Firme su Pagina 2
         if pno == 1:
-            # Inserire l'immagine della firma del Vicepresidente nello spazio sotto la dicitura "il Segretario"
+            # Inserire l'immagine della firma del Vicepresidente sovrapposta ai puntini sotto "il Segretario"
             if vice and vice.firma and os.path.exists(vice.firma.path):
-                rect_sec = pymupdf.Rect(80, 400, 245, 455)
+                rect_sec = pymupdf.Rect(80, 382, 255, 432)
                 page.insert_image(rect_sec, filename=vice.firma.path, keep_proportion=True)
 
-            # Inserire l'immagine della firma del Presidente nello spazio sotto la dicitura "il Presidente"
+            # Inserire l'immagine della firma del Presidente sovrapposta ai puntini sotto "il Presidente"
             if pres and pres.firma and os.path.exists(pres.firma.path):
-                rect_pres = pymupdf.Rect(325, 400, 490, 455)
+                rect_pres = pymupdf.Rect(320, 382, 495, 432)
                 page.insert_image(rect_pres, filename=pres.firma.path, keep_proportion=True)
+
+    # 6. Generazione e inclusione Pagine di Allegato (Rendiconto Annuale, Bilancio Mensile, Prima Nota)
+    try:
+        allegati_pdf_bytes = genera_pdf_allegati_bilancio(
+            anno_esercizio=anno_esercizio,
+            asd=asd,
+            data_assemblea=d_ass.strftime('%d/%m/%Y'),
+            nome_presidente=nome_pres,
+            nome_segretario=nome_seg or nome_vice,
+            tot_entrate=tot_entrate,
+            tot_uscite=tot_uscite,
+            saldo=saldo,
+        )
+        if allegati_pdf_bytes:
+            doc_allegati = pymupdf.open("pdf", allegati_pdf_bytes)
+            doc.insert_pdf(doc_allegati)
+            doc_allegati.close()
+    except Exception as e:
+        import logging
+        logging.error(f"Errore generazione allegati bilancio: {e}", exc_info=True)
 
     filename = f"Verbale_Approvazione_Rendiconto_{anno_esercizio}.pdf"
     pdf_bytes = doc.tobytes()

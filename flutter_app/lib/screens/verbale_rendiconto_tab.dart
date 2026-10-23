@@ -24,7 +24,6 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
   List<int> _anniDisponibili = [];
 
   final _dataAssembleaController = TextEditingController();
-  final _orarioAssembleaController = TextEditingController(text: '20:00');
   final _dataAffissioneController = TextEditingController();
 
   DateTime? _dataAssemblea;
@@ -41,7 +40,6 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
   @override
   void dispose() {
     _dataAssembleaController.dispose();
-    _orarioAssembleaController.dispose();
     _dataAffissioneController.dispose();
     super.dispose();
   }
@@ -80,9 +78,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
               }
             }
 
-            if (res['orario_assemblea_default'] != null && _orarioAssembleaController.text.isEmpty) {
-              _orarioAssembleaController.text = res['orario_assemblea_default'];
-            }
+
           }
           _loading = false;
         });
@@ -335,19 +331,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
           ),
           const SizedBox(height: 16),
 
-          // Orario assemblea
-          TextFormField(
-            controller: _orarioAssembleaController,
-            decoration: const InputDecoration(
-              labelText: 'Orario assemblea (inizio) *',
-              prefixIcon: Icon(Icons.access_time),
-              suffixIcon: Icon(Icons.schedule, size: 20),
-              border: OutlineInputBorder(),
-              helperText: 'Es: 20:00 (l\'orario di chiusura sarà calcolato a 1h 30m)',
-            ),
-            onTap: _selezionaOrarioAssemblea,
-          ),
-          const SizedBox(height: 16),
+
 
           // Data affissione convocazione
           TextFormField(
@@ -534,28 +518,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
     }
   }
 
-  Future<void> _selezionaOrarioAssemblea() async {
-    TimeOfDay initial = const TimeOfDay(hour: 20, minute: 0);
-    final parts = _orarioAssembleaController.text.trim().split(':');
-    if (parts.length >= 2) {
-      final h = int.tryParse(parts[0]);
-      final m = int.tryParse(parts[1]);
-      if (h != null && m != null) {
-        initial = TimeOfDay(hour: h, minute: m);
-      }
-    }
 
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-    );
-    if (picked != null) {
-      final formatted = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
-      setState(() {
-        _orarioAssembleaController.text = formatted;
-      });
-    }
-  }
 
   Future<void> _generaAnteprima() async {
     if (_dataAssemblea == null) {
@@ -564,12 +527,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
       );
       return;
     }
-    if (_orarioAssembleaController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Il campo "Orario assemblea" è obbligatorio.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
+
     if (_dataAffissione == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Il campo "Data affissione convocazione" è obbligatorio.'), backgroundColor: Colors.orange),
@@ -581,7 +539,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
     try {
       final bytes = await _api.generaVerbalePdf(
         dataAssemblea: DateFormat('yyyy-MM-dd').format(_dataAssemblea!),
-        orarioAssemblea: _orarioAssembleaController.text.trim(),
+        orarioAssemblea: '20:00',
         dataAffissione: DateFormat('yyyy-MM-dd').format(_dataAffissione!),
         annoEsercizio: _selectedAnno,
       );
@@ -614,7 +572,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
   }
 
   Future<void> _caricaSuDrive() async {
-    if (_dataAssemblea == null || _orarioAssembleaController.text.trim().isEmpty || _dataAffissione == null) {
+    if (_dataAssemblea == null || _dataAffissione == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Compila tutti i campi obbligatori prima del caricamento.'), backgroundColor: Colors.orange),
       );
@@ -654,7 +612,7 @@ class _VerbaleRendicontoTabState extends State<VerbaleRendicontoTab> {
     try {
       final res = await _api.uploadVerbaleDrive(
         dataAssemblea: DateFormat('yyyy-MM-dd').format(_dataAssemblea!),
-        orarioAssemblea: _orarioAssembleaController.text.trim(),
+        orarioAssemblea: '20:00',
         dataAffissione: DateFormat('yyyy-MM-dd').format(_dataAffissione!),
         annoEsercizio: _selectedAnno,
       );
