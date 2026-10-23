@@ -15,7 +15,8 @@ class PresenzeScreen extends StatefulWidget {
 class _PresenzeScreenState extends State<PresenzeScreen> {
   final ApiService _api = ApiService();
   List<Lezione> _allLezioni = [];
-  List<Lezione> _lezioniOggi = [];
+  List<Lezione> _lezioniMenu = [];
+  String? _menuDate;
   Lezione? _selectedLezione;
   bool _isCustomSelection = false;
   List<Presenza> _presenze = [];
@@ -63,7 +64,22 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     // Ordine cronologico decrescente per facile reperibilità
     final allSorted = List<Lezione>.from(lezioni)
       ..sort((a, b) => b.data.compareTo(a.data));
-    final oggi = allSorted.where((l) => l.data == todayStr).toList();
+
+    // Seleziona la data futura più vicina (incluso oggi se presente)
+    final futureSorted = allSorted.where((l) => l.data.compareTo(todayStr) >= 0).toList()
+      ..sort((a, b) => a.data.compareTo(b.data));
+
+    String? closestDate;
+    List<Lezione> menuLezioni = [];
+
+    if (futureSorted.isNotEmpty) {
+      closestDate = futureSorted.first.data;
+      menuLezioni = allSorted.where((l) => l.data == closestDate).toList();
+    } else if (allSorted.isNotEmpty) {
+      // Se non ci sono lezioni future, prendi la data più recente passata
+      closestDate = allSorted.first.data;
+      menuLezioni = allSorted.where((l) => l.data == closestDate).toList();
+    }
 
     Lezione? target;
     bool custom = false;
@@ -72,13 +88,13 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       final found = allSorted.where((l) => l.id == widget.initialLezioneId);
       if (found.isNotEmpty) {
         target = found.first;
-        custom = !oggi.any((l) => l.id == target?.id);
+        custom = !menuLezioni.any((l) => l.id == target?.id);
       }
     }
 
     if (target == null) {
-      if (oggi.isNotEmpty) {
-        target = oggi.first;
+      if (menuLezioni.isNotEmpty) {
+        target = menuLezioni.first;
         custom = false;
       } else if (allSorted.isNotEmpty) {
         target = allSorted.first;
@@ -91,7 +107,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
         _scuole = scuole;
         _corsi = corsi;
         _allLezioni = allSorted;
-        _lezioniOggi = oggi;
+        _lezioniMenu = menuLezioni;
+        _menuDate = closestDate;
         _selectedLezione = target;
         _isCustomSelection = custom;
         _loading = false;
@@ -399,10 +416,10 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                               trailing: isCurrent ? const Icon(Icons.check, color: Colors.deepPurple) : null,
                               onTap: () {
                                 Navigator.pop(ctx);
-                                final isOggi = _lezioniOggi.any((o) => o.id == l.id);
+                                final isMenu = _lezioniMenu.any((o) => o.id == l.id);
                                 setState(() {
                                   _selectedLezione = l;
-                                  _isCustomSelection = !isOggi;
+                                  _isCustomSelection = !isMenu;
                                 });
                                 _loadPresenze(l.id);
                               },
@@ -683,7 +700,24 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     final jollyNecessari = (leaderCount - followerCount).abs();
     final isMobile = MediaQuery.of(context).size.width < 800;
 
-    final Widget lezioneSelectorWidget = _lezioniOggi.isEmpty
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final List<Lezione> dropdownItems = List<Lezione>.from(_lezioniMenu);
+    if (_selectedLezione != null && !dropdownItems.any((l) => l.id == _selectedLezione!.id)) {
+      dropdownItems.insert(0, _selectedLezione!);
+    }
+
+    String dropdownLabel = '📅 Lezioni';
+    if (_selectedLezione != null && _isCustomSelection) {
+      dropdownLabel = '📅 Lezione del ${_formatData(_selectedLezione!.data)}';
+    } else if (_menuDate != null) {
+      if (_menuDate == todayStr) {
+        dropdownLabel = '📅 Lezioni di Oggi (${_lezioniMenu.length})';
+      } else {
+        dropdownLabel = '📅 Prossime Lezioni - ${_formatData(_menuDate!)} (${_lezioniMenu.length})';
+      }
+    }
+
+    final Widget lezioneSelectorWidget = dropdownItems.isEmpty
         ? Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
@@ -697,7 +731,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Nessuna lezione programmata per oggi',
+                    'Nessuna lezione programmata nel sistema',
                     style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontStyle: FontStyle.italic),
                   ),
                 ),
@@ -705,29 +739,32 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             ),
           )
         : DropdownButtonFormField<String>(
-            value: _isCustomSelection ? null : _selectedLezione?.id,
-            hint: const Text('Seleziona lezione di oggi...'),
+            value: _selectedLezione?.id,
+            hint: const Text('Seleziona lezione...'),
             isExpanded: true,
             decoration: InputDecoration(
-              labelText: '📅 Lezioni di Oggi (${_lezioniOggi.length})',
+              labelText: dropdownLabel,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            items: _lezioniOggi.map((l) {
+            items: dropdownItems.map((l) {
+              final isFromMenuDate = l.data == _menuDate;
+              final prefix = isFromMenuDate ? '' : '${_formatData(l.data)} • ';
               return DropdownMenuItem(
                 value: l.id,
                 child: Text(
-                  '${l.corsoDescrizione} ${l.titolo.isNotEmpty ? "(${l.titolo})" : ""}',
+                  '$prefix${l.corsoDescrizione} ${l.titolo.isNotEmpty ? "(${l.titolo})" : ""}',
                   overflow: TextOverflow.ellipsis,
                 ),
               );
             }).toList(),
             onChanged: (id) {
               if (id != null) {
-                final found = _lezioniOggi.firstWhere((l) => l.id == id);
+                final found = dropdownItems.firstWhere((l) => l.id == id);
+                final isMenu = _lezioniMenu.any((l) => l.id == id);
                 setState(() {
                   _selectedLezione = found;
-                  _isCustomSelection = false;
+                  _isCustomSelection = !isMenu;
                 });
                 _loadPresenze(id);
               }
@@ -802,42 +839,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   ),
                 ],
 
-                // BADGE NOTIFICA SE È SELEZIONATA UNA LEZIONE NON DI OGGI
-                if (_isCustomSelection && _selectedLezione != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.history, size: 16, color: Colors.amber.shade900),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Lezione selezionata dall\'archivio: ${_formatData(_selectedLezione!.data)} • ${_selectedLezione!.corsoDescrizione} ${_selectedLezione!.titolo.isNotEmpty ? "(${_selectedLezione!.titolo})" : ""}',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
-                          ),
-                        ),
-                        if (_lezioniOggi.isNotEmpty)
-                          TextButton(
-                            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                            onPressed: () {
-                              setState(() {
-                                _selectedLezione = _lezioniOggi.first;
-                                _isCustomSelection = false;
-                              });
-                              _loadPresenze(_lezioniOggi.first.id);
-                            },
-                            child: const Text('Torna a Oggi', style: TextStyle(fontSize: 12)),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+
               ],
             ),
           ),
