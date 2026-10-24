@@ -462,6 +462,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
+          final isMobile = MediaQuery.of(context).size.width < 800;
           final corsiFiltrati = _corsi.where((c) => 
             c.scuolaId == selectedScuolaId && c.livello == livello
           ).toList();
@@ -727,7 +728,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
               ),
             ),
             actions: [
-              if (allievo != null)
+              if (allievo != null && !isMobile)
                 TextButton.icon(
                   icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
                   label: const Text('Elimina', style: TextStyle(color: Colors.red)),
@@ -1311,10 +1312,20 @@ class _AllieviScreenState extends State<AllieviScreen> {
             a.nomeCompleto,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
-            tooltip: 'Modifica Allievo',
-            onPressed: () => _showAddEditDialog(a),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                tooltip: 'Modifica allievo',
+                onPressed: () => _showAddEditDialog(a),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                tooltip: 'Elimina allievo',
+                onPressed: () => _confirmDeleteAllievo(a),
+              ),
+            ],
           ),
           onTap: () => _showAddEditDialog(a),
         ),
@@ -1492,11 +1503,17 @@ class _AllieviScreenState extends State<AllieviScreen> {
               title: const Text('Elenco Allievi'),
               actions: isMobile ? [] : actionButtons,
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddEditDialog(),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Nuovo Allievo'),
-      ),
+      floatingActionButton: isMobile
+          ? FloatingActionButton(
+              onPressed: () => _showAddEditDialog(),
+              tooltip: 'Nuovo Allievo',
+              child: const Icon(Icons.person_add),
+            )
+          : FloatingActionButton.extended(
+              onPressed: () => _showAddEditDialog(),
+              icon: const Icon(Icons.person_add),
+              label: const Text('Nuovo Allievo'),
+            ),
       body: Column(
         children: [
           if (widget.embedded && !isMobile)

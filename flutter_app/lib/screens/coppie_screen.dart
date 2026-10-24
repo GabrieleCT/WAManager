@@ -23,6 +23,7 @@ class _CoppieScreenState extends State<CoppieScreen> {
 
   String? _selectedScuolaId;
   String? _selectedCorsoId;
+  bool _showMobileFilters = false;
 
   @override
   void initState() {
@@ -313,10 +314,181 @@ class _CoppieScreenState extends State<CoppieScreen> {
     );
   }
 
+  Widget _buildAllieviList(List<Allievo> filteredAllievi, bool isMobile) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_allievi.isEmpty) {
+      return const Center(
+        child: Text(
+          'Nessun allievo o prospect registrato a sistema.',
+          style: TextStyle(fontSize: 15, color: Colors.grey),
+        ),
+      );
+    }
+    if (filteredAllievi.isEmpty) {
+      return const Center(
+        child: Text(
+          'Nessun allievo o prospect trovato per i filtri selezionati.',
+          style: TextStyle(fontSize: 15, color: Colors.grey),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: isMobile ? const EdgeInsets.only(bottom: 16) : EdgeInsets.zero,
+      itemCount: filteredAllievi.length,
+      itemBuilder: (context, index) {
+        final a = filteredAllievi[index];
+        final hasPartner = a.partnerId != null;
+
+        if (isMobile) {
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: ListTile(
+              leading: Icon(
+                a.ruolo == 'leader' ? Icons.male : Icons.female,
+                color: a.ruolo == 'leader' ? Colors.blue.shade700 : Colors.pink.shade700,
+                size: 24,
+              ),
+              title: Text(
+                a.nomeCompleto,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                hasPartner ? a.partnerNomeCompleto : 'Nessun partner',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: hasPartner ? Colors.black87 : Colors.grey.shade600,
+                  fontStyle: hasPartner ? FontStyle.normal : FontStyle.italic,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                tooltip: 'Modifica coppia',
+                onPressed: () => _showSetPartnerDialog(a),
+              ),
+              onTap: () => _showSetPartnerDialog(a),
+            ),
+          );
+        }
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          elevation: hasPartner ? 1.5 : 0.5,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: hasPartner ? Colors.green.shade200 : Colors.grey.shade300,
+              width: hasPartner ? 1.2 : 1,
+            ),
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            leading: CircleAvatar(
+              backgroundColor:
+                  a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.pink.shade100,
+              child: Icon(
+                a.ruolo == 'leader' ? Icons.male : Icons.female,
+                color: a.ruolo == 'leader' ? Colors.blue.shade800 : Colors.pink.shade800,
+              ),
+            ),
+            title: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    a.nomeCompleto,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (a.isProspect)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.purple.shade300),
+                    ),
+                    child: Text(
+                      'PROSPECT',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple.shade800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Icon(
+                      hasPartner ? Icons.favorite : Icons.person_outline,
+                      size: 15,
+                      color: hasPartner ? Colors.pink : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        hasPartner
+                            ? 'Partner: ${a.partnerNomeCompleto}'
+                            : 'Singolo/a (nessun partner)',
+                        style: TextStyle(
+                          fontWeight: hasPartner ? FontWeight.w600 : FontWeight.normal,
+                          color: hasPartner ? Colors.green.shade800 : Colors.grey.shade700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  a.scuolaNome != null && a.corsoDescrizione != null
+                      ? '${a.scuolaNome!} • ${a.corsoDescrizione!}'
+                      : (a.corsoDescrizione ??
+                          (a.isProspect
+                              ? 'Non ancora iscritto a un corso'
+                              : 'Nessun corso assegnato')),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            trailing: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    hasPartner ? Colors.orange.shade50 : Colors.deepPurple.shade50,
+                foregroundColor:
+                    hasPartner ? Colors.orange.shade900 : Colors.deepPurple.shade900,
+                elevation: 0,
+                side: BorderSide(
+                  color:
+                      hasPartner ? Colors.orange.shade300 : Colors.deepPurple.shade300,
+                ),
+              ),
+              icon: Icon(hasPartner ? Icons.edit : Icons.favorite, size: 16),
+              label: Text(hasPartner ? 'Cambia/Rimuovi' : 'Associa'),
+              onPressed: () => _showSetPartnerDialog(a),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredAllievi = _getFilteredAllievi();
-    final isCompact = MediaQuery.of(context).size.width < 750;
+    final isMobile = MediaQuery.of(context).size.width < 800;
+    final bool hasActiveFilters = _selectedScuolaId != null || _selectedCorsoId != null;
 
     final corsiDisponibili = _selectedScuolaId == null
         ? _corsi
@@ -407,246 +579,236 @@ class _CoppieScreenState extends State<CoppieScreen> {
                 ),
               ],
             ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Filtri Ricerca e Selezione
-            Card(
-              elevation: 0,
-              color: Colors.grey.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: BorderSide(color: Colors.grey.shade300),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  children: [
-                    if (isCompact) ...[
-                      searchField,
-                      const SizedBox(height: 10),
-                      scuolaDropdown,
-                      const SizedBox(height: 10),
-                      corsoDropdown,
-                    ] else ...[
-                      Row(
-                        children: [
-                          Expanded(flex: 3, child: searchField),
-                          const SizedBox(width: 12),
-                          Expanded(flex: 2, child: scuolaDropdown),
-                          const SizedBox(width: 12),
-                          Expanded(flex: 2, child: corsoDropdown),
-                        ],
+      body: isMobile
+          ? Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Cerca per allievo o partner...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Badge(
+                        isLabelVisible: hasActiveFilters,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            backgroundColor: _showMobileFilters ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
+                          ),
+                          icon: Icon(
+                            _showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                            size: 20,
+                            color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade700,
+                          ),
+                          label: Text(
+                            _showMobileFilters ? 'Chiudi' : 'Filtri',
+                            style: TextStyle(
+                              color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade800,
+                              fontWeight: hasActiveFilters ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+                        ),
                       ),
                     ],
-                    const SizedBox(height: 10),
-                    // Summary Chips & Reset
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                  ),
+                ),
+                if (_showMobileFilters)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: Card(
+                      elevation: 0,
+                      color: Colors.grey.shade100,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          children: [
+                            scuolaDropdown,
+                            const SizedBox(height: 10),
+                            corsoDropdown,
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        avatar: const Icon(Icons.people, size: 16),
+                                        label: Text('Totale: ${filteredAllievi.length} / ${_allievi.length}'),
+                                      ),
+                                      Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        backgroundColor: Colors.green.shade50,
+                                        avatar: Icon(Icons.favorite, size: 16, color: Colors.green.shade700),
+                                        label: Text(
+                                          'In Coppia: $coppieCount',
+                                          style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                      Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        backgroundColor: Colors.blueGrey.shade50,
+                                        avatar: Icon(Icons.person, size: 16, color: Colors.blueGrey.shade700),
+                                        label: Text(
+                                          'Singoli: $singoliCount',
+                                          style: TextStyle(color: Colors.blueGrey.shade900),
+                                        ),
+                                      ),
+                                      if (hasActiveFilters || _searchQuery.isNotEmpty)
+                                        TextButton.icon(
+                                          icon: const Icon(Icons.filter_alt_off, size: 16),
+                                          label: const Text('Azzera filtri'),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {
+                                              _selectedScuolaId = null;
+                                              _selectedCorsoId = null;
+                                              _searchQuery = '';
+                                            });
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Expanded(child: _buildAllieviList(filteredAllievi, true)),
+              ],
+            )
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Card(
+                    elevation: 0,
+                    color: Colors.grey.shade50,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        children: [
+                          Row(
                             children: [
-                              Chip(
-                                visualDensity: VisualDensity.compact,
-                                avatar: const Icon(Icons.people, size: 16),
-                                label: Text('Totale: ${filteredAllievi.length} / ${_allievi.length}'),
-                              ),
-                              Chip(
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: Colors.green.shade50,
-                                avatar: Icon(Icons.favorite, size: 16, color: Colors.green.shade700),
-                                label: Text(
-                                  'In Coppia: $coppieCount',
-                                  style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                              Chip(
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: Colors.blueGrey.shade50,
-                                avatar: Icon(Icons.person, size: 16, color: Colors.blueGrey.shade700),
-                                label: Text(
-                                  'Singoli: $singoliCount',
-                                  style: TextStyle(color: Colors.blueGrey.shade900),
-                                ),
-                              ),
-                              Chip(
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: Colors.purple.shade50,
-                                avatar: Icon(Icons.contact_mail, size: 16, color: Colors.purple.shade700),
-                                label: Text(
-                                  'Prospect: $prospectCount',
-                                  style: TextStyle(color: Colors.purple.shade900),
-                                ),
-                              ),
-                              if (_selectedScuolaId != null || _selectedCorsoId != null || _searchQuery.isNotEmpty)
-                                TextButton.icon(
-                                  icon: const Icon(Icons.filter_alt_off, size: 16),
-                                  label: const Text('Azzera filtri'),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() {
-                                      _selectedScuolaId = null;
-                                      _selectedCorsoId = null;
-                                      _searchQuery = '';
-                                    });
-                                  },
-                                ),
-                              if (widget.embedded)
-                                IconButton(
-                                  icon: const Icon(Icons.refresh, size: 18),
-                                  tooltip: 'Ricarica dati',
-                                  onPressed: () => _loadData(),
-                                ),
+                              Expanded(flex: 3, child: searchField),
+                              const SizedBox(width: 12),
+                              Expanded(flex: 2, child: scuolaDropdown),
+                              const SizedBox(width: 12),
+                              Expanded(flex: 2, child: corsoDropdown),
                             ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      avatar: const Icon(Icons.people, size: 16),
+                                      label: Text('Totale: ${filteredAllievi.length} / ${_allievi.length}'),
+                                    ),
+                                    Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      backgroundColor: Colors.green.shade50,
+                                      avatar: Icon(Icons.favorite, size: 16, color: Colors.green.shade700),
+                                      label: Text(
+                                        'In Coppia: $coppieCount',
+                                        style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      backgroundColor: Colors.blueGrey.shade50,
+                                      avatar: Icon(Icons.person, size: 16, color: Colors.blueGrey.shade700),
+                                      label: Text(
+                                        'Singoli: $singoliCount',
+                                        style: TextStyle(color: Colors.blueGrey.shade900),
+                                      ),
+                                    ),
+                                    Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      backgroundColor: Colors.purple.shade50,
+                                      avatar: Icon(Icons.contact_mail, size: 16, color: Colors.purple.shade700),
+                                      label: Text(
+                                        'Prospect: $prospectCount',
+                                        style: TextStyle(color: Colors.purple.shade900),
+                                      ),
+                                    ),
+                                    if (_selectedScuolaId != null || _selectedCorsoId != null || _searchQuery.isNotEmpty)
+                                      TextButton.icon(
+                                        icon: const Icon(Icons.filter_alt_off, size: 16),
+                                        label: const Text('Azzera filtri'),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() {
+                                            _selectedScuolaId = null;
+                                            _selectedCorsoId = null;
+                                            _searchQuery = '';
+                                          });
+                                        },
+                                      ),
+                                    if (widget.embedded)
+                                      IconButton(
+                                        icon: const Icon(Icons.refresh, size: 18),
+                                        tooltip: 'Ricarica dati',
+                                        onPressed: () => _loadData(),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(child: _buildAllieviList(filteredAllievi, false)),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            // Elenco Allievi e Prospect
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _allievi.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Nessun allievo o prospect registrato a sistema.',
-                            style: TextStyle(fontSize: 15, color: Colors.grey),
-                          ),
-                        )
-                      : filteredAllievi.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'Nessun allievo o prospect trovato per i filtri selezionati.',
-                                style: TextStyle(fontSize: 15, color: Colors.grey),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: filteredAllievi.length,
-                              itemBuilder: (context, index) {
-                                final a = filteredAllievi[index];
-                                final hasPartner = a.partnerId != null;
-
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  elevation: hasPartner ? 1.5 : 0.5,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    side: BorderSide(
-                                      color: hasPartner ? Colors.green.shade200 : Colors.grey.shade300,
-                                      width: hasPartner ? 1.2 : 1,
-                                    ),
-                                  ),
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                                    leading: CircleAvatar(
-                                      backgroundColor:
-                                          a.ruolo == 'leader' ? Colors.blue.shade100 : Colors.pink.shade100,
-                                      child: Icon(
-                                        a.ruolo == 'leader' ? Icons.male : Icons.female,
-                                        color: a.ruolo == 'leader' ? Colors.blue.shade800 : Colors.pink.shade800,
-                                      ),
-                                    ),
-                                    title: Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            a.nomeCompleto,
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        if (a.isProspect)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: Colors.purple.shade50,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: Colors.purple.shade300),
-                                            ),
-                                            child: Text(
-                                              'PROSPECT',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.purple.shade800,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const SizedBox(height: 3),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              hasPartner ? Icons.favorite : Icons.person_outline,
-                                              size: 15,
-                                              color: hasPartner ? Colors.pink : Colors.grey.shade600,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                hasPartner
-                                                    ? 'Partner: ${a.partnerNomeCompleto}'
-                                                    : 'Singolo/a (nessun partner)',
-                                                style: TextStyle(
-                                                  fontWeight: hasPartner ? FontWeight.w600 : FontWeight.normal,
-                                                  color: hasPartner ? Colors.green.shade800 : Colors.grey.shade700,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          a.scuolaNome != null && a.corsoDescrizione != null
-                                              ? '${a.scuolaNome!} • ${a.corsoDescrizione!}'
-                                              : (a.corsoDescrizione ??
-                                                  (a.isProspect
-                                                      ? 'Non ancora iscritto a un corso'
-                                                      : 'Nessun corso assegnato')),
-                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                    trailing: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            hasPartner ? Colors.orange.shade50 : Colors.deepPurple.shade50,
-                                        foregroundColor:
-                                            hasPartner ? Colors.orange.shade900 : Colors.deepPurple.shade900,
-                                        elevation: 0,
-                                        side: BorderSide(
-                                          color:
-                                              hasPartner ? Colors.orange.shade300 : Colors.deepPurple.shade300,
-                                        ),
-                                      ),
-                                      icon: Icon(hasPartner ? Icons.edit : Icons.favorite, size: 16),
-                                      label: Text(hasPartner ? 'Cambia/Rimuovi' : 'Associa'),
-                                      onPressed: () => _showSetPartnerDialog(a),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

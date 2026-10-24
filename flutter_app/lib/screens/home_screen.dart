@@ -367,6 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
             backgroundColor: Colors.white,
             elevation: 8,
             indicatorColor: const Color(0xFF8B2529).withValues(alpha: 0.15),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
             onDestinationSelected: (idx) {
               if (idx == 0) {
                 setState(() => _currentSection = NavSection.presenze);

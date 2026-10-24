@@ -697,6 +697,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
 
     return Scaffold(
 
@@ -716,15 +717,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
             ),
 
-      floatingActionButton: FloatingActionButton.extended(
-
-        onPressed: () => _showAddEditProspectDialog(),
-
-        icon: const Icon(Icons.person_add_alt_1),
-
-        label: const Text('Nuovo Prospect'),
-
-      ),
+      floatingActionButton: isMobile
+          ? FloatingActionButton(
+              onPressed: () => _showAddEditProspectDialog(),
+              tooltip: 'Nuovo Prospect',
+              child: const Icon(Icons.person_add_alt_1),
+            )
+          : FloatingActionButton.extended(
+              onPressed: () => _showAddEditProspectDialog(),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Nuovo Prospect'),
+            ),
 
       body: Builder(
         builder: (context) {
