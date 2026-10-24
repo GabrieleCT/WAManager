@@ -45,6 +45,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
   String? _selectedScuolaId;
 
   String? _selectedCorsoId;
+  bool _showMobileFilters = false;
 
 
 
@@ -650,8 +651,51 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
 
 
-  @override
+  Future<void> _deleteProspect(Allievo p) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Conferma Eliminazione'),
+        content: Text(
+          'Vuoi eliminare definitivamente il prospect ${p.nomeCompleto}?\n\n'
+          'L\'operazione comporterà automaticamente:\n'
+          '• Rimozione dai gruppi WhatsApp\n'
+          '• Eliminazione della chat WhatsApp\n'
+          '• Eliminazione del contatto dalla Rubrica Google',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final ok = await _api.deleteAllievo(p.id);
+      if (mounted) {
+        if (ok) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Prospect ${p.nomeCompleto} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
+              backgroundColor: Colors.green.shade800,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Errore durante l\'eliminazione del prospect.')),
+          );
+        }
+      }
+      if (ok) {
+        _loadData();
+      }
+    }
+  }
 
+  @override
   Widget build(BuildContext context) {
 
     return Scaffold(
@@ -682,73 +726,72 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
       ),
 
-      body: Column(
+      body: Builder(
+        builder: (context) {
+          final isMobile = MediaQuery.of(context).size.width < 800;
+          final bool hasActiveFilters = _selectedScuolaId != null || _selectedCorsoId != null;
 
-        children: [
-
-          Padding(
-
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-
-            child: Row(
-
-              children: [
-
-                Expanded(
-
-                  child: TextField(
-
-                    decoration: InputDecoration(
-
-                      hintText: 'Cerca prospect per nome, cognome o telefono...',
-
-                      prefixIcon: const Icon(Icons.search),
-
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Cerca prospect per nome, cognome o tel...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          isDense: true,
+                        ),
+                        onChanged: (v) {
+                          _searchQuery = v;
+                          _loadData();
+                        },
+                      ),
                     ),
-
-                    onChanged: (v) {
-
-                      _searchQuery = v;
-
-                      _loadData();
-
-                    },
-
-                  ),
-
+                    if (isMobile) ...[
+                      const SizedBox(width: 8),
+                      Badge(
+                        isLabelVisible: hasActiveFilters,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            backgroundColor: _showMobileFilters ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
+                          ),
+                          icon: Icon(
+                            _showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                            size: 20,
+                            color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade700,
+                          ),
+                          label: Text(
+                            _showMobileFilters ? 'Chiudi' : 'Filtri',
+                            style: TextStyle(
+                              color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade800,
+                              fontWeight: hasActiveFilters ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+                        ),
+                      ),
+                    ] else if (widget.embedded) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        tooltip: 'Ricarica dati',
+                        onPressed: _loadData,
+                      ),
+                    ],
+                  ],
                 ),
-
-                if (widget.embedded) ...[
-
-                  const SizedBox(width: 8),
-
-                  IconButton(
-
-                    icon: const Icon(Icons.refresh),
-
-                    tooltip: 'Ricarica dati',
-
-                    onPressed: _loadData,
-
-                  ),
-
-                ],
-
-              ],
-
-            ),
-
-          ),
-
-          Padding(
-
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-
-            child: Card(
+              ),
+              if (!isMobile || _showMobileFilters)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Card(
 
               elevation: 0,
 
@@ -980,230 +1023,109 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
 
 
-                    return Card(
-
-                      child: ListTile(
-
-                        title: Row(
-
-                          children: [
-
-                            Text(p.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)),
-
-                            const SizedBox(width: 8),
-
-                            Container(
-
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-
-                              decoration: BoxDecoration(
-
-                                color: Colors.orange.shade700,
-
-                                borderRadius: BorderRadius.circular(4),
-
+                    if (isMobile) {
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        child: ListTile(
+                          title: Text(
+                            p.nomeCompleto,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                tooltip: 'Modifica prospect',
+                                onPressed: () => _showAddEditProspectDialog(p),
                               ),
-
-                              child: const Text('PROSPECT', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-
-                            ),
-
-                          ],
-
-                        ),
-
-                        subtitle: Column(
-
-                          crossAxisAlignment: CrossAxisAlignment.start,
-
-                          children: [
-
-                            const SizedBox(height: 4),
-
-                            Text('📞 ${p.telefono.isNotEmpty ? p.telefono : "N/D"} | Ruolo: ${p.ruoloDisplay} | Livello: ${p.livelloDisplay}'),
-
-                            if (hasCorso) ...[
-
-                              const SizedBox(height: 4),
-
-                              Container(
-
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-
-                                decoration: BoxDecoration(
-
-                                  color: Colors.amber.shade100,
-
-                                  borderRadius: BorderRadius.circular(6),
-
-                                  border: Border.all(color: Colors.amber.shade300),
-
-                                ),
-
-                                child: Text(
-
-                                  '🏷️ In prova nel corso: ${p.corsoDescrizione}',
-
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.amber.shade900),
-
-                                ),
-
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                tooltip: 'Elimina prospect',
+                                onPressed: () => _deleteProspect(p),
                               ),
-
+                              IconButton(
+                                icon: Icon(Icons.school, color: Theme.of(context).colorScheme.primary, size: 20),
+                                tooltip: 'Iscrivi a Corso (Promuovi)',
+                                onPressed: () => _showConvertDialog(p),
+                              ),
                             ],
-
-                            if (p.note.isNotEmpty)
-
-                              Padding(
-
-                                padding: const EdgeInsets.only(top: 4),
-
-                                child: Text('📝 Note: ${p.note}', style: const TextStyle(color: Colors.brown, fontStyle: FontStyle.italic)),
-
-                              ),
-
-                          ],
-
+                          ),
+                          onTap: () => _showAddEditProspectDialog(p),
                         ),
+                      );
+                    }
 
-                        trailing: Wrap(
-
-                          spacing: 4,
-
-                          crossAxisAlignment: WrapCrossAlignment.center,
-
+                    return Card(
+                      child: ListTile(
+                        title: Row(
                           children: [
-
-                            IconButton(
-
-                              icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
-
-                              tooltip: 'Modifica prospect',
-
-                              onPressed: () => _showAddEditProspectDialog(p),
-
-                            ),
-
-                            IconButton(
-
-                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-
-                              tooltip: 'Elimina prospect',
-
-                              onPressed: () async {
-
-                                final confirm = await showDialog<bool>(
-
-                                  context: context,
-
-                                  builder: (ctx) => AlertDialog(
-
-                                    title: const Text('Conferma Eliminazione'),
-
-                                    content: Text(
-
-                                      'Vuoi eliminare definitivamente il prospect ${p.nomeCompleto}?\n\n'
-
-                                      'L\'operazione comporterà automaticamente:\n'
-
-                                      '• Rimozione dai gruppi WhatsApp\n'
-
-                                      '• Eliminazione della chat WhatsApp\n'
-
-                                      '• Eliminazione del contatto dalla Rubrica Google',
-
-                                    ),
-
-                                    actions: [
-
-                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-
-                                      ElevatedButton(
-
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-
-                                        onPressed: () => Navigator.pop(ctx, true),
-
-                                        child: const Text('Elimina'),
-
-                                      ),
-
-                                    ],
-
-                                  ),
-
-                                );
-
-                                if (confirm == true) {
-
-                                  final ok = await _api.deleteAllievo(p.id);
-
-                                  if (mounted) {
-
-                                    if (ok) {
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-
-                                        SnackBar(
-
-                                          content: Text('Prospect ${p.nomeCompleto} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
-
-                                          backgroundColor: Colors.green.shade800,
-
-                                        ),
-
-                                      );
-
-                                    } else {
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-
-                                        const SnackBar(content: Text('Errore durante l\'eliminazione del prospect.')),
-
-                                      );
-
-                                    }
-
-                                  }
-
-                                  if (ok) {
-
-                                    _loadData();
-
-                                  }
-
-                                }
-
-                              },
-
-                            ),
-
-                            ElevatedButton.icon(
-
-                              style: ElevatedButton.styleFrom(
-
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-
-                                foregroundColor: Colors.white,
-
-                                visualDensity: VisualDensity.compact,
-
+                            Text(p.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade700,
+                                borderRadius: BorderRadius.circular(4),
                               ),
-
-                              icon: const Icon(Icons.school, size: 15),
-
-                              label: const Text('Iscrivi a Corso'),
-
-                              onPressed: () => _showConvertDialog(p),
-
+                              child: const Text('PROSPECT', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                             ),
-
                           ],
-
                         ),
-
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text('📞 ${p.telefono.isNotEmpty ? p.telefono : "N/D"} | Ruolo: ${p.ruoloDisplay} | Livello: ${p.livelloDisplay}'),
+                            if (hasCorso) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.amber.shade300),
+                                ),
+                                child: Text(
+                                  '🏷️ In prova nel corso: ${p.corsoDescrizione}',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.amber.shade900),
+                                ),
+                              ),
+                            ],
+                            if (p.note.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text('📝 Note: ${p.note}', style: const TextStyle(color: Colors.brown, fontStyle: FontStyle.italic)),
+                              ),
+                          ],
+                        ),
+                        trailing: Wrap(
+                          spacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                              tooltip: 'Modifica prospect',
+                              onPressed: () => _showAddEditProspectDialog(p),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                              tooltip: 'Elimina prospect',
+                              onPressed: () => _deleteProspect(p),
+                            ),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.primary,
+                                foregroundColor: Colors.white,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(Icons.school, size: 15),
+                              label: const Text('Iscrivi a Corso'),
+                              onPressed: () => _showConvertDialog(p),
+                            ),
+                          ],
+                        ),
                       ),
-
                     );
 
                   },
@@ -1212,10 +1134,10 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
           ),
 
-        ],
-
+            ],
+          );
+        },
       ),
-
     );
 
   }
