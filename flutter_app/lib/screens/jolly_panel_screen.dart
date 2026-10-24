@@ -93,8 +93,8 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     );
   }
 
-  void _showSendMessageDialog() {
-    String? selectedJollyId = _jollyList.isNotEmpty ? _jollyList.first.id : null;
+  void _showSendMessageDialog([Jolly? jolly]) {
+    String? selectedJollyId = jolly?.id ?? (_jollyList.isNotEmpty ? _jollyList.first.id : null);
     String? selectedLezioneId = _lezioni.isNotEmpty ? _lezioni.first.id : null;
     final textController = TextEditingController(text: 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺');
     bool sending = false;
@@ -104,7 +104,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
-          title: const Text('Invia Messaggio Jolly'),
+          title: Text(jolly != null ? 'Invia Messaggio a ${jolly.allievoNome}' : 'Invia Messaggio Jolly'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -161,24 +161,154 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     );
   }
 
+  Future<void> _deleteJolly(Jolly j) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Conferma eliminazione'),
+        content: Text('Sei sicuro di voler rimuovere ${j.allievoNome} dall\'elenco dei Jolly?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final ok = await _api.deleteJolly(j.id);
+      if (mounted) {
+        if (ok) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Jolly ${j.allievoNome} eliminato con successo.'),
+              backgroundColor: Colors.green.shade800,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Errore durante l\'eliminazione del Jolly.')),
+          );
+        }
+      }
+      _loadData();
+    }
+  }
+
+  Widget _buildJollyTile(Jolly j, bool isMobile) {
+    if (isMobile) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: ListTile(
+          title: Text(
+            j.allievoNome,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chat, color: Color(0xFF25D366), size: 20),
+                tooltip: 'Invia messaggio jolly',
+                onPressed: () => _showSendMessageDialog(j),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                tooltip: 'Modifica jolly',
+                onPressed: () => _showAddJollyDialog(j),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                tooltip: 'Elimina jolly',
+                onPressed: () => _deleteJolly(j),
+              ),
+            ],
+          ),
+          onTap: () => _showAddJollyDialog(j),
+        ),
+      );
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ListTile(
+        title: Row(
+          children: [
+            Text(j.allievoNome, style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.amber.shade400),
+              ),
+              child: Text(
+                'Priorità ${j.priorita}',
+                style: TextStyle(
+                  color: Colors.amber.shade900,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              '📞 ${j.allievoTelefono.isNotEmpty ? j.allievoTelefono : "N/D"} | Ruolo: ${j.allievoRuoloDisplay} | Livello: ${j.allievoLivello}',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            ),
+          ],
+        ),
+        trailing: Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF128C7E),
+                side: const BorderSide(color: Color(0xFF25D366)),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
+              label: const Text('Invia Messaggio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: () => _showSendMessageDialog(j),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+              tooltip: 'Modifica',
+              onPressed: () => _showAddJollyDialog(j),
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+              tooltip: 'Elimina',
+              onPressed: () => _deleteJolly(j),
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final actionButtons = [
-      ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.amber.shade800,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        icon: const Icon(Icons.send, size: 16),
-        label: const Text('Invia Messaggio', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        onPressed: _showSendMessageDialog,
-      ),
-      const SizedBox(width: 8),
-      IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData, tooltip: 'Ricarica dati'),
-    ];
+    final isMobile = MediaQuery.of(context).size.width < 800;
 
     return Scaffold(
       appBar: widget.embedded
@@ -186,62 +316,51 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
           : AppBar(
               title: const Text('Pannello Jolly WhatsApp'),
               actions: [
-                IconButton(icon: const Icon(Icons.send), onPressed: _showSendMessageDialog, tooltip: 'Invia Messaggio'),
-                IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
+                IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData, tooltip: 'Ricarica dati'),
               ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddJollyDialog,
-        label: const Text('Nuovo Jolly'),
-        icon: const Icon(Icons.add),
-      ),
+      floatingActionButton: isMobile
+          ? FloatingActionButton(
+              onPressed: _showAddJollyDialog,
+              tooltip: 'Nuovo Jolly',
+              child: const Icon(Icons.add),
+            )
+          : FloatingActionButton.extended(
+              onPressed: _showAddJollyDialog,
+              label: const Text('Nuovo Jolly'),
+              icon: const Icon(Icons.add),
+            ),
       body: Column(
         children: [
-          if (widget.embedded)
+          if (widget.embedded && !isMobile)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
               child: Row(
                 children: [
-                  actionButtons[0],
                   const Spacer(),
-                  actionButtons[2],
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Ricarica dati',
+                    onPressed: _loadData,
+                  ),
                 ],
               ),
             ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
-              itemCount: _jollyList.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final j = _jollyList[i];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.amber.shade100,
-                    child: Text('${j.priorita}', style: TextStyle(color: Colors.amber.shade900, fontWeight: FontWeight.bold)),
-                  ),
-                  title: Text(j.allievoNome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Ruolo: ${j.allievoRuoloDisplay} | Livello: ${j.allievoLivello} | Tel: ${j.allievoTelefono}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _showAddJollyDialog(j),
+                : _jollyList.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Nessun Jolly designato.',
+                          style: TextStyle(fontSize: 15, color: Colors.grey),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: _jollyList.length,
+                        itemBuilder: (context, i) => _buildJollyTile(_jollyList[i], isMobile),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () async {
-                          final confirm = await showDialog(context: context, builder: (ctx) => AlertDialog(title: const Text('Conferma'), content: const Text('Eliminare jolly?'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Elimina', style: TextStyle(color: Colors.red)))]));
-                          if (confirm == true) { await _api.deleteJolly(j.id); _loadData(); }
-                        }
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
           ),
         ],
       ),
