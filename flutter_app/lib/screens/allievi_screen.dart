@@ -21,7 +21,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
   List<Scuola> _scuole = [];
   List<Pagamento> _pagamenti = [];
   bool _loading = true;
-  String _groupBy = 'nessuno'; // 'nessuno', 'corso', 'scuola'
+  String _groupBy = 'nessuno';
+  bool _showMobileFilters = false; // 'nessuno', 'corso', 'scuola'
   String _searchQuery = '';
   String? _selectedScuolaId;
   String? _selectedCorsoId;
@@ -627,10 +628,114 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       ],
                     )
                   ],
+                  if (allievo != null) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'WhatsApp & Modulo Tesseramento',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.teal),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'WhatsApp Scuola: ${allievo.inGruppoScuolaWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: allievo.inGruppoScuolaWhatsapp ? Colors.green.shade900 : Colors.grey.shade800,
+                                  ),
+                                ),
+                              ),
+                              if (!allievo.inGruppoScuolaWhatsapp)
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade700,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  icon: const Icon(Icons.group_add, size: 14),
+                                  label: const Text('+ Scuola', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () => _confirmAndAddToWhatsappScuola(allievo),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'WhatsApp Corso: ${allievo.inGruppoCorsoWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: allievo.inGruppoCorsoWhatsapp ? Colors.teal.shade900 : Colors.grey.shade800,
+                                  ),
+                                ),
+                              ),
+                              if (!allievo.inGruppoCorsoWhatsapp &&
+                                  (allievo.corsoId != null && (allievo.corsoHasWhatsapp || (allievo.corsoGruppoWhatsapp != null && allievo.corsoGruppoWhatsapp!.isNotEmpty))))
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal.shade700,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  icon: const Icon(Icons.group_add, size: 14),
+                                  label: const Text('+ Corso', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () => _confirmAndAddToWhatsappCorso(allievo),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF128C7E),
+                          side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.chat, size: 18, color: Color(0xFF25D366)),
+                        label: const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        onPressed: () => _mostraInviaModuloTesseramentoDialog(allievo),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             actions: [
+              if (allievo != null)
+                TextButton.icon(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                  label: const Text('Elimina', style: TextStyle(color: Colors.red)),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _confirmDeleteAllievo(allievo);
+                  },
+                ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Annulla'),
@@ -1150,7 +1255,72 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 
+  Future<void> _confirmDeleteAllievo(Allievo a) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Conferma eliminazione allievo'),
+        content: Text(
+          'Sei sicuro di voler eliminare l\'allievo ${a.nome} ${a.cognome}?\n\n'
+          'L\'operazione comporterà automaticamente:\n'
+          '• Rimozione dai gruppi WhatsApp (corso e scuola)\n'
+          '• Eliminazione della chat WhatsApp\n'
+          '• Eliminazione del contatto dalla Rubrica Google',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Elimina definitivamente'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final ok = await _api.deleteAllievo(a.id);
+      if (mounted) {
+        if (ok) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Allievo ${a.nome} ${a.cognome} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
+              backgroundColor: Colors.green.shade800,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Errore durante l\'eliminazione dell\'allievo.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+      _loadAllievi();
+    }
+  }
+
   Widget _buildAllievoTile(Allievo a) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
+    if (isMobile) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: ListTile(
+          title: Text(
+            a.nomeCompleto,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
+            tooltip: 'Modifica Allievo',
+            onPressed: () => _showAddEditDialog(a),
+          ),
+          onTap: () => _showAddEditDialog(a),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
@@ -1261,13 +1431,21 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final allieviVisualizzati = _filteredAllievi;
 
     final corsiFiltratiPerScuola = _selectedScuolaId == null
         ? _corsi
         : _corsi.where((c) => c.scuolaId == _selectedScuolaId).toList();
 
-    final actionButtons = [
+    final bool hasActiveFilters = _selectedScuolaId != null ||
+        _selectedCorsoId != null ||
+        _filterWaScuola != 'tutti' ||
+        _filterWaCorso != 'tutti' ||
+        _filterNonPagato != 'tutti' ||
+        _filterStatoTessera != 'tutti';
+
+    final actionButtons = isMobile ? <Widget>[] : [
       ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green.shade700,
@@ -1312,7 +1490,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
           ? null
           : AppBar(
               title: const Text('Elenco Allievi'),
-              actions: actionButtons,
+              actions: isMobile ? [] : actionButtons,
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddEditDialog(),
@@ -1321,7 +1499,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       ),
       body: Column(
         children: [
-          if (widget.embedded)
+          if (widget.embedded && !isMobile)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: Row(
@@ -1334,24 +1512,58 @@ class _AllieviScreenState extends State<AllieviScreen> {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Cerca allievo per nome, cognome o telefono...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              onChanged: (v) {
-                _searchQuery = v;
-                _loadAllievi();
-              },
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Cerca allievo per nome, cognome o tel...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      _searchQuery = v;
+                      _loadAllievi();
+                    },
+                  ),
+                ),
+                if (isMobile) ...[
+                  const SizedBox(width: 8),
+                  Badge(
+                    isLabelVisible: hasActiveFilters,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        backgroundColor: _showMobileFilters ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
+                      ),
+                      icon: Icon(
+                        _showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                        size: 20,
+                        color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade700,
+                      ),
+                      label: Text(
+                        _showMobileFilters ? 'Chiudi' : 'Filtri',
+                        style: TextStyle(
+                          color: hasActiveFilters ? Theme.of(context).primaryColor : Colors.grey.shade800,
+                          fontWeight: hasActiveFilters ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          // Sezione Filtri Scuola, Corso e WhatsApp
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Card(
+          // Sezione Filtri Scuola, Corso e WhatsApp (nascosta di default su mobile)
+          if (!isMobile || _showMobileFilters)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Card(
               elevation: 0,
               color: Colors.grey.shade100,
               shape: RoundedRectangleBorder(
