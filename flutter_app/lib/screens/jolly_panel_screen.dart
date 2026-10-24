@@ -17,11 +17,20 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   List<Allievo> _allievi = [];
   List<Lezione> _lezioni = [];
   bool _loading = true;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _defaultJollyMessage = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
 
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -31,10 +40,19 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     final lezioni = await _api.getLezioni();
     final allievi = await _api.getAllievi(isProspect: false);
     allievi.sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+    String defaultMsg = _defaultJollyMessage;
+    try {
+      final config = await _api.getDaemonConfig();
+      if (config != null && config.jollyTesto.trim().isNotEmpty) {
+        defaultMsg = config.jollyTesto.trim();
+      }
+    } catch (_) {}
+
     setState(() {
       _jollyList = jolly;
       _lezioni = lezioni;
       _allievi = allievi;
+      _defaultJollyMessage = defaultMsg;
       _loading = false;
     });
   }
@@ -96,7 +114,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   void _showSendMessageDialog([Jolly? jolly]) {
     String? selectedJollyId = jolly?.id ?? (_jollyList.isNotEmpty ? _jollyList.first.id : null);
     String? selectedLezioneId = _lezioni.isNotEmpty ? _lezioni.first.id : null;
-    final textController = TextEditingController(text: 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺');
+    final textController = TextEditingController(text: _defaultJollyMessage);
     bool sending = false;
     Map<String, dynamic>? lastResult;
 
@@ -202,9 +220,15 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
 
   Widget _buildJollyTile(Jolly j, bool isMobile) {
     if (isMobile) {
+      final bool isLeader = j.allievoRuolo.toLowerCase() == 'leader';
       return Card(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
+          leading: Icon(
+            isLeader ? Icons.male : Icons.female,
+            color: isLeader ? Colors.blue.shade700 : Colors.pink.shade700,
+            size: 26,
+          ),
           title: Text(
             j.allievoNome,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
@@ -234,9 +258,18 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
       );
     }
 
+    final bool isLeader = j.allievoRuolo.toLowerCase() == 'leader';
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isLeader ? Colors.blue.shade100 : Colors.pink.shade100,
+          child: Icon(
+            isLeader ? Icons.male : Icons.female,
+            color: isLeader ? Colors.blue.shade800 : Colors.pink.shade800,
+            size: 20,
+          ),
+        ),
         title: Row(
           children: [
             Text(j.allievoNome, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -309,6 +342,12 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 800;
+    final filteredJolly = _jollyList.where((j) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase().trim();
+      return j.allievoNome.toLowerCase().contains(q) ||
+          j.allievoTelefono.toLowerCase().contains(q);
+    }).toList();
 
     return Scaffold(
       appBar: widget.embedded
@@ -332,20 +371,43 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
             ),
       body: Column(
         children: [
-          if (widget.embedded && !isMobile)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Row(
-                children: [
-                  const Spacer(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Cerca jolly per nome o telefono...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                ),
+                if (widget.embedded && !isMobile) ...[
+                  const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.refresh),
                     tooltip: 'Ricarica dati',
                     onPressed: _loadData,
                   ),
                 ],
-              ),
+              ],
             ),
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -356,11 +418,18 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
                           style: TextStyle(fontSize: 15, color: Colors.grey),
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        itemCount: _jollyList.length,
-                        itemBuilder: (context, i) => _buildJollyTile(_jollyList[i], isMobile),
-                      ),
+                    : filteredJolly.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Nessun Jolly trovato con i criteri di ricerca.',
+                              style: TextStyle(fontSize: 15, color: Colors.grey),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            itemCount: filteredJolly.length,
+                            itemBuilder: (context, i) => _buildJollyTile(filteredJolly[i], isMobile),
+                          ),
           ),
         ],
       ),

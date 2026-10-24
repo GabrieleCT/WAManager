@@ -1210,6 +1210,8 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
                 config.sollecito_orario = data['sollecito_orario']
             if 'sollecito_testo' in data:
                 config.sollecito_testo = data['sollecito_testo']
+            if 'jolly_testo' in data:
+                config.jolly_testo = data['jolly_testo']
 
             config.save()
             sync_daemon_schedule(config.orario)

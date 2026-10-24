@@ -556,6 +556,7 @@ class SondaggioMattutinoConfig {
   final bool sollecitoAttivo;
   final String sollecitoOrario;
   final String sollecitoTesto;
+  final String jollyTesto;
   final String createdAt;
   final String updatedAt;
 
@@ -575,6 +576,7 @@ class SondaggioMattutinoConfig {
     this.sollecitoAttivo = false,
     this.sollecitoOrario = '16:00',
     this.sollecitoTesto = '',
+    this.jollyTesto = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
     this.createdAt = '',
     this.updatedAt = '',
   });
@@ -596,6 +598,7 @@ class SondaggioMattutinoConfig {
       sollecitoAttivo: json['sollecito_attivo'] ?? false,
       sollecitoOrario: json['sollecito_orario'] ?? '16:00',
       sollecitoTesto: json['sollecito_testo'] ?? '',
+      jollyTesto: json['jolly_testo'] ?? 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );

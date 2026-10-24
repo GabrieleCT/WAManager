@@ -354,6 +354,7 @@ class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
             'is_poll', 'poll_opzione_1', 'poll_opzione_2',
             'ore_ascolto_risposte', 'is_active',
             'sollecito_attivo', 'sollecito_orario', 'sollecito_testo',
+            'jolly_testo',
             'created_at', 'updated_at'
         ]
 

@@ -19,6 +19,10 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
   bool _executingDaemon = false;
   bool _sendingManual = false;
   bool _savingSollecito = false;
+  bool _savingJolly = false;
+  final TextEditingController _testoJollyCtl = TextEditingController(
+    text: 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+  );
 
   // 1. Configurazione Demone
   TimeOfDay _daemonTime = const TimeOfDay(hour: 8, minute: 0);
@@ -70,6 +74,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     _manualOpt1Ctl.dispose();
     _manualOpt2Ctl.dispose();
     _testoSollecitoCtl.dispose();
+    _testoJollyCtl.dispose();
     super.dispose();
   }
 
@@ -117,6 +122,9 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
         _testoSollecitoCtl.text = config.sollecitoTesto.isNotEmpty
             ? config.sollecitoTesto
             : "Ciao <nome_allievo>, ci sei stasera al corso?";
+        if (config.jollyTesto.isNotEmpty) {
+          _testoJollyCtl.text = config.jollyTesto;
+        }
 
         if (_testoManualeCtl.text.isEmpty) {
           _testoManualeCtl.text = config.testo;
@@ -127,6 +135,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             "Chi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!";
         _testoManualeCtl.text = _testoDaemonCtl.text;
         _testoSollecitoCtl.text = "Ciao <nome_allievo>, ci sei stasera al corso?";
+        _testoJollyCtl.text = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
       }
 
       _corsi = corsi;
@@ -457,8 +466,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     }
 
     return DefaultTabController(
-      initialIndex: widget.initialTab.clamp(0, 3),
-      length: 4,
+      initialIndex: widget.initialTab.clamp(0, 4),
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Messaggistica'),
@@ -476,6 +485,10 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
               Tab(
                 icon: Icon(Icons.notification_important_outlined),
                 text: 'Configurazione Messaggio di Sollecito',
+              ),
+              Tab(
+                icon: Icon(Icons.star),
+                text: 'Configurazione Messaggio Jolly',
               ),
               Tab(
                 icon: Icon(Icons.qr_code_scanner),
@@ -496,6 +509,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             _buildTabDemone(),
             _buildTabInvioManuale(),
             _buildTabSollecito(),
+            _buildTabJolly(),
             const WhatsAppScreen(embedded: true),
           ],
         ),
@@ -1358,6 +1372,179 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                     onPressed: _savingSollecito ? null : _salvaConfigurazioneSollecito,
                   ),
                 ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+
+  Future<void> _salvaConfigurazioneJolly() async {
+    setState(() => _savingJolly = true);
+    try {
+      final res = await _api.saveDaemonConfig({
+        'jolly_testo': _testoJollyCtl.text.trim(),
+      });
+      if (!mounted) return;
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurazione messaggio Jolly salvata con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Errore durante il salvataggio della configurazione.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingJolly = false);
+    }
+  }
+
+  Widget _buildTabJolly() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 850),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Banner info
+              Card(
+                color: Colors.amber.shade50,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.amber.shade300),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.star, color: Colors.amber.shade800, size: 28),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Template Messaggio per i Jolly',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Imposta il messaggio predefinito proposto quando si contatta un allievo Jolly dalla sezione Anagrafica -> Jolly.\nLe informazioni dettagliate sulle lezioni (data, sede, livello) verranno automaticamente accodate al messaggio inviato via WhatsApp.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade800,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Card Configurazione
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Testo del Messaggio Predefinito',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Inserisci il messaggio base da inviare agli allievi Jolly per chiedere la loro disponibilità:',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _testoJollyCtl,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Inserisci il messaggio per i jolly...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.all(14),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 20),
+                      // Anteprima
+                      const Text(
+                        'Anteprima Messaggio WhatsApp',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCF8C6), // WhatsApp bubble green
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Text(
+                          '${_testoJollyCtl.text.trim()}\n\nLezioni in cui servono jolly:\n📅 24/10/2026 21:00 | Sede Centrale - Intermedio',
+                          style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade900,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          icon: _savingJolly
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.save),
+                          label: Text(_savingJolly ? 'Salvataggio...' : 'Salva Configurazione Jolly'),
+                          onPressed: _savingJolly ? null : _salvaConfigurazioneJolly,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 40),
             ],

@@ -504,6 +504,10 @@ class SondaggioMattutinoConfig(models.Model):
         default="Ciao <nome_allievo>, ci sei stasera al corso?",
         help_text="Testo del messaggio di sollecito risposta inviato all'allievo"
     )
+    jolly_testo = models.TextField(
+        default="Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺",
+        help_text="Testo predefinito per il messaggio inviato ai Jolly"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
