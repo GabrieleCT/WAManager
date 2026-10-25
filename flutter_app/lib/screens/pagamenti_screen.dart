@@ -28,8 +28,17 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
   DateTime? _filterDataDa;
   DateTime? _filterDataA;
 
+  bool _showMobileFilters = false;
+
   int? _sortColumnIndex = 3;
   bool _sortAscending = false;
+
+  bool get _hasActiveFilters =>
+      _filterScuolaId != null ||
+      _filterCorsoId != null ||
+      _filterTrimestre != null ||
+      _filterHasRicevuta != null ||
+      _filterDataDa != null;
 
   @override
   void initState() {
@@ -823,22 +832,59 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     });
   }
 
-  void _onSort(int columnIndex, bool ascending) {
+  int? _getVisualSortIndex(bool isMobile) {
+    if (_sortColumnIndex == null) return null;
+    if (!isMobile) return _sortColumnIndex;
+    if (_sortColumnIndex == 0) return 0; // Cognome
+    if (_sortColumnIndex == 1) return 1; // Nome
+    if (_sortColumnIndex == 2) return null; // Causale nascosta su mobile
+    if (_sortColumnIndex == 3) return 2; // Data registrazione
+    if (_sortColumnIndex == 4) return 3; // Importo
+    return null;
+  }
+
+  void _onSort(int visualColumnIndex, bool ascending, bool isMobile) {
+    int logicalIndex;
+    if (!isMobile) {
+      logicalIndex = visualColumnIndex;
+    } else {
+      if (visualColumnIndex == 0) {
+        logicalIndex = 0; // Cognome
+      } else if (visualColumnIndex == 1) {
+        logicalIndex = 1; // Nome
+      } else if (visualColumnIndex == 2) {
+        logicalIndex = 3; // Data
+      } else if (visualColumnIndex == 3) {
+        logicalIndex = 4; // Importo
+      } else {
+        return;
+      }
+    }
     setState(() {
-      _sortColumnIndex = columnIndex;
+      _sortColumnIndex = logicalIndex;
       _sortAscending = ascending;
-      _applySort(columnIndex, ascending);
+      _applySort(logicalIndex, ascending);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final totaleIncassato = _pagamenti.fold<double>(0.0, (sum, p) => sum + p.importo);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestione Pagamenti'),
         actions: [
+          if (isMobile)
+            Badge(
+              isLabelVisible: _hasActiveFilters,
+              child: IconButton(
+                icon: Icon(_showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
+                tooltip: _showMobileFilters ? 'Nascondi filtri' : 'Mostra filtri',
+                onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
             tooltip: 'Esporta lista pagamenti',
@@ -854,123 +900,224 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
       ),
       body: Column(
         children: [
-          // Filtri
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: Colors.grey.shade100,
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                DropdownButton<String?>(
-                  value: _filterScuolaId,
-                  hint: const Text('Tutte le Scuole'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Tutte le Scuole')),
-                    ..._scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))),
-                  ],
-                  onChanged: (val) {
-                    setState(() => _filterScuolaId = val);
-                    _loadAll();
-                  },
-                ),
-                DropdownButton<String?>(
-                  value: _filterCorsoId,
-                  hint: const Text('Tutti i Corsi'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Tutti i Corsi')),
-                    ..._corsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.orario})'))),
-                  ],
-                  onChanged: (val) {
-                    setState(() => _filterCorsoId = val);
-                    _loadAll();
-                  },
-                ),
-                DropdownButton<String?>(
-                  value: _filterTrimestre,
-                  hint: const Text('Tutti i Trimestri'),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Tutti i Trimestri')),
-                    DropdownMenuItem(value: 'T1', child: Text('Primo Trimestre (T1)')),
-                    DropdownMenuItem(value: 'T2', child: Text('Secondo Trimestre (T2)')),
-                    DropdownMenuItem(value: 'T3', child: Text('Terzo Trimestre (T3)')),
-                  ],
-                  onChanged: (val) {
-                    setState(() => _filterTrimestre = val);
-                    _loadAll();
-                  },
-                ),
-                DropdownButton<bool?>(
-                  value: _filterHasRicevuta,
-                  hint: const Text('Stato Ricevuta: Tutte'),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Stato Ricevuta: Tutte')),
-                    DropdownMenuItem(value: true, child: Text('Solo con ricevuta emessa')),
-                    DropdownMenuItem(value: false, child: Text('Solo senza ricevuta (da emettere)')),
-                  ],
-                  onChanged: (val) {
-                    setState(() => _filterHasRicevuta = val);
-                    _loadAll();
-                  },
-                ),
-                // Filtro Data
-                if (_filterDataDa == null)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_month, size: 18),
-                    label: const Text('Filtra per Data'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade800,
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: Colors.grey.shade400),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: _selezionaFiltroData,
-                  )
-                else
-                  InputChip(
-                    avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
-                    label: Text(
-                      _filterDataDa == _filterDataA
-                          ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
-                          : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
-                    backgroundColor: Colors.teal.shade50,
-                    deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
-                    onDeleted: () {
-                      setState(() {
-                        _filterDataDa = null;
-                        _filterDataA = null;
-                      });
-                      _loadAll();
-                    },
-                    onPressed: _selezionaFiltroData,
+          // Barra filtri compatta per versione mobile
+          if (isMobile)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.grey.shade100,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _hasActiveFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                        size: 18,
+                        color: _hasActiveFilters ? Colors.teal.shade800 : Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _hasActiveFilters ? 'Filtri attivi' : 'Filtri',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: _hasActiveFilters ? Colors.teal.shade900 : Colors.grey.shade800,
+                        ),
+                      ),
+                    ],
                   ),
-              ],
+                  Badge(
+                    isLabelVisible: _hasActiveFilters,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _showMobileFilters ? Colors.teal.shade50 : Colors.white,
+                        side: BorderSide(color: _hasActiveFilters ? Colors.teal : Colors.grey.shade400),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: Icon(
+                        _showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                        size: 18,
+                        color: _hasActiveFilters ? Colors.teal : Colors.grey.shade700,
+                      ),
+                      label: Text(
+                        _showMobileFilters ? 'Chiudi' : 'Filtri',
+                        style: TextStyle(
+                          color: _hasActiveFilters ? Colors.teal : Colors.grey.shade800,
+                          fontSize: 13,
+                          fontWeight: _hasActiveFilters ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          // Sezione Filtri (mostrata sempre su desktop, solo se aperta su mobile)
+          if (!isMobile || _showMobileFilters)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: Colors.grey.shade100,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      DropdownButton<String?>(
+                        value: _filterScuolaId,
+                        hint: const Text('Tutte le Scuole'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Tutte le Scuole')),
+                          ..._scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))),
+                        ],
+                        onChanged: (val) {
+                          setState(() => _filterScuolaId = val);
+                          _loadAll();
+                        },
+                      ),
+                      DropdownButton<String?>(
+                        value: _filterCorsoId,
+                        hint: const Text('Tutti i Corsi'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Tutti i Corsi')),
+                          ..._corsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.orario})'))),
+                        ],
+                        onChanged: (val) {
+                          setState(() => _filterCorsoId = val);
+                          _loadAll();
+                        },
+                      ),
+                      DropdownButton<String?>(
+                        value: _filterTrimestre,
+                        hint: const Text('Tutti i Trimestri'),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('Tutti i Trimestri')),
+                          DropdownMenuItem(value: 'T1', child: Text('Primo Trimestre (T1)')),
+                          DropdownMenuItem(value: 'T2', child: Text('Secondo Trimestre (T2)')),
+                          DropdownMenuItem(value: 'T3', child: Text('Terzo Trimestre (T3)')),
+                        ],
+                        onChanged: (val) {
+                          setState(() => _filterTrimestre = val);
+                          _loadAll();
+                        },
+                      ),
+                      DropdownButton<bool?>(
+                        value: _filterHasRicevuta,
+                        hint: const Text('Stato Ricevuta: Tutte'),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('Stato Ricevuta: Tutte')),
+                          DropdownMenuItem(value: true, child: Text('Solo con ricevuta emessa')),
+                          DropdownMenuItem(value: false, child: Text('Solo senza ricevuta (da emettere)')),
+                        ],
+                        onChanged: (val) {
+                          setState(() => _filterHasRicevuta = val);
+                          _loadAll();
+                        },
+                      ),
+                      // Filtro Data
+                      if (_filterDataDa == null)
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.calendar_month, size: 18),
+                          label: const Text('Filtra per Data'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey.shade800,
+                            backgroundColor: Colors.white,
+                            side: BorderSide(color: Colors.grey.shade400),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: _selezionaFiltroData,
+                        )
+                      else
+                        InputChip(
+                          avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
+                          label: Text(
+                            _filterDataDa == _filterDataA
+                                ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
+                                : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                          ),
+                          backgroundColor: Colors.teal.shade50,
+                          deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
+                          onDeleted: () {
+                            setState(() {
+                              _filterDataDa = null;
+                              _filterDataA = null;
+                            });
+                            _loadAll();
+                          },
+                          onPressed: _selezionaFiltroData,
+                        ),
+                    ],
+                  ),
+                  if (isMobile && _hasActiveFilters) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.clear_all, size: 16, color: Colors.red),
+                        label: const Text('Azzera filtri', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        onPressed: () {
+                          setState(() {
+                            _filterScuolaId = null;
+                            _filterCorsoId = null;
+                            _filterTrimestre = null;
+                            _filterHasRicevuta = null;
+                            _filterDataDa = null;
+                            _filterDataA = null;
+                          });
+                          _loadAll();
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           // Banner Totali
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             color: Colors.teal.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text('Totale pagamenti: ${_pagamenti.length}', style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 10),
-                    Text(
-                      '(${_pagamenti.where((p) => p.hasRicevuta).length} con ricevuta, ${_pagamenti.where((p) => !p.hasRicevuta).length} da emettere)',
-                      style: TextStyle(color: Colors.teal.shade800, fontSize: 13),
-                    ),
-                  ],
-                ),
-                Text('Incassato: € ${totaleIncassato.toStringAsFixed(2)}',
-                    style: TextStyle(color: Colors.teal.shade900, fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
-            ),
+            child: isMobile
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Totale pagamenti: ${_pagamenti.length}',
+                              style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold)),
+                          Text('Incassato: € ${totaleIncassato.toStringAsFixed(2)}',
+                              style: TextStyle(color: Colors.teal.shade900, fontSize: 15, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '(${_pagamenti.where((p) => p.hasRicevuta).length} con ricevuta, ${_pagamenti.where((p) => !p.hasRicevuta).length} da emettere)',
+                        style: TextStyle(color: Colors.teal.shade800, fontSize: 12),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Text('Totale pagamenti: ${_pagamenti.length}', style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 10),
+                          Text(
+                            '(${_pagamenti.where((p) => p.hasRicevuta).length} con ricevuta, ${_pagamenti.where((p) => !p.hasRicevuta).length} da emettere)',
+                            style: TextStyle(color: Colors.teal.shade800, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      Text('Incassato: € ${totaleIncassato.toStringAsFixed(2)}',
+                          style: TextStyle(color: Colors.teal.shade900, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
           ),
           // Lista pagamenti tabellare
           if (_loading)
@@ -990,7 +1137,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                         child: ConstrainedBox(
                           constraints: BoxConstraints(minWidth: constraints.maxWidth),
                           child: DataTable(
-                            sortColumnIndex: _sortColumnIndex,
+                            sortColumnIndex: _getVisualSortIndex(isMobile),
                             sortAscending: _sortAscending,
                             headingRowColor: WidgetStateProperty.all(Colors.teal.shade50.withValues(alpha: 0.5)),
                             headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
@@ -1002,24 +1149,25 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                             columns: [
                               DataColumn(
                                 label: const Text('Cognome'),
-                                onSort: _onSort,
+                                onSort: (colIdx, asc) => _onSort(colIdx, asc, isMobile),
                               ),
                               DataColumn(
                                 label: const Text('Nome'),
-                                onSort: _onSort,
+                                onSort: (colIdx, asc) => _onSort(colIdx, asc, isMobile),
                               ),
-                              DataColumn(
-                                label: const Text('Causale'),
-                                onSort: _onSort,
-                              ),
+                              if (!isMobile)
+                                DataColumn(
+                                  label: const Text('Causale'),
+                                  onSort: (colIdx, asc) => _onSort(colIdx, asc, isMobile),
+                                ),
                               DataColumn(
                                 label: const Text('Data registrazione pagamento'),
-                                onSort: _onSort,
+                                onSort: (colIdx, asc) => _onSort(colIdx, asc, isMobile),
                               ),
                               DataColumn(
                                 label: const Text('Importo'),
                                 numeric: true,
-                                onSort: _onSort,
+                                onSort: (colIdx, asc) => _onSort(colIdx, asc, isMobile),
                               ),
                               const DataColumn(
                                 label: Text('Azioni'),
@@ -1039,24 +1187,25 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                                   DataCell(
                                     Text(p.nome.isNotEmpty ? p.nome : p.allievoNome),
                                   ),
-                                  // 3. Causale
-                                  DataCell(
-                                    Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          p.causaleDisplay,
-                                          style: const TextStyle(fontWeight: FontWeight.w500),
-                                        ),
-                                        if (p.corsoDescrizione.isNotEmpty)
+                                  // 3. Causale (solo desktop)
+                                  if (!isMobile)
+                                    DataCell(
+                                      Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
                                           Text(
-                                            '${p.scuolaNome.isNotEmpty ? "${p.scuolaNome} • " : ""}${p.corsoDescrizione}',
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            p.causaleDisplay,
+                                            style: const TextStyle(fontWeight: FontWeight.w500),
                                           ),
-                                      ],
+                                          if (p.corsoDescrizione.isNotEmpty)
+                                            Text(
+                                              '${p.scuolaNome.isNotEmpty ? "${p.scuolaNome} • " : ""}${p.corsoDescrizione}',
+                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
                                   // 4. Data registrazione pagamento
                                   DataCell(
                                     Text(

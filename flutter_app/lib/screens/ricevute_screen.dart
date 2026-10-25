@@ -27,6 +27,13 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _uploadingDriveIds = {};
 
+  bool _showMobileFilters = false;
+
+  bool get _hasActiveFilters =>
+      _selectedAnno != null ||
+      _filterDataDa != null ||
+      _searchQuery.isNotEmpty;
+
   ContatoreRicevuteInfo? _contatoreAnnoCorrente;
   bool _loading = true;
 
@@ -1193,6 +1200,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final currYear = DateTime.now().year;
     final ultimoNumero = _contatoreAnnoCorrente?.ultimoNumero ?? 0;
     final totaleIncassato = _ricevute.fold<double>(0.0, (sum, r) => sum + r.importo);
@@ -1201,6 +1209,15 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
       appBar: AppBar(
         title: const Text('Gestione Ricevute'),
         actions: [
+          if (isMobile)
+            Badge(
+              isLabelVisible: _hasActiveFilters,
+              child: IconButton(
+                icon: Icon(_showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
+                tooltip: _showMobileFilters ? 'Nascondi filtri' : 'Mostra filtri',
+                onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
             tooltip: 'Esporta lista ricevute PDF',
@@ -1239,33 +1256,23 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                 ),
               ],
             ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.receipt_long, color: Colors.white, size: 36),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
+            child: isMobile
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Text(
-                            'Ricevute Anno Corrente ($currYear)',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
+                          Expanded(
+                            child: Text(
+                              'Ricevute Anno Corrente ($currYear)',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -1279,7 +1286,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         'Arrivati alla ricevuta: N. $ultimoNumero',
                         style: const TextStyle(
@@ -1288,150 +1295,409 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         'Prossimo numero: N. ${ultimoNumero + 1}  •  Emesse nel database: ${_contatoreAnnoCorrente?.conteggioEmesse ?? _ricevute.length}',
                         style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12),
                       ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white70),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: const Text('Modifica Contatore'),
+                          onPressed: _showModificaContatoreDialog,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.receipt_long, color: Colors.white, size: 36),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Ricevute Anno Corrente ($currYear)',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade400,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Anno ${_contatoreAnnoCorrente?.anno ?? currYear}',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Arrivati alla ricevuta: N. $ultimoNumero',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Prossimo numero: N. ${ultimoNumero + 1}  •  Emesse nel database: ${_contatoreAnnoCorrente?.conteggioEmesse ?? _ricevute.length}',
+                              style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('Modifica Contatore'),
+                        onPressed: _showModificaContatoreDialog,
+                      ),
                     ],
                   ),
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white70),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  ),
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Modifica Contatore'),
-                  onPressed: _showModificaContatoreDialog,
-                ),
-              ],
-            ),
           ),
 
-          // ─── 2. Filtri & Ricerca ────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.grey.shade100,
-            child: Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              alignment: WrapAlignment.spaceBetween,
-              children: [
-                // Filtro Anno
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Filtra per Anno: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    DropdownButton<int?>(
-                      value: _selectedAnno,
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('Tutti gli anni')),
-                        ...({
-                          if (_selectedAnno != null) _selectedAnno!,
-                          ..._anniDisponibili,
-                          DateTime.now().year,
-                        }.toList()..sort((a, b) => b.compareTo(a)))
-                            .map((a) => DropdownMenuItem(value: a, child: Text('Anno $a'))),
-                      ],
-                      onChanged: (val) {
-                        setState(() => _selectedAnno = val);
-                        _loadRicevuteOnly();
-                      },
-                    ),
-                  ],
-                ),
-
-                // Filtro Data
-                if (_filterDataDa == null)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_month, size: 18),
-                    label: const Text('Filtra per Data'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade800,
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: Colors.grey.shade400),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: _selezionaFiltroData,
-                  )
-                else
-                  InputChip(
-                    avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
-                    label: Text(
-                      _filterDataDa == _filterDataA
-                          ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
-                          : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
-                    backgroundColor: Colors.teal.shade50,
-                    deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
-                    onDeleted: () {
-                      setState(() {
-                        _filterDataDa = null;
-                        _filterDataA = null;
-                      });
-                      _loadRicevuteOnly();
-                    },
-                    onPressed: _selezionaFiltroData,
+          // Barra filtri compatta per versione mobile
+          if (isMobile)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.grey.shade100,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _hasActiveFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                        size: 18,
+                        color: _hasActiveFilters ? Colors.teal.shade800 : Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _hasActiveFilters ? 'Filtri attivi' : 'Filtri e ricerca',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: _hasActiveFilters ? Colors.teal.shade900 : Colors.grey.shade800,
+                        ),
+                      ),
+                    ],
                   ),
+                  Badge(
+                    isLabelVisible: _hasActiveFilters,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _showMobileFilters ? Colors.teal.shade50 : Colors.white,
+                        side: BorderSide(color: _hasActiveFilters ? Colors.teal : Colors.grey.shade400),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: Icon(
+                        _showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                        size: 18,
+                        color: _hasActiveFilters ? Colors.teal : Colors.grey.shade700,
+                      ),
+                      label: Text(
+                        _showMobileFilters ? 'Chiudi' : 'Filtri',
+                        style: TextStyle(
+                          color: _hasActiveFilters ? Colors.teal : Colors.grey.shade800,
+                          fontSize: 13,
+                          fontWeight: _hasActiveFilters ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
-                // Barra Ricerca
-                SizedBox(
-                  width: 280,
-                  height: 40,
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Cerca per intestatario, causale...',
-                      hintStyle: const TextStyle(fontSize: 12),
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
+          // ─── 2. Filtri & Ricerca (mostrati su desktop sempre, su mobile solo se _showMobileFilters == true)
+          if (!isMobile || _showMobileFilters)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: Colors.grey.shade100,
+              child: isMobile
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Barra Ricerca
+                        TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Cerca per intestatario, causale...',
+                            hintStyle: const TextStyle(fontSize: 12),
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                      _loadRicevuteOnly();
+                                    },
+                                  )
+                                : null,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          onSubmitted: (val) {
+                            setState(() => _searchQuery = val.trim());
+                            _loadRicevuteOnly();
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // Filtro Anno
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Anno: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                DropdownButton<int?>(
+                                  value: _selectedAnno,
+                                  items: [
+                                    const DropdownMenuItem(value: null, child: Text('Tutti gli anni')),
+                                    ...({
+                                      if (_selectedAnno != null) _selectedAnno!,
+                                      ..._anniDisponibili,
+                                      DateTime.now().year,
+                                    }.toList()..sort((a, b) => b.compareTo(a)))
+                                        .map((a) => DropdownMenuItem(value: a, child: Text('Anno $a'))),
+                                  ],
+                                  onChanged: (val) {
+                                    setState(() => _selectedAnno = val);
+                                    _loadRicevuteOnly();
+                                  },
+                                ),
+                              ],
+                            ),
+                            // Filtro Data
+                            if (_filterDataDa == null)
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.calendar_month, size: 18),
+                                label: const Text('Filtra per Data'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.grey.shade800,
+                                  backgroundColor: Colors.white,
+                                  side: BorderSide(color: Colors.grey.shade400),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: _selezionaFiltroData,
+                              )
+                            else
+                              InputChip(
+                                avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
+                                label: Text(
+                                  _filterDataDa == _filterDataA
+                                      ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
+                                      : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                                ),
+                                backgroundColor: Colors.teal.shade50,
+                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
+                                onDeleted: () {
+                                  setState(() {
+                                    _filterDataDa = null;
+                                    _filterDataA = null;
+                                  });
+                                  _loadRicevuteOnly();
+                                },
+                                onPressed: _selezionaFiltroData,
+                              ),
+                          ],
+                        ),
+                        if (_hasActiveFilters) ...[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.clear_all, size: 16, color: Colors.red),
+                              label: const Text('Azzera filtri', style: TextStyle(color: Colors.red, fontSize: 12)),
                               onPressed: () {
                                 _searchController.clear();
-                                setState(() => _searchQuery = '');
+                                setState(() {
+                                  _selectedAnno = null;
+                                  _filterDataDa = null;
+                                  _filterDataA = null;
+                                  _searchQuery = '';
+                                });
                                 _loadRicevuteOnly();
                               },
-                            )
-                          : null,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      filled: true,
-                      fillColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ],
+                    )
+                  : Wrap(
+                      spacing: 16,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        // Filtro Anno
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Filtra per Anno: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            DropdownButton<int?>(
+                              value: _selectedAnno,
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('Tutti gli anni')),
+                                ...({
+                                  if (_selectedAnno != null) _selectedAnno!,
+                                  ..._anniDisponibili,
+                                  DateTime.now().year,
+                                }.toList()..sort((a, b) => b.compareTo(a)))
+                                    .map((a) => DropdownMenuItem(value: a, child: Text('Anno $a'))),
+                              ],
+                              onChanged: (val) {
+                                setState(() => _selectedAnno = val);
+                                _loadRicevuteOnly();
+                              },
+                            ),
+                          ],
+                        ),
+
+                        // Filtro Data
+                        if (_filterDataDa == null)
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_month, size: 18),
+                            label: const Text('Filtra per Data'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey.shade800,
+                              backgroundColor: Colors.white,
+                              side: BorderSide(color: Colors.grey.shade400),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: _selezionaFiltroData,
+                          )
+                        else
+                          InputChip(
+                            avatar: const Icon(Icons.calendar_month, size: 16, color: Colors.teal),
+                            label: Text(
+                              _filterDataDa == _filterDataA
+                                  ? DateFormat('dd/MM/yyyy').format(_filterDataDa!)
+                                  : '${DateFormat('dd/MM/yy').format(_filterDataDa!)} - ${DateFormat('dd/MM/yy').format(_filterDataA!)}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                            ),
+                            backgroundColor: Colors.teal.shade50,
+                            deleteIcon: const Icon(Icons.close, size: 16, color: Colors.teal),
+                            onDeleted: () {
+                              setState(() {
+                                _filterDataDa = null;
+                                _filterDataA = null;
+                              });
+                              _loadRicevuteOnly();
+                            },
+                            onPressed: _selezionaFiltroData,
+                          ),
+
+                        // Barra Ricerca
+                        SizedBox(
+                          width: 280,
+                          height: 40,
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Cerca per intestatario, causale...',
+                              hintStyle: const TextStyle(fontSize: 12),
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 18),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                        _loadRicevuteOnly();
+                                      },
+                                    )
+                                  : null,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            onSubmitted: (val) {
+                              setState(() => _searchQuery = val.trim());
+                              _loadRicevuteOnly();
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    onSubmitted: (val) {
-                      setState(() => _searchQuery = val.trim());
-                      _loadRicevuteOnly();
-                    },
-                  ),
-                ),
-              ],
             ),
-          ),
 
           // ─── Riepilogo Totali ───────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: Colors.teal.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Ricevute visualizzate: ${_ricevute.length}',
-                  style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Totale Importo: € ${totaleIncassato.toStringAsFixed(2)}',
-                  style: TextStyle(color: Colors.teal.shade900, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
+            child: isMobile
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Ricevute: ${_ricevute.length}',
+                        style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Totale: € ${totaleIncassato.toStringAsFixed(2)}',
+                        style: TextStyle(color: Colors.teal.shade900, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Ricevute visualizzate: ${_ricevute.length}',
+                        style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Totale Importo: € ${totaleIncassato.toStringAsFixed(2)}',
+                        style: TextStyle(color: Colors.teal.shade900, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
           ),
 
           // ─── Elenco Ricevute ────────────────────────────────────────
