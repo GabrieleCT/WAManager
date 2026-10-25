@@ -696,11 +696,15 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     final whatsappPresentiCount = presentiList.where((p) => p.fonte == 'whatsapp').length;
     final jollyPresentiCount = presentiList.where((p) => p.isJolly).length;
 
-    // Conteggio allievi e prospect registrati al corso (non in base alle sole presenze confermate)
+    // Jolly potenziali: differenza assoluta tra leader e follower registrati al corso (compresi prospect)
     final leaderRegistrati = _presenze.where((p) => !p.isJolly && p.allievoRuolo.toLowerCase() == 'leader').length;
     final followerRegistrati = _presenze.where((p) => !p.isJolly && p.allievoRuolo.toLowerCase() == 'follower').length;
     final jollyPotenziali = (followerRegistrati - leaderRegistrati).abs();
-    final jollyNecessari = jollyPotenziali;
+
+    // Jolly necessari: calcolati sulla base delle presenze segnate
+    final leaderPresenti = _presenze.where((p) => p.presente == true && p.allievoRuolo.toLowerCase() == 'leader').length;
+    final followerPresenti = _presenze.where((p) => p.presente == true && p.allievoRuolo.toLowerCase() == 'follower').length;
+    final jollyNecessari = (followerPresenti - leaderPresenti).abs();
     final isMobile = MediaQuery.of(context).size.width < 800;
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
