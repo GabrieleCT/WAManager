@@ -414,11 +414,15 @@ class ApiService {
     return [];
   }
 
-  Future<Jolly?> createJolly(String allievoId, int priorita) async {
+  Future<Jolly?> createJolly(String allievoId, int priorita, {String? nickname}) async {
+    final Map<String, dynamic> data = {'allievo': allievoId, 'priorita': priorita};
+    if (nickname != null) {
+      data['nickname'] = nickname.trim();
+    }
     final res = await http.post(
       Uri.parse('$baseUrl/api/jolly/'),
       headers: _headers,
-      body: jsonEncode({'allievo': allievoId, 'priorita': priorita}),
+      body: jsonEncode(data),
     );
     if (res.statusCode == 201) {
       return Jolly.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
@@ -426,11 +430,15 @@ class ApiService {
     return null;
   }
 
-    Future<Jolly?> updateJolly(String id, String allievoId, int priorita) async {
+  Future<Jolly?> updateJolly(String id, String allievoId, int priorita, {String? nickname}) async {
+    final Map<String, dynamic> data = {'allievo': allievoId, 'priorita': priorita};
+    if (nickname != null) {
+      data['nickname'] = nickname.trim();
+    }
     final res = await http.put(
       Uri.parse('$baseUrl/api/jolly/$id/'),
       headers: _headers,
-      body: jsonEncode({'allievo': allievoId, 'priorita': priorita}),
+      body: jsonEncode(data),
     );
     if (res.statusCode == 200) {
       return Jolly.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));

@@ -278,14 +278,25 @@ def allievo_pre_delete_cleanup(sender, instance, **kwargs):
 class Jolly(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     allievo = models.ForeignKey(Allievo, on_delete=models.CASCADE, related_name='jolly_entries')
+    nickname = models.CharField(max_length=100, blank=True, default='', help_text="Nickname del jolly")
     priorita = models.PositiveIntegerField(default=1, help_text="1 = priorità più alta")
 
     class Meta:
         verbose_name_plural = 'Jolly'
         ordering = ['priorita']
 
+    def save(self, *args, **kwargs):
+        if not self.nickname or not self.nickname.strip():
+            if self.allievo and self.allievo.nome:
+                self.nickname = self.allievo.nome.strip()
+            else:
+                self.nickname = ""
+        else:
+            self.nickname = self.nickname.strip()
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Jolly: {self.allievo} (priorità {self.priorita})"
+        return f"Jolly: {self.nickname or self.allievo} (priorità {self.priorita})"
 
 
 # ─── 1.6 Lezione ────────────────────────────────────────────────

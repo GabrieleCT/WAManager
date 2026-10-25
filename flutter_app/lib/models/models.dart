@@ -305,6 +305,7 @@ class Allievo {
 class Jolly {
   final String id;
   final String allievoId;
+  final String nickname;
   final String allievoNome;
   final String allievoTelefono;
   final String allievoRuolo;
@@ -315,6 +316,7 @@ class Jolly {
   Jolly({
     required this.id,
     required this.allievoId,
+    this.nickname = '',
     required this.allievoNome,
     required this.allievoTelefono,
     required this.allievoRuolo,
@@ -323,10 +325,13 @@ class Jolly {
     required this.priorita,
   });
 
+  String get displayName => nickname.trim().isNotEmpty ? nickname.trim() : allievoNome;
+
   factory Jolly.fromJson(Map<String, dynamic> json) {
     return Jolly(
       id: json['id'] ?? '',
       allievoId: json['allievo'] ?? '',
+      nickname: json['nickname'] ?? '',
       allievoNome: json['allievo_nome'] ?? '',
       allievoTelefono: json['allievo_telefono'] ?? '',
       allievoRuolo: json['allievo_ruolo'] ?? '',
@@ -338,6 +343,7 @@ class Jolly {
 
   Map<String, dynamic> toJson() => {
     'allievo': allievoId,
+    'nickname': nickname,
     'priorita': priorita,
   };
 }
@@ -576,7 +582,7 @@ class SondaggioMattutinoConfig {
     this.sollecitoAttivo = false,
     this.sollecitoOrario = '16:00',
     this.sollecitoTesto = '',
-    this.jollyTesto = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+    this.jollyTesto = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
     this.createdAt = '',
     this.updatedAt = '',
   });
@@ -598,7 +604,7 @@ class SondaggioMattutinoConfig {
       sollecitoAttivo: json['sollecito_attivo'] ?? false,
       sollecitoOrario: json['sollecito_orario'] ?? '16:00',
       sollecitoTesto: json['sollecito_testo'] ?? '',
-      jollyTesto: json['jolly_testo'] ?? 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+      jollyTesto: json['jolly_testo'] ?? 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );

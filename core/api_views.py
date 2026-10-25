@@ -1053,9 +1053,17 @@ def send_jolly_message(request):
     success_count = 0
     for jolly in jolly_list:
         allievo = jolly.allievo
+        nick = (jolly.nickname or '').strip() or (allievo.nome or '').strip()
+        msg_personalizzato = (
+            messaggio_finale
+            .replace('{nickname}', nick)
+            .replace('<nickname>', nick)
+            .replace('{allievo}', nick)
+            .replace('{nome}', nick)
+        )
         res = send_whatsapp_message(
             to=allievo.telefono,
-            message=messaggio_finale,
+            message=msg_personalizzato,
             is_group=False
         )
         is_ok = bool(res.get('success'))

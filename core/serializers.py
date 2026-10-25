@@ -183,11 +183,12 @@ class JollySerializer(serializers.ModelSerializer):
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_ruolo_display = serializers.CharField(source='allievo.get_ruolo_display', read_only=True)
     allievo_livello = serializers.CharField(source='allievo.livello', read_only=True)
+    nickname = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Jolly
         fields = [
-            'id', 'allievo', 'allievo_nome', 'allievo_telefono',
+            'id', 'allievo', 'nickname', 'allievo_nome', 'allievo_telefono',
             'allievo_ruolo', 'allievo_ruolo_display', 'allievo_livello', 'priorita'
         ]
 

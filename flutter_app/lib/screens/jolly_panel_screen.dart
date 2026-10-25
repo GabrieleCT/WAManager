@@ -19,7 +19,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   bool _loading = true;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _defaultJollyMessage = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
+  String _defaultJollyMessage = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
 
   @override
   void initState() {
@@ -60,6 +60,14 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   void _showAddJollyDialog([Jolly? jolly]) {
     String? allievoId = jolly?.allievoId ?? (_allievi.isNotEmpty ? _allievi.first.id : null);
     int priorita = jolly?.priorita ?? 1;
+    final nicknameController = TextEditingController(text: jolly?.nickname ?? '');
+
+    if (jolly == null && nicknameController.text.isEmpty && allievoId != null) {
+      final a = _allievi.where((item) => item.id == allievoId).firstOrNull;
+      if (a != null) {
+        nicknameController.text = a.nome;
+      }
+    }
 
     showDialog(
       context: context,
@@ -73,7 +81,25 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
                 value: allievoId,
                 decoration: const InputDecoration(labelText: 'Seleziona Allievo *'),
                 items: _allievi.map((a) => DropdownMenuItem(value: a.id, child: Text(a.nomeCompleto))).toList(),
-                onChanged: (v) => setDState(() => allievoId = v),
+                onChanged: (v) {
+                  setDState(() {
+                    allievoId = v;
+                    if (v != null) {
+                      final a = _allievi.where((item) => item.id == v).firstOrNull;
+                      if (a != null && (nicknameController.text.trim().isEmpty || jolly == null)) {
+                        nicknameController.text = a.nome;
+                      }
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nicknameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nickname',
+                  hintText: "Se vuoto, verrà valorizzato con il nome dell'allievo",
+                ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
@@ -89,16 +115,15 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (allievoId == null) return;
+                String nick = nicknameController.text.trim();
+                if (nick.isEmpty) {
+                  final a = _allievi.where((item) => item.id == allievoId).firstOrNull;
+                  if (a != null) nick = a.nome;
+                }
                 if (jolly == null) {
-                  await _api.createJolly(allievoId!, priorita);
+                  await _api.createJolly(allievoId!, priorita, nickname: nick);
                 } else {
-                  // Assuming you have an updateJolly method, though might just delete and recreate
-                  // Wait, createJolly actually might just update if it exists or you need an update endpoint.
-                  // For simplicity, we can do createJolly and backend handles or we add update.
-                  // Let's assume API has updateJolly or we can delete and create.
-                  // The prompt only says Add/Edit/Delete. Let's delete and create.
-                  await _api.deleteJolly(jolly.id);
-                  await _api.createJolly(allievoId!, priorita);
+                  await _api.updateJolly(jolly.id, allievoId!, priorita, nickname: nick);
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
                 _loadData();
@@ -114,7 +139,18 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   void _showSendMessageDialog([Jolly? jolly]) {
     String? selectedJollyId = jolly?.id ?? (_jollyList.isNotEmpty ? _jollyList.first.id : null);
     String? selectedLezioneId = _lezioni.isNotEmpty ? _lezioni.first.id : null;
-    final textController = TextEditingController(text: _defaultJollyMessage);
+
+    final initialJolly = jolly ?? (_jollyList.isNotEmpty ? _jollyList.first : null);
+    String initialMsg = _defaultJollyMessage;
+    if (initialJolly != null) {
+      final nick = initialJolly.displayName;
+      initialMsg = initialMsg
+          .replaceAll('{nickname}', nick)
+          .replaceAll('<nickname>', nick)
+          .replaceAll('{allievo}', nick)
+          .replaceAll('{nome}', nick);
+    }
+    final textController = TextEditingController(text: initialMsg);
     bool sending = false;
     Map<String, dynamic>? lastResult;
 
@@ -122,7 +158,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
-          title: Text(jolly != null ? 'Invia Messaggio a ${jolly.allievoNome}' : 'Invia Messaggio Jolly'),
+          title: Text(jolly != null ? 'Invia Messaggio a ${jolly.displayName}' : 'Invia Messaggio Jolly'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -130,8 +166,21 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
                 DropdownButtonFormField<String>(
                   value: selectedJollyId,
                   decoration: const InputDecoration(labelText: 'Jolly'),
-                  items: _jollyList.map((j) => DropdownMenuItem(value: j.id, child: Text(j.allievoNome))).toList(),
-                  onChanged: (v) => setDState(() => selectedJollyId = v),
+                  items: _jollyList.map((j) => DropdownMenuItem(value: j.id, child: Text(j.displayName))).toList(),
+                  onChanged: (v) {
+                    setDState(() {
+                      selectedJollyId = v;
+                      final selectedJolly = _jollyList.where((j) => j.id == v).firstOrNull;
+                      if (selectedJolly != null) {
+                        final nick = selectedJolly.displayName;
+                        textController.text = _defaultJollyMessage
+                            .replaceAll('{nickname}', nick)
+                            .replaceAll('<nickname>', nick)
+                            .replaceAll('{allievo}', nick)
+                            .replaceAll('{nome}', nick);
+                      }
+                    });
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -230,7 +279,9 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
             size: 26,
           ),
           title: Text(
-            j.allievoNome,
+            j.nickname.isNotEmpty && j.nickname != j.allievoNome
+                ? '${j.nickname} (${j.allievoNome})'
+                : j.displayName,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           trailing: Row(
@@ -272,7 +323,12 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
         ),
         title: Row(
           children: [
-            Text(j.allievoNome, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              j.nickname.isNotEmpty && j.nickname != j.allievoNome
+                  ? '${j.nickname} (${j.allievoNome})'
+                  : j.displayName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -345,7 +401,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     final filteredJolly = _jollyList.where((j) {
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase().trim();
-      return j.allievoNome.toLowerCase().contains(q) ||
+      return j.displayName.toLowerCase().contains(q) || j.allievoNome.toLowerCase().contains(q) ||
           j.allievoTelefono.toLowerCase().contains(q);
     }).toList();
 

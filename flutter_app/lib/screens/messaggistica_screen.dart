@@ -135,7 +135,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             "Chi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!";
         _testoManualeCtl.text = _testoDaemonCtl.text;
         _testoSollecitoCtl.text = "Ciao <nome_allievo>, ci sei stasera al corso?";
-        _testoJollyCtl.text = 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
+        _testoJollyCtl.text = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
       }
 
       _corsi = corsi;
@@ -1494,16 +1494,38 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                         controller: _testoJollyCtl,
                         maxLines: 4,
                         decoration: InputDecoration(
-                          hintText: 'Inserisci il messaggio per i jolly...',
+                          hintText: 'Es. Ciao {nickname}! Abbiamo bisogno di un jolly stasera...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           contentPadding: const EdgeInsets.all(14),
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
+                      const SizedBox(height: 10),
+                      // Placeholder Tag cliccabili
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Tag placeholder disponibili:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nickname}'),
+                            tooltip: 'Inserisce il nickname del jolly (o il nome se non presente)',
+                            onPressed: () => _inserisciTagNelController(_testoJollyCtl, '{nickname}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('<nickname>'),
+                            tooltip: 'Inserisce il nickname del jolly (o il nome se non presente)',
+                            onPressed: () => _inserisciTagNelController(_testoJollyCtl, '<nickname>'),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 20),
                       // Anteprima
                       const Text(
-                        'Anteprima Messaggio WhatsApp',
+                        'Anteprima Messaggio WhatsApp (con esempio nickname "Alex")',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
@@ -1516,7 +1538,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                           border: Border.all(color: Colors.green.shade300),
                         ),
                         child: Text(
-                          '${_testoJollyCtl.text.trim()}\n\nLezioni in cui servono jolly:\n📅 24/10/2026 21:00 | Sede Centrale - Intermedio',
+                          '${_testoJollyCtl.text.trim().replaceAll("{nickname}", "Alex").replaceAll("<nickname>", "Alex")}\n\nLezioni in cui servono jolly:\n📅 24/10/2026 21:00 | Sede Centrale - Intermedio',
                           style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
                         ),
                       ),
