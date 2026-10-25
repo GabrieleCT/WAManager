@@ -644,89 +644,6 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     );
   }
 
-  Future<void> _mostraOpzioniRicevutaEmessa(Pagamento p) async {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.receipt, color: Colors.teal),
-            const SizedBox(width: 8),
-            Text('Ricevuta ${p.ricevutaNumero ?? "Emessa"}'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade300),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, size: 18, color: Colors.green.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Ricevuta ${p.ricevutaNumero ?? ""} già emessa per questo pagamento.',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green.shade900, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text('Intestatario: ${p.allievoNome}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('Importo: € ${p.importo.toStringAsFixed(2)} | Data: ${p.dataPagamento}'),
-            const SizedBox(height: 4),
-            Text('Causale: ${p.causaleDisplay}', style: const TextStyle(color: Colors.black54, fontSize: 13)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Chiudi'),
-          ),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.add_circle_outline, size: 18),
-            label: const Text('Emetti Altra Ricevuta'),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _mostraEmettiRicevutaDialog(p);
-            },
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
-            icon: const Icon(Icons.print, size: 18),
-            label: const Text('Stampa / Scarica PDF'),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              if (p.ricevutaId != null) {
-                final r = await _api.getRicevuta(p.ricevutaId!);
-                if (r != null) {
-                  _stampaRicevutaEmessa(r);
-                  return;
-                }
-              }
-              final bytes = await _api.getPagamentoRicevutaPdf(p.id);
-              if (bytes != null && mounted) {
-                await Printing.layoutPdf(
-                  onLayout: (_) async => bytes,
-                  name: 'Ricevuta_${p.ricevutaNumero ?? p.id}.pdf',
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _selezionaFiltroData() async {
     final scelta = await showModalBottomSheet<String>(
       context: context,
@@ -1182,28 +1099,22 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                                           constraints: const BoxConstraints(),
                                           onPressed: () => _deletePagamento(p),
                                         ),
-                                        const SizedBox(width: 8),
-                                        // Tasto di emissione ricevuta
-                                        IconButton(
-                                          icon: Icon(
-                                            p.hasRicevuta ? Icons.receipt : Icons.receipt_long_outlined,
-                                            color: p.hasRicevuta ? Colors.teal.shade700 : Colors.indigo,
-                                            size: 20,
+                                        // Tasto di emissione ricevuta (solo se non ancora emessa)
+                                        if (!p.hasRicevuta) ...[
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.receipt_long_outlined,
+                                              color: Colors.indigo,
+                                              size: 20,
+                                            ),
+                                            tooltip: 'Emetti ricevuta',
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () => _mostraEmettiRicevutaDialog(p),
                                           ),
-                                          tooltip: p.hasRicevuta
-                                              ? 'Ricevuta ${p.ricevutaNumero ?? "emessa"} (gestisci / stampa)'
-                                              : 'Emetti ricevuta',
-                                          visualDensity: VisualDensity.compact,
-                                          padding: const EdgeInsets.all(4),
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () {
-                                            if (p.hasRicevuta) {
-                                              _mostraOpzioniRicevutaEmessa(p);
-                                            } else {
-                                              _mostraEmettiRicevutaDialog(p);
-                                            }
-                                          },
-                                        ),
+                                        ],
                                       ],
                                     ),
                                   ),
