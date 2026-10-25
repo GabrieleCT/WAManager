@@ -69,78 +69,16 @@ class _SincronizzazioneContattiScreenState extends State<SincronizzazioneContatt
   }
 
   Future<void> _runFullSync() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.sync, color: Colors.indigo, size: 28),
-            SizedBox(width: 10),
-            Text('Avvia Sincronizzazione Completa'),
-          ],
-        ),
-        content: const Text(
-          'Verranno eseguite le seguenti operazioni automatiche:\n\n'
-          '• I contatti presenti solo nel gestionale verranno creati in Google Contacts.\n'
-          '• I contatti modificati nel gestionale aggiorneranno Google Contacts.\n'
-          '• I contatti modificati su Google Contacts aggiorneranno il gestionale.\n\n'
-          'Vuoi procedere?',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.indigo,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('Avvia Sincronizzazione'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
     setState(() => _syncingAll = true);
     try {
-      final res = await _api.runGoogleContactsFullSync();
-      if (mounted) {
-        final summary = res['summary'] ?? (res['success'] == true ? 'Sincronizzazione completata con successo.' : 'Operazione completata.');
-        final errorsCount = res['errors_count'] ?? 0;
-
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [
-                Icon(errorsCount == 0 ? Icons.check_circle : Icons.warning_amber_rounded,
-                    color: errorsCount == 0 ? Colors.green : Colors.orange, size: 28),
-                const SizedBox(width: 10),
-                const Text('Esito Sincronizzazione'),
-              ],
-            ),
-            content: Text(summary),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _loadReport();
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
+      await _loadReport();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore durante la sincronizzazione: $e'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Informazioni di sincronizzazione aggiornate con successo.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
         );
       }
     } finally {
@@ -724,11 +662,6 @@ class _SincronizzazioneContattiScreenState extends State<SincronizzazioneContatt
                   label: const Text('Registro Log'),
                   onPressed: _showLogsDialog,
                 ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Ricarica Confronto'),
-                  onPressed: _loadReport,
-                ),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.indigo,
@@ -739,7 +672,7 @@ class _SincronizzazioneContattiScreenState extends State<SincronizzazioneContatt
                   icon: _syncingAll
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.sync, size: 18),
-                  label: Text(_syncingAll ? 'Sincronizzazione in corso...' : 'Avvia Sincronizzazione'),
+                  label: Text(_syncingAll ? 'Aggiornamento in corso...' : 'Avvia Sincronizzazione'),
                   onPressed: _syncingAll ? null : _runFullSync,
                 ),
               ],
