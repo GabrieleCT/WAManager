@@ -1230,40 +1230,65 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddRicevutaDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuova Ricevuta'),
-      ),
+      floatingActionButton: isMobile
+          ? FloatingActionButton(
+              onPressed: _showAddRicevutaDialog,
+              tooltip: 'Nuova Ricevuta',
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, size: 20),
+                  SizedBox(width: 2),
+                  Icon(Icons.receipt_long, size: 22),
+                ],
+              ),
+            )
+          : FloatingActionButton.extended(
+              onPressed: _showAddRicevutaDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Nuova Ricevuta'),
+            ),
       body: Column(
         children: [
-          // ─── 1. Card Contatore Anno Corrente ──────────────────────────
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.indigo.shade800, Colors.indigo.shade600],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.indigo.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
+          // ─── 1. Card Contatore Anno Corrente (solo desktop) ───────────────
+          if (!isMobile)
+            Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.indigo.shade800, Colors.indigo.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-              ],
-            ),
-            child: isMobile
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.indigo.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.receipt_long, color: Colors.white, size: 36),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
                               'Ricevute Anno Corrente ($currYear)',
                               style: const TextStyle(
                                 color: Colors.white70,
@@ -1272,121 +1297,50 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                                 letterSpacing: 0.5,
                               ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.shade400,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Anno ${_contatoreAnnoCorrente?.anno ?? currYear}',
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Arrivati alla ricevuta: N. $ultimoNumero',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Prossimo numero: N. ${ultimoNumero + 1}  •  Emesse nel database: ${_contatoreAnnoCorrente?.conteggioEmesse ?? _ricevute.length}',
-                        style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white70),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.edit, size: 16),
-                          label: const Text('Modifica Contatore'),
-                          onPressed: _showModificaContatoreDialog,
-                        ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.receipt_long, color: Colors.white, size: 36),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  'Ricevute Anno Corrente ($currYear)',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.shade400,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    'Anno ${_contatoreAnnoCorrente?.anno ?? currYear}',
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Arrivati alla ricevuta: N. $ultimoNumero',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade400,
+                                borderRadius: BorderRadius.circular(4),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Prossimo numero: N. ${ultimoNumero + 1}  •  Emesse nel database: ${_contatoreAnnoCorrente?.conteggioEmesse ?? _ricevute.length}',
-                              style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12),
+                              child: Text(
+                                'Anno ${_contatoreAnnoCorrente?.anno ?? currYear}',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white70),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Arrivati alla ricevuta: N. $ultimoNumero',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        icon: const Icon(Icons.edit, size: 16),
-                        label: const Text('Modifica Contatore'),
-                        onPressed: _showModificaContatoreDialog,
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          'Prossimo numero: N. ${ultimoNumero + 1}  •  Emesse nel database: ${_contatoreAnnoCorrente?.conteggioEmesse ?? _ricevute.length}',
+                          style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12),
+                        ),
+                      ],
+                    ),
                   ),
-          ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white70),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Modifica Contatore'),
+                    onPressed: _showModificaContatoreDialog,
+                  ),
+                ],
+              ),
+            ),
 
           // Barra filtri compatta per versione mobile
           if (isMobile)
