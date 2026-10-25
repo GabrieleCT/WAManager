@@ -478,6 +478,8 @@ class Pagamento {
   final String id;
   final String allievoId;
   final String allievoNome;
+  final String allievoNomeSolo;
+  final String allievoCognome;
   final String corsoId;
   final String corsoDescrizione;
   final String scuolaNome;
@@ -495,6 +497,8 @@ class Pagamento {
     required this.id,
     required this.allievoId,
     required this.allievoNome,
+    this.allievoNomeSolo = '',
+    this.allievoCognome = '',
     required this.corsoId,
     required this.corsoDescrizione,
     required this.scuolaNome,
@@ -509,6 +513,20 @@ class Pagamento {
     this.ricevutaNumero,
   });
 
+  String get nome {
+    if (allievoNomeSolo.isNotEmpty) return allievoNomeSolo;
+    final clean = allievoNome.replaceAll('[Prospect]', '').trim();
+    final parts = clean.split(' ');
+    return parts.isNotEmpty ? parts.first : '';
+  }
+
+  String get cognome {
+    if (allievoCognome.isNotEmpty) return allievoCognome;
+    final clean = allievoNome.replaceAll('[Prospect]', '').trim();
+    final parts = clean.split(' ');
+    return parts.length > 1 ? parts.sublist(1).join(' ') : '';
+  }
+
   String get causaleDisplay {
     if (causale.isNotEmpty) return causale;
     if (note.isNotEmpty) return note;
@@ -520,6 +538,8 @@ class Pagamento {
       id: json['id'] ?? '',
       allievoId: json['allievo'] ?? '',
       allievoNome: json['allievo_nome'] ?? '',
+      allievoNomeSolo: json['allievo_nome_solo'] ?? '',
+      allievoCognome: json['allievo_cognome'] ?? '',
       corsoId: json['corso'] ?? '',
       corsoDescrizione: json['corso_descrizione'] ?? '',
       scuolaNome: json['scuola_nome'] ?? '',

@@ -28,6 +28,9 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
   DateTime? _filterDataDa;
   DateTime? _filterDataA;
 
+  int? _sortColumnIndex = 3;
+  bool _sortAscending = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +53,9 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
 
     setState(() {
       _pagamenti = pagamenti;
+      if (_sortColumnIndex != null) {
+        _applySort(_sortColumnIndex!, _sortAscending);
+      }
       _corsi = corsi;
       _scuole = scuole;
       _allievi = allievi;
@@ -864,6 +870,50 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     );
   }
 
+  String _formatData(String dataIso) {
+    if (dataIso.isEmpty) return '-';
+    try {
+      final d = DateTime.parse(dataIso);
+      return DateFormat('dd/MM/yyyy').format(d);
+    } catch (_) {
+      return dataIso;
+    }
+  }
+
+  void _applySort(int columnIndex, bool ascending) {
+    _pagamenti.sort((a, b) {
+      int cmp = 0;
+      switch (columnIndex) {
+        case 0: // Cognome
+          cmp = a.cognome.toLowerCase().compareTo(b.cognome.toLowerCase());
+          if (cmp == 0) cmp = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+          break;
+        case 1: // Nome
+          cmp = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+          if (cmp == 0) cmp = a.cognome.toLowerCase().compareTo(b.cognome.toLowerCase());
+          break;
+        case 2: // Causale
+          cmp = a.causaleDisplay.toLowerCase().compareTo(b.causaleDisplay.toLowerCase());
+          break;
+        case 3: // Data registrazione pagamento
+          cmp = a.dataPagamento.compareTo(b.dataPagamento);
+          break;
+        case 4: // Importo
+          cmp = a.importo.compareTo(b.importo);
+          break;
+      }
+      return ascending ? cmp : -cmp;
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySort(columnIndex, ascending);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final totaleIncassato = _pagamenti.fold<double>(0.0, (sum, p) => sum + p.importo);
@@ -1005,122 +1055,164 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
               ],
             ),
           ),
-          // Lista pagamenti
+          // Lista pagamenti tabellare
           if (_loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (_pagamenti.isEmpty)
             const Expanded(child: Center(child: Text('Nessun pagamento registrato con i filtri selezionati.')))
           else
             Expanded(
-              child: ListView.separated(
-                itemCount: _pagamenti.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (ctx, i) {
-                  final p = _pagamenti[i];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: p.hasRicevuta ? Colors.teal.shade100 : Colors.orange.shade100,
-                      child: Text(
-                        p.trimestre,
-                        style: TextStyle(
-                          color: p.hasRicevuta ? Colors.teal.shade900 : Colors.orange.shade900,
-                          fontWeight: FontWeight.bold,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.vertical,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                          child: DataTable(
+                            sortColumnIndex: _sortColumnIndex,
+                            sortAscending: _sortAscending,
+                            headingRowColor: WidgetStateProperty.all(Colors.teal.shade50.withValues(alpha: 0.5)),
+                            headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+                            dataRowMinHeight: 52,
+                            dataRowMaxHeight: 64,
+                            horizontalMargin: 16,
+                            columnSpacing: 24,
+                            showBottomBorder: true,
+                            columns: [
+                              DataColumn(
+                                label: const Text('Cognome'),
+                                onSort: _onSort,
+                              ),
+                              DataColumn(
+                                label: const Text('Nome'),
+                                onSort: _onSort,
+                              ),
+                              DataColumn(
+                                label: const Text('Causale'),
+                                onSort: _onSort,
+                              ),
+                              DataColumn(
+                                label: const Text('Data registrazione pagamento'),
+                                onSort: _onSort,
+                              ),
+                              DataColumn(
+                                label: const Text('Importo'),
+                                numeric: true,
+                                onSort: _onSort,
+                              ),
+                              const DataColumn(
+                                label: Text('Azioni'),
+                              ),
+                            ],
+                            rows: _pagamenti.map((p) {
+                              return DataRow(
+                                cells: [
+                                  // 1. Cognome
+                                  DataCell(
+                                    Text(
+                                      p.cognome.isNotEmpty ? p.cognome : '-',
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  // 2. Nome
+                                  DataCell(
+                                    Text(p.nome.isNotEmpty ? p.nome : p.allievoNome),
+                                  ),
+                                  // 3. Causale
+                                  DataCell(
+                                    Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          p.causaleDisplay,
+                                          style: const TextStyle(fontWeight: FontWeight.w500),
+                                        ),
+                                        if (p.corsoDescrizione.isNotEmpty)
+                                          Text(
+                                            '${p.scuolaNome.isNotEmpty ? "${p.scuolaNome} • " : ""}${p.corsoDescrizione}',
+                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // 4. Data registrazione pagamento
+                                  DataCell(
+                                    Text(
+                                      _formatData(p.dataPagamento),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                  // 5. Importo
+                                  DataCell(
+                                    Text(
+                                      '€ ${p.importo.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.teal.shade800,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  // 6. Azioni: Modifica, Eliminazione, Emissione Ricevuta
+                                  DataCell(
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Tasto di modifica
+                                        IconButton(
+                                          icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                          tooltip: 'Modifica pagamento',
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () => _showEditPaymentDialog(p),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        // Tasto di eliminazione
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                          tooltip: 'Elimina pagamento',
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () => _deletePagamento(p),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        // Tasto di emissione ricevuta
+                                        IconButton(
+                                          icon: Icon(
+                                            p.hasRicevuta ? Icons.receipt : Icons.receipt_long_outlined,
+                                            color: p.hasRicevuta ? Colors.teal.shade700 : Colors.indigo,
+                                            size: 20,
+                                          ),
+                                          tooltip: p.hasRicevuta
+                                              ? 'Ricevuta ${p.ricevutaNumero ?? "emessa"} (gestisci / stampa)'
+                                              : 'Emetti ricevuta',
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () {
+                                            if (p.hasRicevuta) {
+                                              _mostraOpzioniRicevutaEmessa(p);
+                                            } else {
+                                              _mostraEmettiRicevutaDialog(p);
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
+                          ),
                         ),
                       ),
-                    ),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(p.allievoNome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        const SizedBox(width: 8),
-                        if (p.hasRicevuta)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.green.shade300),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
-                                const SizedBox(width: 4),
-                                Text(
-                                  p.ricevutaNumero != null && p.ricevutaNumero!.isNotEmpty
-                                      ? 'Ricevuta ${p.ricevutaNumero}'
-                                      : 'Ricevuta Emessa',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade800),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.orange.shade200),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.access_time, size: 12, color: Colors.orange.shade800),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Ricevuta non emessa',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange.shade900),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${p.scuolaNome} | ${p.corsoDescrizione}'),
-                        const SizedBox(height: 2),
-                        Text('Causale: ${p.causaleDisplay}',
-                            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87, fontSize: 13)),
-                        Text('Data: ${p.dataPagamento}${p.note.isNotEmpty ? ' | Note: ' + p.note : ''}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('€ ${p.importo.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          tooltip: 'Modifica Pagamento',
-                          onPressed: () => _showEditPaymentDialog(p),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            p.hasRicevuta ? Icons.receipt : Icons.receipt_long_outlined,
-                            color: p.hasRicevuta ? Colors.teal.shade700 : Colors.indigo,
-                          ),
-                          tooltip: p.hasRicevuta
-                              ? 'Ricevuta ${p.ricevutaNumero ?? "emessa"} (Clicca per stampare o gestire)'
-                              : 'Emetti Ricevuta',
-                          onPressed: () {
-                            if (p.hasRicevuta) {
-                              _mostraOpzioniRicevutaEmessa(p);
-                            } else {
-                              _mostraEmettiRicevutaDialog(p);
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          tooltip: 'Elimina Pagamento',
-                          onPressed: () => _deletePagamento(p),
-                        ),
-                      ],
                     ),
                   );
                 },

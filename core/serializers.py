@@ -262,6 +262,8 @@ class PresenzaSerializer(serializers.ModelSerializer):
 
 class PagamentoSerializer(serializers.ModelSerializer):
     allievo_nome = serializers.CharField(source='allievo.__str__', read_only=True)
+    allievo_nome_solo = serializers.CharField(source='allievo.nome', read_only=True)
+    allievo_cognome = serializers.CharField(source='allievo.cognome', read_only=True)
     corso_descrizione = serializers.CharField(source='corso.__str__', read_only=True)
     scuola_id = serializers.UUIDField(source='corso.scuola.id', read_only=True)
     scuola_nome = serializers.CharField(source='corso.scuola.nome', read_only=True)
@@ -273,7 +275,8 @@ class PagamentoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pagamento
         fields = [
-            'id', 'allievo', 'allievo_nome', 'corso', 'corso_descrizione',
+            'id', 'allievo', 'allievo_nome', 'allievo_nome_solo', 'allievo_cognome',
+            'corso', 'corso_descrizione',
             'scuola_id', 'scuola_nome', 'importo', 'trimestre',
             'trimestre_display', 'data_pagamento', 'causale', 'note',
             'has_ricevuta', 'ricevuta_id', 'ricevuta_numero'
