@@ -792,12 +792,12 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
 
     return Scaffold(
       floatingActionButton: (isMobile && _selectedLezione != null)
-          ? FloatingActionButton.extended(
+          ? FloatingActionButton(
               backgroundColor: Colors.amber.shade800,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.star),
-              label: const Text('Aggiungi Jolly'),
+              tooltip: 'Aggiungi Jolly',
               onPressed: _showAddJollyDialog,
+              child: const Icon(Icons.star),
             )
           : null,
       appBar: AppBar(
