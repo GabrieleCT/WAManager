@@ -147,6 +147,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   }
 
 
+  // ignore: unused_element
   Future<void> _generateMatches() async {
     if (_selectedLezione == null) return;
     setState(() => _loading = true);
@@ -1100,227 +1101,185 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 6),
                       itemBuilder: (ctx, i) {
                         final p = _presenze[i];
-                        final isWa = p.fonte == 'whatsapp';
+
+                        final Color rowBgColor;
+                        final Color rowBorderColor;
+                        if (p.presente == true) {
+                          rowBgColor = Colors.green.shade100.withValues(alpha: 0.65);
+                          rowBorderColor = Colors.green.shade400;
+                        } else if (p.presente == false) {
+                          rowBgColor = Colors.red.shade100.withValues(alpha: 0.65);
+                          rowBorderColor = Colors.red.shade300;
+                        } else {
+                          // Default: riga grigio chiaro
+                          rowBgColor = Colors.grey.shade100;
+                          rowBorderColor = Colors.grey.shade300;
+                        }
 
                         return Container(
                           decoration: BoxDecoration(
-                            color: isWa ? Colors.green.shade50.withValues(alpha: 0.6) : Colors.indigo.shade50.withValues(alpha: 0.25),
+                            color: rowBgColor,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isWa ? Colors.green.shade400 : Colors.indigo.shade200,
-                              width: isWa ? 1.5 : 1.0,
+                              color: rowBorderColor,
+                              width: 1.2,
                             ),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor: p.presente == true
-                                          ? (isWa ? Colors.green.shade600 : (p.isJolly ? Colors.purple.shade600 : Colors.indigo.shade600))
-                                          : (p.presente == false ? Colors.red.shade100 : Colors.grey.shade300),
-                                      child: Icon(
-                                        p.presente == true
-                                            ? (isWa ? Icons.smart_toy : (p.isJolly ? Icons.star : Icons.check))
-                                            : (p.presente == false ? Icons.close : Icons.help_outline),
-                                        color: p.presente == true ? Colors.white : (p.presente == false ? Colors.red.shade800 : Colors.grey.shade700),
-                                        size: 20,
+                                // Allievo + Badges
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      if (p.allievoIsProspect)
+                                        Container(
+                                          margin: const EdgeInsets.only(right: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber.shade100,
+                                            border: Border.all(color: Colors.amber.shade600),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'PROVA',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.amber,
+                                            ),
+                                          ),
+                                        ),
+                                      if (p.isJolly) ...[
+                                        Container(
+                                          margin: const EdgeInsets.only(right: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.purple.shade100,
+                                            border: Border.all(color: Colors.purple.shade600),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            'JOLLY',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.purple.shade900,
+                                            ),
+                                          ),
+                                        ),
+                                        InkWell(
+                                          onTap: () => _removeJollyPresenza(p),
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Container(
+                                            margin: const EdgeInsets.only(right: 6),
+                                            padding: const EdgeInsets.all(2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.shade50,
+                                              shape: BoxShape.circle,
+                                              border: Border.all(color: Colors.red.shade200),
+                                            ),
+                                            child: Icon(Icons.close, size: 12, color: Colors.red.shade700),
+                                          ),
+                                        ),
+                                      ],
+                                      Flexible(
+                                        child: Text(
+                                          p.allievoNome,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            decoration: p.presente == false ? TextDecoration.lineThrough : null,
+                                            decorationColor: Colors.red.shade900,
+                                            decorationThickness: 2,
+                                            color: p.presente == false
+                                                ? Colors.red.shade900
+                                                : (p.presente == true ? Colors.green.shade900 : Colors.black87),
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
+                                      if (p.fonte == 'whatsapp')
+                                        Container(
+                                          margin: const EdgeInsets.only(left: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade100,
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.green.shade400),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              if (p.allievoIsProspect)
-                                                Container(
-                                                  margin: const EdgeInsets.only(right: 8),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.amber.shade100,
-                                                    border: Border.all(color: Colors.amber.shade600),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: const Text(
-                                                    'PROVA',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.bold,
-                                                      color: Colors.amber,
-                                                    ),
-                                                  ),
-                                                ),
-                                              Expanded(
-                                                child: Text(
-                                                  p.allievoNome,
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 15,
-                                                    decoration: p.presente == false ? TextDecoration.lineThrough : null,
-                                                    color: p.presente == false ? Colors.grey : Colors.black87,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (p.isJolly) ...[
-                                                if (!isMobile)
-                                                  Container(
-                                                    margin: const EdgeInsets.only(right: 8),
-                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.purple.shade100,
-                                                      border: Border.all(color: Colors.purple.shade600),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                    ),
-                                                    child: Text(
-                                                      'JOLLY',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        fontWeight: FontWeight.bold,
-                                                        color: Colors.purple.shade900,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                InkWell(
-                                                  onTap: () => _removeJollyPresenza(p),
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.all(4),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.red.shade50,
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(color: Colors.red.shade200),
-                                                    ),
-                                                    child: Icon(Icons.close, size: 14, color: Colors.red.shade700),
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(width: 8),
-                                              IconButton(
-                                                icon: Icon(
-                                                  Icons.chat,
-                                                  size: 19,
-                                                  color: p.allievoTelefono.trim().isNotEmpty
-                                                      ? Colors.green.shade700
-                                                      : Colors.grey.shade400,
-                                                ),
-                                                tooltip: p.allievoTelefono.trim().isNotEmpty
-                                                    ? 'Invia sollecito risposta WhatsApp a '
-                                                    : 'Nessun numero di telefono per ',
-                                                visualDensity: VisualDensity.compact,
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                onPressed: () => _inviaSollecitoRisposta(p),
-                                              ),
+                                              Icon(Icons.message, size: 10, color: Colors.green.shade800),
+                                              const SizedBox(width: 3),
+                                              Text('WA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade900)),
                                             ],
                                           ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  'Ruolo: ${p.allievoRuolo.toUpperCase()}${p.allievoPartnerId != null && p.cleanPartnerNome.isNotEmpty ? " - Coppia: ${p.cleanPartnerNome}" : ""}',
-                                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                                                ),
-                                              ),
-                                              if (p.fonte == 'whatsapp')
-                                                Container(
-                                                  margin: const EdgeInsets.only(left: 6),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.green.shade100,
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: Colors.green.shade400),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Icon(Icons.message, size: 10, color: Colors.green.shade800),
-                                                      const SizedBox(width: 4),
-                                                      Text('WA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade900)),
-                                                    ],
-                                                  ),
-                                                )
-                                              else if (p.fonte == 'manuale' && !isMobile)
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.indigo.shade50,
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: Colors.indigo.shade300),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Icon(Icons.edit_note, size: 10, color: Colors.indigo.shade900),
-                                                      const SizedBox(width: 3),
-                                                      Text('Man', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.indigo.shade900)),
-                                                    ],
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ],
+                                        ),
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.chat,
+                                          size: 18,
+                                          color: p.allievoTelefono.trim().isNotEmpty
+                                              ? Colors.green.shade700
+                                              : Colors.grey.shade400,
+                                        ),
+                                        tooltip: p.allievoTelefono.trim().isNotEmpty
+                                            ? 'Invia sollecito risposta WhatsApp a ${p.allievoNome}'
+                                            : 'Nessun numero di telefono per ${p.allievoNome}',
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => _inviaSollecitoRisposta(p),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                SegmentedButton<String>(
-                                  showSelectedIcon: !isMobile,
-                                  segments: [
-                                    ButtonSegment<String>(
-                                      value: 'presente',
-                                      label: isMobile ? null : const Text('Presente'),
-                                      icon: const Icon(Icons.check),
-                                      tooltip: 'Presente',
-                                    ),
-                                    ButtonSegment<String>(
-                                      value: 'assente',
-                                      label: isMobile ? null : const Text('Assente'),
-                                      icon: const Icon(Icons.close),
-                                      tooltip: 'Assente',
-                                    ),
-                                    ButtonSegment<String>(
-                                      value: 'non_risposto',
-                                      label: isMobile ? null : const Text('Nessuna risp.'),
-                                      icon: const Icon(Icons.help_outline),
-                                      tooltip: 'Nessuna risposta',
-                                    ),
-                                  ],
-                                  selected: {
-                                    p.presente == true
-                                        ? 'presente'
-                                        : (p.presente == false ? 'assente' : 'non_risposto')
-                                  },
-                                  onSelectionChanged: (Set<String> newSelection) async {
-                                    bool? val;
-                                    if (newSelection.first == 'presente') val = true;
-                                    if (newSelection.first == 'assente') val = false;
-                                    
-                                    setState(() {
-                                      p.presente = val;
-                                      p.fonte = 'manuale';
-                                      _sortPresenze(_presenze);
-                                    });
-                                    await _api.updatePresenza(p.id, {
-                                      'presente': val,
-                                      'fonte': 'manuale',
-                                    });
-                                  },
-                                  style: ButtonStyle(
-                                    visualDensity: VisualDensity.compact,
-                                    backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
-                                      if (states.contains(WidgetState.selected)) {
-                                        return const Color(0xFFFFD1D6);
-                                      }
-                                      return null;
-                                    }),
+                                    ],
                                   ),
+                                ),
+                                const SizedBox(width: 8),
+
+                                // Tre iconcine a destra: Spunta verde, X rossa, Punto interrogativo grigio
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // 1. Spunta verde
+                                    _buildPresenzaButton(
+                                      isSelected: p.presente == true,
+                                      activeBgColor: Colors.green.shade600,
+                                      inactiveBgColor: Colors.green.shade50,
+                                      iconColor: p.presente == true ? Colors.white : Colors.green.shade700,
+                                      borderColor: p.presente == true ? Colors.green.shade700 : Colors.green.shade300,
+                                      icon: Icons.check,
+                                      tooltip: 'Presente',
+                                      onTap: () => _updatePresenzaValore(p, true),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    // 2. X rossa
+                                    _buildPresenzaButton(
+                                      isSelected: p.presente == false,
+                                      activeBgColor: Colors.red.shade600,
+                                      inactiveBgColor: Colors.red.shade50,
+                                      iconColor: p.presente == false ? Colors.white : Colors.red.shade700,
+                                      borderColor: p.presente == false ? Colors.red.shade700 : Colors.red.shade300,
+                                      icon: Icons.close,
+                                      tooltip: 'Assente',
+                                      onTap: () => _updatePresenzaValore(p, false),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    // 3. Punto interrogativo grigio (default)
+                                    _buildPresenzaButton(
+                                      isSelected: p.presente == null,
+                                      activeBgColor: Colors.grey.shade600,
+                                      inactiveBgColor: Colors.white,
+                                      iconColor: p.presente == null ? Colors.white : Colors.grey.shade700,
+                                      borderColor: p.presente == null ? Colors.grey.shade700 : Colors.grey.shade400,
+                                      icon: Icons.help_outline,
+                                      tooltip: 'Nessuna risposta',
+                                      onTap: () => _updatePresenzaValore(p, null),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -1334,6 +1293,65 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             ),
 
         ],
+      ),
+    );
+  }
+
+
+  Future<void> _updatePresenzaValore(Presenza p, bool? val) async {
+    setState(() {
+      p.presente = val;
+      p.fonte = 'manuale';
+      _sortPresenze(_presenze);
+    });
+    await _api.updatePresenza(p.id, {
+      'presente': val,
+      'fonte': 'manuale',
+    });
+  }
+
+  Widget _buildPresenzaButton({
+    required bool isSelected,
+    required Color activeBgColor,
+    required Color inactiveBgColor,
+    required Color iconColor,
+    required Color borderColor,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: isSelected ? activeBgColor : inactiveBgColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: borderColor,
+              width: isSelected ? 2 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: activeBgColor.withValues(alpha: 0.35),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: iconColor,
+          ),
+        ),
       ),
     );
   }
