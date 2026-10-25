@@ -1209,15 +1209,6 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
       appBar: AppBar(
         title: const Text('Gestione Ricevute'),
         actions: [
-          if (isMobile)
-            Badge(
-              isLabelVisible: _hasActiveFilters,
-              child: IconButton(
-                icon: Icon(_showMobileFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
-                tooltip: _showMobileFilters ? 'Nascondi filtri' : 'Mostra filtri',
-                onPressed: () => setState(() => _showMobileFilters = !_showMobileFilters),
-              ),
-            ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),
             tooltip: 'Esporta lista ricevute PDF',
