@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .models import (
     Allievo, Corso, Scuola, Argomento, Lezione, Presenza, Match, MessageTemplate,
-    MessageLog, RecurringSchedule, Role, Level, Recensione
+    MessageLog, RecurringSchedule, Role, Level, Recensione, GeminiLog
 )
 
 

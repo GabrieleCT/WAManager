@@ -57,6 +57,7 @@ function savePoll(msgId, messageObj) {
     fs.writeFileSync(POLLS_FILE, JSON.stringify(sentPolls, null, 2));
 }
 
+const sentBotMessageIds = new Set();
 let sock = null;
 
 async function connectToWhatsApp() {
@@ -109,49 +110,55 @@ async function connectToWhatsApp() {
         for (const msg of m.messages) {
             if (!msg.message) continue;
 
+            // Salta i messaggi inviati direttamente dalle API del gateway
+            if (msg.key && msg.key.id && sentBotMessageIds.has(msg.key.id)) {
+                sentBotMessageIds.delete(msg.key.id);
+                continue;
+            }
+
             // 1. Gestione dei messaggi standard in arrivo
-            const msgType = Object.keys(msg.message)[0];
-            if (msgType === 'conversation' || msgType === 'extendedTextMessage') {
-                const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-                const sender = msg.key.participant || msg.key.remoteJid;
-                
-                // Filtra il parsing dei messaggi testuali solo al target group, per evitare log personali
+            let innerMsg = msg.message;
+            if (innerMsg.ephemeralMessage) innerMsg = innerMsg.ephemeralMessage.message;
+            if (innerMsg.viewOnceMessage) innerMsg = innerMsg.viewOnceMessage.message;
+            if (innerMsg.documentWithCaptionMessage) innerMsg = innerMsg.documentWithCaptionMessage.message;
+
+            const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text;
+            if (text) {
                 const targetGroup = process.env.TARGET_GROUP_ID;
                 const isGroupMsg = msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us');
+
                 if (globalSettings.debugMode || !targetGroup || (targetGroup && msg.key.remoteJid === targetGroup) || isGroupMsg) {
-                    if (!msg.key.fromMe) {
-                        logToFile(`Messaggio ricevuto: ${text} | remoteJid: ${msg.key.remoteJid} | participant: ${msg.key.participant}`);
-                        
+                    // Se è un messaggio nel gruppo corso, processalo ANCHE se è fromMe (test manuale utente)
+                    if (!msg.key.fromMe || isGroupMsg) {
+                        let sender = msg.key.participant;
+                        if (!sender && msg.key.fromMe && sock && sock.user) {
+                            sender = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                        }
+                        if (!sender) {
+                            sender = msg.key.remoteJid;
+                        }
+
+                        logToFile(`Messaggio rilevato: ${text} | remoteJid: ${msg.key.remoteJid} | sender: ${sender} | fromMe: ${msg.key.fromMe}`);
+
                         // Risoluzione LID se necessario
                         let realSenderJid = sender;
-                        if (realSenderJid.includes('@lid') && msg.key.remoteJid.includes('@g.us')) {
+                        if (realSenderJid && realSenderJid.includes('@lid') && msg.key.remoteJid.includes('@g.us')) {
                             try {
                                 const groupMeta = await sock.groupMetadata(msg.key.remoteJid);
-                                logToFile(`[TEXT LID] Participants count: ${groupMeta.participants.length}. Looking for LID: ${realSenderJid}`);
                                 const p = groupMeta.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
                                 if (p) {
-                                    logToFile(`[TEXT LID] Participant found: ${JSON.stringify(p)}`);
-                                    // Usa phoneNumber (che contiene il numero reale) come nella sezione sondaggi
                                     const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
                                     if (actualNumber) {
                                         realSenderJid = actualNumber;
                                         logToFile(`[TEXT LID] LID ${sender} risolto in numero reale: ${realSenderJid}`);
-                                    } else {
-                                        logToFile(`[TEXT LID] ATTENZIONE: participant trovato ma senza numero reale: ${JSON.stringify(p)}`);
                                     }
-                                } else {
-                                    logToFile(`[TEXT LID] Utente ${realSenderJid} NON trovato nei metadati del gruppo.`);
                                 }
                             } catch (err) {
-                                logToFile(`[TEXT LID] Errore recupero metadati gruppo per risolvere LID: ${err.message}`);
+                                logToFile(`[TEXT LID] Errore metadati gruppo: ${err.message}`);
                             }
-                        } else if (realSenderJid.includes('@lid') && !msg.key.remoteJid.includes('@g.us')) {
-                            // Chat 1:1 con LID (o gruppo Community con JID @lid): 
-                            // Proviamo a risolvere il LID cercando nei metadati di tutti i gruppi
-                            logToFile(`[TEXT LID] Messaggio da LID senza @g.us. remoteJid=${msg.key.remoteJid}, sender=${sender}. Tento risoluzione globale...`);
+                        } else if (realSenderJid && realSenderJid.includes('@lid') && !msg.key.remoteJid.includes('@g.us')) {
                             try {
                                 const allGroups = await sock.groupFetchAllParticipating();
-                                let resolved = false;
                                 for (const gid of Object.keys(allGroups)) {
                                     const g = allGroups[gid];
                                     if (!g.participants) continue;
@@ -159,12 +166,8 @@ async function connectToWhatsApp() {
                                     if (p && p.phoneNumber) {
                                         realSenderJid = p.phoneNumber;
                                         logToFile(`[TEXT LID] LID ${sender} risolto via gruppo ${g.subject || gid}: ${realSenderJid}`);
-                                        resolved = true;
                                         break;
                                     }
-                                }
-                                if (!resolved) {
-                                    logToFile(`[TEXT LID] LID ${sender} non risolvibile in nessun gruppo.`);
                                 }
                             } catch (err) {
                                 logToFile(`[TEXT LID] Errore risoluzione LID globale: ${err.message}`);
@@ -180,8 +183,12 @@ async function connectToWhatsApp() {
                             action: 'text_message'
                         };
                         try {
-                            axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload).catch(() => {});
-                        } catch (err) {}
+                            axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload)
+                                .then(r => logToFile(`Webhook response: ${JSON.stringify(r.data)}`))
+                                .catch(err => logToFile(`Errore risposta webhook: ${err.message}`));
+                        } catch (err) {
+                            logToFile(`Errore invio webhook: ${err.message}`);
+                        }
                     } else {
                         logToFile(`Messaggio inviato (o dal bot): ${text} a ${msg.key.remoteJid}`);
                     }
@@ -407,6 +414,8 @@ app.post('/api/send', async (req, res) => {
             logToFile(`Invio messaggio testo a ${chatId}...`);
             const response = await sendWithTimeout(sock.sendMessage(chatId, { text: message }), chatId);
             const msgId = response.key.id;
+            sentBotMessageIds.add(msgId);
+            setTimeout(() => sentBotMessageIds.delete(msgId), 300000);
             res.json({ success: true, response: { id: { _serialized: msgId } } });
         }
     } catch (error) {
