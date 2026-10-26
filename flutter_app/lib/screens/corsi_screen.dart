@@ -1008,30 +1008,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
-  Widget _buildAllievoAvatar(String ruolo) {
-    Color bg;
-    Color fg;
-    IconData icon;
-    if (ruolo == 'leader') {
-      bg = Colors.blue.shade100;
-      fg = Colors.blue.shade900;
-      icon = Icons.man;
-    } else if (ruolo == 'follower') {
-      bg = Colors.purple.shade100;
-      fg = Colors.purple.shade900;
-      icon = Icons.woman;
-    } else {
-      bg = Colors.teal.shade100;
-      fg = Colors.teal.shade900;
-      icon = Icons.people;
-    }
-    return CircleAvatar(
-      radius: 14,
-      backgroundColor: bg,
-      child: Icon(icon, color: fg, size: 18),
-    );
-  }
-
   Widget _buildRuoloBadge(String ruolo) {
     Color bg;
     Color fg;
@@ -1406,8 +1382,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                               child: Row(
                                 children: [
-                                  _buildAllievoAvatar(a.ruolo),
-                                  const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1417,14 +1391,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                             Flexible(
                                               child: Text(
                                                 a.nomeCompleto,
-                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            if (a.partnerId != null) ...[
-                                              const SizedBox(width: 6),
-                                              const Icon(Icons.favorite, size: 14, color: Colors.pink),
-                                            ],
                                             if (a.recensione == 'si') ...[
                                               const SizedBox(width: 4),
                                               const Icon(Icons.star, color: Colors.amber, size: 15),
@@ -1461,7 +1431,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                             child: Icon(Icons.check_circle, size: 15, color: Colors.green.shade700),
                                           ),
                                         )
-                                      else ...[
+                                      else
                                         Tooltip(
                                           message: 'Non ha pagato',
                                           child: Container(
@@ -1474,33 +1444,53 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                             child: Icon(Icons.error_outline, size: 15, color: Colors.red.shade900),
                                           ),
                                         ),
-                                        const SizedBox(width: 4),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_card, size: 18, color: Colors.green),
-                                          tooltip: 'Registra pagamento per ${a.nomeCompleto}',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
-                                        ),
-                                      ],
-                                      const SizedBox(width: 6),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                                        tooltip: 'Modifica ${a.nomeCompleto}',
+                                      const SizedBox(width: 2),
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert, size: 20, color: Colors.blueGrey),
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(),
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () => _showEditAllievoDialog(c, a),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                        tooltip: 'Elimina/Rimuovi ${a.nomeCompleto}',
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
+                                        onSelected: (value) {
+                                          if (value == 'pay') {
+                                            _showQuickPayDialog(c, a, activeTrimestreCode);
+                                          } else if (value == 'edit') {
+                                            _showEditAllievoDialog(c, a);
+                                          } else if (value == 'delete') {
+                                            _confirmDeleteOrRemoveAllievo(c, a);
+                                          }
+                                        },
+                                        itemBuilder: (context) => [
+                                          if (!haPagato)
+                                            const PopupMenuItem(
+                                              value: 'pay',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.add_card, size: 18, color: Colors.green),
+                                                  SizedBox(width: 8),
+                                                  Text('Registra Pagamento'),
+                                                ],
+                                              ),
+                                            ),
+                                          const PopupMenuItem(
+                                            value: 'edit',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.edit, size: 18, color: Colors.blue),
+                                                SizedBox(width: 8),
+                                                Text('Modifica Allievo'),
+                                              ],
+                                            ),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'delete',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.delete, size: 18, color: Colors.red),
+                                                SizedBox(width: 8),
+                                                Text('Elimina / Rimuovi', style: TextStyle(color: Colors.red)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -1679,96 +1669,167 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.amber.shade400, width: 1.5),
                     ),
-                    child: Row(
-                      children: [
-                        if (isMobile) ...[
-                          _buildAllievoAvatar(p.ruolo),
-                          const SizedBox(width: 10),
-                        ],
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    child: isMobile
+                        ? Row(
                             children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      p.nomeCompleto,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                      overflow: TextOverflow.ellipsis,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            p.nomeCompleto,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber.shade700,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'PROVA',
+                                            style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (p.note.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '📝 ${p.note}',
+                                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.brown.shade800),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert, size: 20, color: Colors.brown),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onSelected: (value) async {
+                                  if (value == 'convert') {
+                                    final res = await _api.convertProspectToStudent(p.id, c.id);
+                                    if (res != null && mounted) {
+                                      if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                                        checkAndShowGoogleSyncError(
+                                          context,
+                                          entityType: 'Allievo',
+                                          name: res.nomeCompleto,
+                                          error: res.googleSyncError,
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
+                                        );
+                                      }
+                                      _fetchIscritti(c.id);
+                                      _loadAll();
+                                    }
+                                  } else if (value == 'edit') {
+                                    _showEditAllievoDialog(c, p);
+                                  } else if (value == 'delete') {
+                                    _confirmDeleteOrRemoveAllievo(c, p);
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                    value: 'convert',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.school, size: 18, color: Colors.green),
+                                        SizedBox(width: 8),
+                                        Text('Converti ad Allievo'),
+                                      ],
                                     ),
                                   ),
-                                  if (p.partnerId != null) ...[
-                                    const SizedBox(width: 6),
-                                    const Icon(Icons.favorite, size: 14, color: Colors.pink),
-                                  ],
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.amber.shade700,
-                                      borderRadius: BorderRadius.circular(4),
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, size: 18, color: Colors.blue),
+                                        SizedBox(width: 8),
+                                        Text('Modifica Prospect'),
+                                      ],
                                     ),
-                                    child: const Text(
-                                      'PROVA',
-                                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.close, size: 18, color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text('Rimuovi o Elimina', style: TextStyle(color: Colors.red)),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                              if (!isMobile) ...[
-                                const SizedBox(height: 4),
-                                _buildRuoloBadge(p.ruolo),
-                              ],
-                              if (p.note.isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(
-                                  '📝 ${p.note}',
-                                  style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.brown.shade800),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
                             ],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Tooltip(
-                              message: 'Converti ad allievo effettivo',
-                              child: isMobile
-                                  ? ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green.shade700,
-                                        foregroundColor: Colors.white,
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.all(7),
-                                        minimumSize: const Size(32, 32),
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            p.nomeCompleto,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (p.partnerId != null) ...[
+                                          const SizedBox(width: 6),
+                                          const Icon(Icons.favorite, size: 14, color: Colors.pink),
+                                        ],
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber.shade700,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'PROVA',
+                                            style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _buildRuoloBadge(p.ruolo),
+                                    if (p.note.isNotEmpty) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '📝 ${p.note}',
+                                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.brown.shade800),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      onPressed: () async {
-                                        final res = await _api.convertProspectToStudent(p.id, c.id);
-                                        if (res != null && mounted) {
-                                          if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                                            checkAndShowGoogleSyncError(
-                                              context,
-                                              entityType: 'Allievo',
-                                              name: res.nomeCompleto,
-                                              error: res.googleSyncError,
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
-                                            );
-                                          }
-                                          _fetchIscritti(c.id);
-                                          _loadAll();
-                                        }
-                                      },
-                                      child: const Icon(Icons.school, size: 16),
-                                    )
-                                  : ElevatedButton.icon(
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Tooltip(
+                                    message: 'Converti ad allievo effettivo',
+                                    child: ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green.shade700,
                                         foregroundColor: Colors.white,
@@ -1797,29 +1858,29 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                         }
                                       },
                                     ),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                              tooltip: 'Modifica ${p.nomeCompleto}',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => _showEditAllievoDialog(c, p),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18, color: Colors.red),
-                              tooltip: 'Rimuovi o Elimina ${p.nomeCompleto}',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => _confirmDeleteOrRemoveAllievo(c, p),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                                    tooltip: 'Modifica ${p.nomeCompleto}',
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _showEditAllievoDialog(c, p),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                                    tooltip: 'Rimuovi o Elimina ${p.nomeCompleto}',
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _confirmDeleteOrRemoveAllievo(c, p),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                   ),
               ],
             ),
