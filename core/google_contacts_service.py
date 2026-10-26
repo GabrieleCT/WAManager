@@ -105,6 +105,22 @@ def is_allievo_donna(allievo):
     return False
 
 
+def remove_potenziale_from_note(note_str: str) -> str:
+    """
+    Rimuove la parola 'potenziale' (o 'potenziali') dal testo delle note,
+    lasciando inalterato il resto del contenuto.
+    """
+    if not note_str:
+        return ""
+    cleaned = re.sub(r'\bpotenzial[ei]\b', '', note_str, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[ \t]+', ' ', cleaned).strip()
+    cleaned = re.sub(r'^[,\-–—\s]+', '', cleaned).strip()
+    cleaned = re.sub(r'[,\-–—\s]+$', '', cleaned).strip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
 def build_contact_note(allievo):
     """
     Costruisce il campo note per Google Contacts:
@@ -137,7 +153,7 @@ def build_contact_note(allievo):
     return f"{titolo}{scuola_suffix}".strip()
 
 
-def sync_allievo_to_google_contacts(allievo):
+def sync_allievo_to_google_contacts(allievo, clean_potenziale=False):
     """
     Crea o aggiorna il contatto per l'allievo/prospect nella rubrica di Google Contacts.
     - Nome e Cognome
@@ -156,8 +172,6 @@ def sync_allievo_to_google_contacts(allievo):
     access_token, err = get_valid_contacts_access_token()
     if not access_token:
         return {'success': False, 'error': err}
-
-    note_text = build_contact_note(allievo)
 
     headers = {
         'Authorization': f'Bearer {access_token}',
@@ -183,10 +197,29 @@ def sync_allievo_to_google_contacts(allievo):
             'type': 'home'
         })
 
-    biographies_payload = [{
-        'value': note_text,
-        'contentType': 'TEXT_PLAIN'
-    }]
+    # Se l'allievo non ha google_contact_id registrato, cerca se esiste già su Google Contacts
+    if not allievo.google_contact_id:
+        target_phone = normalize_phone(allievo.telefono) if getattr(allievo, 'telefono', None) else None
+        target_name = f"{getattr(allievo, 'nome', '')} {getattr(allievo, 'cognome', '')}".strip().lower()
+        if target_phone or target_name:
+            try:
+                connections, _ = fetch_google_contacts_connections(access_token)
+                if connections:
+                    for c in connections:
+                        r_name = c.get('resource_name')
+                        c_phone = normalize_phone(c.get('phone', ''))
+                        if target_phone and c_phone and (c_phone == target_phone or c_phone.endswith(target_phone) or target_phone.endswith(c_phone)):
+                            allievo.google_contact_id = r_name
+                            allievo.save(update_fields=['google_contact_id'])
+                            break
+                        c_name = f"{c.get('given_name', '')} {c.get('family_name', '')}".strip().lower()
+                        c_display = c.get('display_name', '').strip().lower()
+                        if target_name and (target_name == c_name or target_name == c_display):
+                            allievo.google_contact_id = r_name
+                            allievo.save(update_fields=['google_contact_id'])
+                            break
+            except Exception as e:
+                logger.warning(f"Errore ricerca contatto Google pre-esistente per sync: {e}")
 
     # Se l'allievo ha già un resourceName Google salvato, prova ad aggiornarlo
     if allievo.google_contact_id:
@@ -197,6 +230,23 @@ def sync_allievo_to_google_contacts(allievo):
             if get_resp.status_code == 200:
                 contact_data = get_resp.json()
                 etag = contact_data.get('etag')
+
+                existing_bios = contact_data.get('biographies', [])
+                existing_note = existing_bios[0].get('value', '').strip() if existing_bios else ''
+
+                # Se richiesto o se l'allievo non è prospect e la nota contiene 'potenziale'
+                if (clean_potenziale or not allievo.is_prospect) and existing_note and re.search(r'\bpotenzial[ei]\b', existing_note, flags=re.IGNORECASE):
+                    cleaned_note = remove_potenziale_from_note(existing_note)
+                    note_to_use = cleaned_note if cleaned_note else build_contact_note(allievo)
+                elif existing_note:
+                    note_to_use = existing_note
+                else:
+                    note_to_use = build_contact_note(allievo)
+
+                biographies_payload = [{
+                    'value': note_to_use,
+                    'contentType': 'TEXT_PLAIN'
+                }]
 
                 update_url = f"https://people.googleapis.com/v1/{allievo.google_contact_id}:updateContact?updatePersonFields=names,phoneNumbers,emailAddresses,biographies"
                 update_body = {
@@ -210,12 +260,13 @@ def sync_allievo_to_google_contacts(allievo):
                 if upd_resp.status_code == 200:
                     config.last_sync_at = timezone.now()
                     config.save(update_fields=['last_sync_at'])
-                    logger.info(f"Contatto Google aggiornato per {allievo.nome} {allievo.cognome} ({allievo.google_contact_id})")
+                    logger.info(f"Contatto Google aggiornato per {allievo.nome} {allievo.cognome} ({allievo.google_contact_id}) con nota '{note_to_use}'")
                     return {
                         'success': True,
                         'action': 'updated',
                         'resource_name': allievo.google_contact_id,
-                        'message': f"Contatto '{allievo.nome} {allievo.cognome}' aggiornato in Google Contacts."
+                        'note': note_to_use,
+                        'message': f"Contatto '{allievo.nome} {allievo.cognome}' aggiornato in Google Contacts con nota '{note_to_use}'."
                     }
                 else:
                     err_data = upd_resp.json() if upd_resp.headers.get('content-type', '').startswith('application/json') else {}
@@ -239,6 +290,16 @@ def sync_allievo_to_google_contacts(allievo):
         except Exception as e:
             logger.error(f"Eccezione aggiornamento contatto Google: {str(e)}")
             return {'success': False, 'error': f"Eccezione aggiornamento Google Contacts: {str(e)}"}
+
+    # Creazione nuovo contatto
+    note_to_use = build_contact_note(allievo)
+    if (clean_potenziale or not allievo.is_prospect) and re.search(r'\bpotenzial[ei]\b', note_to_use, flags=re.IGNORECASE):
+        note_to_use = remove_potenziale_from_note(note_to_use) or note_to_use
+
+    biographies_payload = [{
+        'value': note_to_use,
+        'contentType': 'TEXT_PLAIN'
+    }]
 
     # Creazione nuovo contatto
     try:

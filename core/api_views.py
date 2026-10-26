@@ -414,16 +414,78 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo.corso = corso
         allievo.livello = corso.livello
         allievo.is_prospect = False
+
+        # Pulisce la parola "potenziale" dalle note locali se presente
+        if allievo.note and re.search(r'\bpotenzial[ei]\b', allievo.note, flags=re.IGNORECASE):
+            from .google_contacts_service import remove_potenziale_from_note
+            allievo.note = remove_potenziale_from_note(allievo.note)
+
         allievo.save()
+
+        # Inserimento automatico nei gruppi WhatsApp (Corso e Scuola)
+        whatsapp_results = []
+        if allievo.telefono and allievo.telefono.strip().upper() != 'TBD':
+            # 1. Gruppo WhatsApp del Corso
+            if corso.gruppo_whatsapp:
+                try:
+                    res_corso = add_group_participant(corso.gruppo_whatsapp, allievo.telefono)
+                    if res_corso.get('success'):
+                        allievo.in_gruppo_corso_whatsapp = True
+                        allievo.save(update_fields=['in_gruppo_corso_whatsapp'])
+                    whatsapp_results.append({
+                        'gruppo': 'corso',
+                        'gruppo_id': corso.gruppo_whatsapp,
+                        'success': res_corso.get('success', False),
+                        'result': res_corso
+                    })
+                except Exception as e:
+                    whatsapp_results.append({
+                        'gruppo': 'corso',
+                        'gruppo_id': corso.gruppo_whatsapp,
+                        'success': False,
+                        'error': str(e)
+                    })
+
+            # 2. Gruppo WhatsApp della Scuola
+            scuola = getattr(corso, 'scuola', None)
+            if scuola and scuola.gruppo_whatsapp:
+                if scuola.gruppo_whatsapp != corso.gruppo_whatsapp:
+                    try:
+                        res_scuola = add_group_participant(scuola.gruppo_whatsapp, allievo.telefono)
+                        if res_scuola.get('success'):
+                            allievo.in_gruppo_scuola_whatsapp = True
+                            allievo.save(update_fields=['in_gruppo_scuola_whatsapp'])
+                        whatsapp_results.append({
+                            'gruppo': 'scuola',
+                            'gruppo_id': scuola.gruppo_whatsapp,
+                            'success': res_scuola.get('success', False),
+                            'result': res_scuola
+                        })
+                    except Exception as e:
+                        whatsapp_results.append({
+                            'gruppo': 'scuola',
+                            'gruppo_id': scuola.gruppo_whatsapp,
+                            'success': False,
+                            'error': str(e)
+                        })
+                else:
+                    if allievo.in_gruppo_corso_whatsapp:
+                        allievo.in_gruppo_scuola_whatsapp = True
+                        allievo.save(update_fields=['in_gruppo_scuola_whatsapp'])
+
+        # Sincronizzazione Google Contacts con pulizia del campo note (rimozione 'potenziale')
         google_sync = None
         try:
             from .google_contacts_service import sync_allievo_to_google_contacts
-            google_sync = sync_allievo_to_google_contacts(allievo)
+            google_sync = sync_allievo_to_google_contacts(allievo, clean_potenziale=True)
         except Exception as e:
             google_sync = {'success': False, 'error': str(e)}
+
         data = self.get_serializer(allievo).data
         if google_sync:
             data['google_sync'] = google_sync
+        if whatsapp_results:
+            data['whatsapp_sync'] = whatsapp_results
         return Response(data)
 
     @action(detail=True, methods=['post'])
