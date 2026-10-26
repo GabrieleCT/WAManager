@@ -1386,20 +1386,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                a.nomeCompleto,
-                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            if (a.recensione == 'si') ...[
-                                              const SizedBox(width: 4),
-                                              const Icon(Icons.star, color: Colors.amber, size: 15),
-                                            ],
-                                          ],
+                                        Text(
+                                          a.nomeCompleto,
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         if (a.numeroTessera.isNotEmpty)
                                           Padding(
