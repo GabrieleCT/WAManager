@@ -1455,7 +1455,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Imposta il messaggio predefinito proposto quando si contatta un allievo Jolly dalla sezione Anagrafica -> Jolly.\nLe informazioni dettagliate sulle lezioni (data, sede, livello) verranno automaticamente accodate al messaggio inviato via WhatsApp.',
+                              'Imposta il messaggio predefinito proposto quando si contatta un allievo Jolly dalla sezione Anagrafica -> Jolly.',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey.shade800,
@@ -1538,7 +1538,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                           border: Border.all(color: Colors.green.shade300),
                         ),
                         child: Text(
-                          '${_testoJollyCtl.text.trim().replaceAll("{nickname}", "Alex").replaceAll("<nickname>", "Alex")}\n\nLezioni in cui servono jolly:\n📅 24/10/2026 21:00 | Sede Centrale - Intermedio',
+                          _testoJollyCtl.text.trim().replaceAll("{nickname}", "Alex").replaceAll("<nickname>", "Alex"),
                           style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
                         ),
                       ),

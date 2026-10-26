@@ -1129,18 +1129,7 @@ def send_jolly_message(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Costruisci testo info lezioni se fornite
-    lezioni_info = ""
-    if lezione_ids:
-        lezioni = Lezione.objects.filter(id__in=lezione_ids).select_related('corso', 'corso__scuola', 'argomento')
-        righe = []
-        for lez in lezioni:
-            arg = f" - {lez.argomento.titolo}" if lez.argomento else ""
-            righe.append(f"📅 {lez.data.strftime('%d/%m/%Y')} {lez.corso.orario.strftime('%H:%M')} | {lez.corso.scuola.nome} - {lez.corso.get_livello_display()}{arg}")
-        if righe:
-            lezioni_info = "\n\nLezioni in cui servono jolly:\n" + "\n".join(righe)
-
-    messaggio_finale = testo + lezioni_info
+    messaggio_finale = testo
 
     results = []
     success_count = 0
