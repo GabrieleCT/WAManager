@@ -96,6 +96,35 @@ class _CorsiScreenState extends State<CorsiScreen> {
     return 'LUNEDI';
   }
 
+  Future<void> _confirmDeleteCorso(Corso c) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (cCtx) => AlertDialog(
+        title: const Text('Elimina Corso'),
+        content: Text('Sei sicuro di voler eliminare il corso ${c.scuolaNome} - ${c.livelloDisplay}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(cCtx, false), child: const Text('Annulla')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(cCtx, true),
+            child: const Text('Elimina'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      final ok = await _api.deleteCorso(c.id);
+      if (ok) {
+        _loadAll();
+      } else if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Impossibile eliminare il corso. Verificare se ci sono allievi o lezioni collegate.')),
+        );
+      }
+    }
+  }
+
   void _showAddCorsoDialog([Corso? corso]) {
     String? scuolaId = corso?.scuolaId ?? (_scuole.isNotEmpty ? _scuole.first.id : null);
     String giornoSettimana = _normalizeGiorno(corso?.giornoSettimana);
@@ -1060,10 +1089,11 @@ class _CorsiScreenState extends State<CorsiScreen> {
       tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
     }
 
+    final isMobile = MediaQuery.of(context).size.width < 800;
     return Tooltip(
       message: tooltip,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 2),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10),
@@ -1072,12 +1102,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: fg),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold),
-            ),
+            Icon(icon, size: isMobile ? 14 : 12, color: fg),
+            if (!isMobile) ...[
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
           ],
         ),
       ),
@@ -1207,43 +1239,52 @@ class _CorsiScreenState extends State<CorsiScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade700,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  ),
-                  icon: const Icon(Icons.picture_as_pdf, size: 15),
-                  label: const Text('Esporta Elenco', style: TextStyle(fontSize: 12)),
-                  onPressed: () => PdfReportService.generaElencoCorso(
-                    context: context,
-                    corso: c,
-                    iscritti: effettivi,
-                    prospects: prospects,
+                Tooltip(
+                  message: 'Esporta Elenco',
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(8),
+                      minimumSize: const Size(36, 36),
+                    ),
+                    onPressed: () => PdfReportService.generaElencoCorso(
+                      context: context,
+                      corso: c,
+                      iscritti: effettivi,
+                      prospects: prospects,
+                    ),
+                    child: const Icon(Icons.picture_as_pdf, size: 18),
                   ),
                 ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.shade700,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                Tooltip(
+                  message: 'Assegna Prospect in Prova',
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(8),
+                      minimumSize: const Size(36, 36),
+                    ),
+                    onPressed: () => _showAddProspectToCorsoDialog(c),
+                    child: const Icon(Icons.person_add_alt_1, size: 18),
                   ),
-                  icon: const Icon(Icons.person_add_alt_1, size: 15),
-                  label: const Text('Assegna Prospect in Prova', style: TextStyle(fontSize: 12)),
-                  onPressed: () => _showAddProspectToCorsoDialog(c),
                 ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo.shade700,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                Tooltip(
+                  message: 'Aggiungi Allievo',
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo.shade700,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(8),
+                      minimumSize: const Size(36, 36),
+                    ),
+                    onPressed: () => _showAddAllievoToCorsoDialog(c),
+                    child: const Icon(Icons.person_add, size: 18),
                   ),
-                  icon: const Icon(Icons.person_add, size: 15),
-                  label: const Text('Aggiungi Allievo', style: TextStyle(fontSize: 12)),
-                  onPressed: () => _showAddAllievoToCorsoDialog(c),
                 ),
               ],
             ),
@@ -1393,51 +1434,61 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           children: [
                             _buildStatoTesseraBadge(a),
                             if (haPagato)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.green.shade400),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check_circle, size: 13, color: Colors.green.shade700),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'PAGATO',
-                                      style: TextStyle(
-                                        color: Colors.green.shade900,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
+                              Tooltip(
+                                message: 'Pagato',
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.green.shade400),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.check_circle, size: isMobile ? 15 : 13, color: Colors.green.shade700),
+                                      if (!isMobile) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'PAGATO',
+                                          style: TextStyle(
+                                            color: Colors.green.shade900,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
                               )
                             else ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.shade100,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.red.shade600, width: 1.2),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.error_outline, size: 14, color: Colors.red.shade900),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'NON HA PAGATO',
-                                      style: TextStyle(
-                                        color: Colors.red.shade900,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
+                              Tooltip(
+                                message: 'Non ha pagato',
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade100,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.red.shade600, width: 1.2),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.error_outline, size: isMobile ? 15 : 14, color: Colors.red.shade900),
+                                      if (!isMobile) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'NON HA PAGATO',
+                                          style: TextStyle(
+                                            color: Colors.red.shade900,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
                               ),
                               IconButton(
@@ -1633,6 +1684,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Corsi'),
@@ -1668,10 +1720,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                         child: ExpansionTile(
                           initiallyExpanded: true,
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.indigo.shade100,
-                            child: const Icon(Icons.school, color: Colors.indigo),
-                          ),
+                          leading: isMobile
+                              ? null
+                              : CircleAvatar(
+                                  backgroundColor: Colors.indigo.shade100,
+                                  child: const Icon(Icons.school, color: Colors.indigo),
+                                ),
                           title: Wrap(
                             spacing: 8,
                             runSpacing: 4,
@@ -1735,6 +1789,24 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                                   c.livelloDisplay,
                                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                                 ),
+                                                if (isMobile) ...[
+                                                  IconButton(
+                                                    icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                                                    tooltip: 'Modifica Corso',
+                                                    visualDensity: VisualDensity.compact,
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    onPressed: () => _showAddCorsoDialog(c),
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                                    tooltip: 'Elimina Corso',
+                                                    visualDensity: VisualDensity.compact,
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    onPressed: () => _confirmDeleteCorso(c),
+                                                  ),
+                                                ],
                                                 _buildRecapBadge(
                                                   icon: Icons.people_alt,
                                                   label: 'Allievi',
@@ -1781,43 +1853,18 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                               ],
                                             ),
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                                            tooltip: 'Modifica Corso',
-                                            onPressed: () => _showAddCorsoDialog(c),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                                            tooltip: 'Elimina Corso',
-                                            onPressed: () async {
-                                              final confirm = await showDialog<bool>(
-                                                context: context,
-                                                builder: (cCtx) => AlertDialog(
-                                                  title: const Text('Elimina Corso'),
-                                                  content: Text('Sei sicuro di voler eliminare il corso ${c.scuolaNome} - ${c.livelloDisplay}?'),
-                                                  actions: [
-                                                    TextButton(onPressed: () => Navigator.pop(cCtx, false), child: const Text('Annulla')),
-                                                    ElevatedButton(
-                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                                                      onPressed: () => Navigator.pop(cCtx, true),
-                                                      child: const Text('Elimina'),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                              if (confirm == true) {
-                                                final messenger = ScaffoldMessenger.of(context);
-                                                final ok = await _api.deleteCorso(c.id);
-                                                if (ok) {
-                                                  _loadAll();
-                                                } else if (mounted) {
-                                                  messenger.showSnackBar(
-                                                    const SnackBar(content: Text('Impossibile eliminare il corso. Verificare se ci sono allievi o lezioni collegate.')),
-                                                  );
-                                                }
-                                              }
-                                            },
-                                          ),
+                                          if (!isMobile) ...[
+                                            IconButton(
+                                              icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                              tooltip: 'Modifica Corso',
+                                              onPressed: () => _showAddCorsoDialog(c),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                              tooltip: 'Elimina Corso',
+                                              onPressed: () => _confirmDeleteCorso(c),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                       subtitle: Padding(
