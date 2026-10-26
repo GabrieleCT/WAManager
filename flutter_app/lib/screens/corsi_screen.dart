@@ -1008,29 +1008,34 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
-  Widget _buildRuoloBadge(String ruolo) {
+  Widget _buildAllievoAvatar(String ruolo) {
     Color bg;
     Color fg;
-    String label;
-    if (ruolo == 'leader') {
+    IconData icon;
+    final r = ruolo.toLowerCase().trim();
+    if (r == 'leader') {
       bg = Colors.blue.shade100;
       fg = Colors.blue.shade900;
-      label = 'Leader';
-    } else if (ruolo == 'follower') {
+      icon = Icons.man;
+    } else if (r == 'follower') {
       bg = Colors.purple.shade100;
       fg = Colors.purple.shade900;
-      label = 'Follower';
+      icon = Icons.woman;
     } else {
       bg = Colors.teal.shade100;
       fg = Colors.teal.shade900;
-      label = 'Both';
+      icon = Icons.people;
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
-      child: Text(label, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.bold)),
+    return Tooltip(
+      message: ruolo.toUpperCase(),
+      child: CircleAvatar(
+        radius: 12,
+        backgroundColor: bg,
+        child: Icon(icon, color: fg, size: 16),
+      ),
     );
   }
+
 
   Widget _buildStatoTesseraBadge(Allievo a) {
     Color bg;
@@ -1500,6 +1505,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  _buildAllievoAvatar(a.ruolo),
                                   if (a.partnerId != null) ...[
                                     const SizedBox(width: 8),
                                     const Icon(Icons.favorite, size: 14, color: Colors.pink),
@@ -1596,7 +1603,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                     constraints: const BoxConstraints(),
                                     onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
                                   ),
-                                  _buildRuoloBadge(a.ruolo),
                                   if (a.recensione == 'si')
                                     const Tooltip(
                                       message: 'Recensione rilasciata',
@@ -1781,6 +1787,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
+                                        const SizedBox(width: 6),
+                                        _buildAllievoAvatar(p.ruolo),
                                         if (p.partnerId != null) ...[
                                           const SizedBox(width: 6),
                                           const Icon(Icons.favorite, size: 14, color: Colors.pink),
@@ -1799,8 +1807,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 4),
-                                    _buildRuoloBadge(p.ruolo),
                                     if (p.note.isNotEmpty) ...[
                                       const SizedBox(height: 3),
                                       Text(

@@ -1752,37 +1752,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                           'Data: ${r.data}${r.note.isNotEmpty ? " • Note: ${r.note}" : ""}',
                           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                         ),
-                        const SizedBox(height: 6),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: r.inBilancio ? Colors.grey.shade200 : Colors.teal.shade700,
-                            foregroundColor: r.inBilancio ? Colors.grey.shade500 : Colors.white,
-                            disabledBackgroundColor: Colors.grey.shade200,
-                            disabledForegroundColor: Colors.grey.shade500,
-                            elevation: r.inBilancio ? 0 : 1,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              side: BorderSide(
-                                color: r.inBilancio ? Colors.grey.shade300 : Colors.teal.shade700,
-                              ),
-                            ),
-                          ),
-                          icon: Icon(
-                            r.inBilancio ? Icons.check_circle : Icons.point_of_sale,
-                            size: 15,
-                            color: r.inBilancio ? Colors.green.shade600 : Colors.white,
-                          ),
-                          label: Text(
-                            r.inBilancio ? 'Entrata Aggiunta a Bilancio' : 'Inserisci Entrata Nota Cassa',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: r.inBilancio ? Colors.grey.shade600 : Colors.white,
-                            ),
-                          ),
-                          onPressed: r.inBilancio ? null : () => _inserisciEntrataNotaCassa(r),
-                        ),
+
                       ],
                     ),
                     trailing: LayoutBuilder(
