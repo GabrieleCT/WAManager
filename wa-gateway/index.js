@@ -58,6 +58,39 @@ function savePoll(msgId, messageObj) {
 }
 
 const sentBotMessageIds = new Set();
+
+// I 7 Gruppi WhatsApp dei Corsi (NON i gruppi scuola o chat personali)
+const COURSE_GROUPS = new Set([
+    '120363413142077023@g.us', // Ripamonti - Avanzato 21:30
+    '120363429231746469@g.us', // Ripamonti - Intermedio 20:30
+    '120363413761223316@g.us', // Ripamonti - Principiante 19:30
+    '120363428160652062@g.us', // San Donato - Intermedio 20:30
+    '120363430543730835@g.us', // San Donato - Intermedio 21:30
+    '120363409906978742@g.us', // San Donato - Principiante 19:30
+    '120363429253408231@g.us', // San Donato - Principiante 20:30
+]);
+
+let dynamicCourseGroups = new Set(COURSE_GROUPS);
+
+async function refreshCourseGroups() {
+    try {
+        const res = await axios.get(DJANGO_BASE_URL + '/api/corsi/');
+        if (Array.isArray(res.data)) {
+            const newSet = new Set(COURSE_GROUPS);
+            for (const c of res.data) {
+                if (c.gruppo_whatsapp && c.gruppo_whatsapp.trim()) {
+                    let gid = c.gruppo_whatsapp.trim();
+                    if (!gid.endsWith('@g.us')) gid += '@g.us';
+                    newSet.add(gid);
+                }
+            }
+            dynamicCourseGroups = newSet;
+        }
+    } catch (_) {}
+}
+setInterval(refreshCourseGroups, 120000);
+refreshCourseGroups();
+
 let sock = null;
 
 async function connectToWhatsApp() {
@@ -110,13 +143,22 @@ async function connectToWhatsApp() {
         for (const msg of m.messages) {
             if (!msg.message) continue;
 
-            // Salta i messaggi inviati direttamente dalle API del gateway
+            const remoteJid = msg.key.remoteJid || '';
+
+            // VERIFICA RIGOROSA: Intercetta SOLO i messaggi inviati nei 7 gruppi dei corsi!
+            // I gruppi generali della scuola (es. San Donato 120363421055382619@g.us, Ripamonti),
+            // le chat personali 1:1 e qualsiasi altro gruppo vengono TOTALMENTE IGNORATI.
+            if (!dynamicCourseGroups.has(remoteJid)) {
+                continue;
+            }
+
+            // Salta i messaggi inviati automaticamente dalle API del gateway
             if (msg.key && msg.key.id && sentBotMessageIds.has(msg.key.id)) {
                 sentBotMessageIds.delete(msg.key.id);
                 continue;
             }
 
-            // 1. Gestione dei messaggi standard in arrivo
+            // 1. Estrazione del testo (gestisce conversation, extendedTextMessage, ephemeral, viewOnce)
             let innerMsg = msg.message;
             if (innerMsg.ephemeralMessage) innerMsg = innerMsg.ephemeralMessage.message;
             if (innerMsg.viewOnceMessage) innerMsg = innerMsg.viewOnceMessage.message;
@@ -124,74 +166,48 @@ async function connectToWhatsApp() {
 
             const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text;
             if (text) {
-                const targetGroup = process.env.TARGET_GROUP_ID;
-                const isGroupMsg = msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us');
+                let sender = msg.key.participant;
+                if (!sender && msg.key.fromMe && sock && sock.user) {
+                    sender = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                }
+                if (!sender) {
+                    sender = remoteJid;
+                }
 
-                if (globalSettings.debugMode || !targetGroup || (targetGroup && msg.key.remoteJid === targetGroup) || isGroupMsg) {
-                    // Se è un messaggio nel gruppo corso, processalo ANCHE se è fromMe (test manuale utente)
-                    if (!msg.key.fromMe || isGroupMsg) {
-                        let sender = msg.key.participant;
-                        if (!sender && msg.key.fromMe && sock && sock.user) {
-                            sender = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                        }
-                        if (!sender) {
-                            sender = msg.key.remoteJid;
-                        }
+                logToFile(`[CORSO WA] Messaggio intercettato nel gruppo corso ${remoteJid}: "${text}" da ${sender}`);
 
-                        logToFile(`Messaggio rilevato: ${text} | remoteJid: ${msg.key.remoteJid} | sender: ${sender} | fromMe: ${msg.key.fromMe}`);
-
-                        // Risoluzione LID se necessario
-                        let realSenderJid = sender;
-                        if (realSenderJid && realSenderJid.includes('@lid') && msg.key.remoteJid.includes('@g.us')) {
-                            try {
-                                const groupMeta = await sock.groupMetadata(msg.key.remoteJid);
-                                const p = groupMeta.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
-                                if (p) {
-                                    const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
-                                    if (actualNumber) {
-                                        realSenderJid = actualNumber;
-                                        logToFile(`[TEXT LID] LID ${sender} risolto in numero reale: ${realSenderJid}`);
-                                    }
-                                }
-                            } catch (err) {
-                                logToFile(`[TEXT LID] Errore metadati gruppo: ${err.message}`);
-                            }
-                        } else if (realSenderJid && realSenderJid.includes('@lid') && !msg.key.remoteJid.includes('@g.us')) {
-                            try {
-                                const allGroups = await sock.groupFetchAllParticipating();
-                                for (const gid of Object.keys(allGroups)) {
-                                    const g = allGroups[gid];
-                                    if (!g.participants) continue;
-                                    const p = g.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
-                                    if (p && p.phoneNumber) {
-                                        realSenderJid = p.phoneNumber;
-                                        logToFile(`[TEXT LID] LID ${sender} risolto via gruppo ${g.subject || gid}: ${realSenderJid}`);
-                                        break;
-                                    }
-                                }
-                            } catch (err) {
-                                logToFile(`[TEXT LID] Errore risoluzione LID globale: ${err.message}`);
+                // Risoluzione LID se necessario
+                let realSenderJid = sender;
+                if (realSenderJid && realSenderJid.includes('@lid') && remoteJid.includes('@g.us')) {
+                    try {
+                        const groupMeta = await sock.groupMetadata(remoteJid);
+                        const p = groupMeta.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
+                        if (p) {
+                            const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
+                            if (actualNumber) {
+                                realSenderJid = actualNumber;
+                                logToFile(`[TEXT LID] LID ${sender} risolto in numero reale: ${realSenderJid}`);
                             }
                         }
-
-                        // Invia il messaggio al webhook di Django
-                        const payload = {
-                            messageId: msg.key.id,
-                            voter: realSenderJid,
-                            groupId: msg.key.remoteJid,
-                            text: text,
-                            action: 'text_message'
-                        };
-                        try {
-                            axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload)
-                                .then(r => logToFile(`Webhook response: ${JSON.stringify(r.data)}`))
-                                .catch(err => logToFile(`Errore risposta webhook: ${err.message}`));
-                        } catch (err) {
-                            logToFile(`Errore invio webhook: ${err.message}`);
-                        }
-                    } else {
-                        logToFile(`Messaggio inviato (o dal bot): ${text} a ${msg.key.remoteJid}`);
+                    } catch (err) {
+                        logToFile(`[TEXT LID] Errore metadati gruppo: ${err.message}`);
                     }
+                }
+
+                // Invia il messaggio al webhook di Django
+                const payload = {
+                    messageId: msg.key.id,
+                    voter: realSenderJid,
+                    groupId: remoteJid,
+                    text: text,
+                    action: 'text_message'
+                };
+                try {
+                    axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload)
+                        .then(r => logToFile(`Webhook response: ${JSON.stringify(r.data)}`))
+                        .catch(err => logToFile(`Errore risposta webhook: ${err.message}`));
+                } catch (err) {
+                    logToFile(`Errore invio webhook: ${err.message}`);
                 }
             }
 

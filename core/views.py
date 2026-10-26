@@ -425,51 +425,61 @@ def whatsapp_message_webhook(request):
         if not text:
             return JsonResponse({'success': False, 'message': 'Testo mancante.'})
 
-        # 1. Identifica il corso corrispondente al gruppo WhatsApp
-        corso = None
-        if group_id:
-            clean_gid = str(group_id).strip()
-            gid_no_suffix = clean_gid.replace('@g.us', '')
-            gid_with_suffix = gid_no_suffix + '@g.us'
-            from django.db.models import Q
-            corso = Corso.objects.filter(
-                Q(gruppo_whatsapp__iexact=clean_gid) |
-                Q(gruppo_whatsapp__iexact=gid_no_suffix) |
-                Q(gruppo_whatsapp__iexact=gid_with_suffix)
-            ).first()
+        # 1. VERIFICA RIGOROSA: Il messaggio DEVE provenire esclusivamente da uno dei 7 gruppi dei corsi!
+        # Se proviene da un gruppo scuola (es. San Donato o Ripamonti generale), chat 1:1 o altri gruppi -> IGNORA TOTALMENTE.
+        if not group_id or not str(group_id).strip().endswith('@g.us'):
+            with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{timezone.now()}] Messaggio SCARTATO: non e un gruppo WhatsApp ({group_id}).\n")
+            return JsonResponse({'success': False, 'message': 'Ignorato: non e un gruppo.'})
 
-        # 2. Cerca eventuale allievo associato al mittente
+        clean_gid = str(group_id).strip()
+        gid_no_suffix = clean_gid.replace('@g.us', '')
+        gid_with_suffix = gid_no_suffix + '@g.us'
+        from django.db.models import Q
+        corso = Corso.objects.filter(
+            Q(gruppo_whatsapp__iexact=clean_gid) |
+            Q(gruppo_whatsapp__iexact=gid_no_suffix) |
+            Q(gruppo_whatsapp__iexact=gid_with_suffix)
+        ).first()
+
+        if not corso:
+            with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{timezone.now()}] Messaggio SCARTATO: gruppo {group_id} NON appartiene a nessun corso (es. gruppo scuola o gruppo esterno).\n")
+            return JsonResponse({'success': False, 'message': f'Gruppo {group_id} ignorato: appartiene alla scuola o a chat esterna, non a uno dei 7 corsi.'})
+
+        # 2. Cerca l'allievo associato al mittente
         phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
         last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
 
         allievo = None
         if last_10:
-            for a in Allievo.objects.filter(is_active=True):
+            # Cerca prima tra gli allievi iscritti a questo corso
+            for a in corso.allievi.filter(is_active=True):
                 a_digits = ''.join(filter(str.isdigit, a.telefono or ''))
                 if a_digits and a_digits.endswith(last_10):
                     allievo = a
                     break
+            # Se non trovato nel corso specifico, cerca tra tutti gli allievi attivi
+            if not allievo:
+                for a in Allievo.objects.filter(is_active=True):
+                    a_digits = ''.join(filter(str.isdigit, a.telefono or ''))
+                    if a_digits and a_digits.endswith(last_10):
+                        allievo = a
+                        break
 
-        if not corso and allievo and allievo.corso:
-            corso = allievo.corso
-
-        # 3. Cerca la lezione associata (imminente o piu recente del corso)
+        # 3. Cerca la lezione imminente o piu recente del corso
         now = timezone.now()
-        prossima_lezione = None
-        if corso:
-            prossima_lezione = Lezione.objects.filter(corso=corso, data__gte=now.date()).order_by('data').first()
-            if not prossima_lezione:
-                prossima_lezione = Lezione.objects.filter(corso=corso).order_by('-data').first()
-        elif allievo and allievo.corso:
-            prossima_lezione = Lezione.objects.filter(corso=allievo.corso, data__gte=now.date()).order_by('data').first()
+        prossima_lezione = Lezione.objects.filter(corso=corso, data__gte=now.date()).order_by('data').first()
+        if not prossima_lezione:
+            prossima_lezione = Lezione.objects.filter(corso=corso).order_by('-data').first()
 
         # 4. Recupero API Key Gemini
         sched = RecurringSchedule.objects.first()
         api_key = sched.gemini_api_key if sched else None
 
-        # 5. Costruzione del prompt inviato a Gemini
+        # 5. Costruzione del prompt per Gemini
         mittente_label = f"{allievo.nome} {allievo.cognome}" if allievo else (push_name or (f"+{phone_digits}" if phone_digits else str(voter_id)) or "Allievo")
-        corso_label = str(corso) if corso else (str(allievo.corso) if allievo and allievo.corso else "Corso di tango")
+        corso_label = str(corso)
         lezione_label = f"del {prossima_lezione.data.strftime('%d/%m/%Y')} ore {prossima_lezione.corso.orario.strftime('%H:%M')}" if (prossima_lezione and prossima_lezione.corso and prossima_lezione.corso.orario) else ("imminente" if prossima_lezione else "")
 
         prompt = f'''Analizza il seguente messaggio inviato nel gruppo WhatsApp del {corso_label} da {mittente_label} per la lezione {lezione_label}.
@@ -493,8 +503,8 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             payload_ai = {
                 "contents": [{"parts": [{"text": prompt}]}]
             }
-            # Fallback cascade tra modelli per garantire continuita ed evitare blocchi quota HTTP 429
-            candidate_models = ['gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash']
+            # Fallback cascade su modelli disponibili per evitare blocchi quota HTTP 429
+            candidate_models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash']
             success_call = False
             last_err = ""
 
@@ -534,7 +544,46 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             elif "ERRORE" in r_upper or "HTTP " in r_upper: esito = "ERRORE"
             else: esito = "IGNOTA"
 
-        # 6. Registra SEMPRE il log in GeminiLog
+        # 6. Aggiorna Presenze e determina ESATTAMENTE quale allievo o coppia viene modificata
+        azione_presenze = ""
+        partner_coinvolto = None
+
+        if not allievo:
+            azione_presenze = f"Nessun allievo identificato nel database per il mittente ({mittente_label}). Nessuna presenza modificata."
+        elif not prossima_lezione:
+            azione_presenze = f"Nessuna lezione imminente trovata per il corso {corso}. Nessuna presenza modificata."
+        elif 'PRESENTE' in esito or 'ASSENTE' in esito:
+            is_present = 'PRESENTE' in esito
+            is_coppia = 'COPPIA' in esito
+            stato_label = "PRESENTE" if is_present else "ASSENTE"
+
+            # 1. Imposta la presenza dell'allievo mittente
+            Presenza.objects.update_or_create(
+                lezione=prossima_lezione,
+                allievo=allievo,
+                defaults={'presente': is_present, 'fonte': 'whatsapp'}
+            )
+
+            # 2. Se risposta plurale/coppia, verifica presenza del partner
+            if is_coppia:
+                partner_coinvolto = allievo.partner
+                if partner_coinvolto:
+                    Presenza.objects.update_or_create(
+                        lezione=prossima_lezione,
+                        allievo=partner_coinvolto,
+                        defaults={'presente': is_present, 'fonte': 'whatsapp'}
+                    )
+                    azione_presenze = f"Coppia impostata come {stato_label}: {allievo.nome} {allievo.cognome} & {partner_coinvolto.nome} {partner_coinvolto.cognome}"
+                else:
+                    azione_presenze = f"Allievo impostato come {stato_label}: {allievo.nome} {allievo.cognome} (Risposta plurale, ma nessun partner associato a sistema per questo allievo)"
+            else:
+                azione_presenze = f"Allievo impostato come {stato_label}: {allievo.nome} {allievo.cognome}"
+        elif esito == "IGNOTA":
+            azione_presenze = f"Nessuna presenza modificata per {allievo.nome} {allievo.cognome} (il messaggio non e una conferma di presenza o assenza)"
+        else:
+            azione_presenze = f"Nessuna presenza modificata (errore elaborazione AI: {risposta_ai})"
+
+        # 7. Registra SEMPRE il log completo in GeminiLog
         mittente_str = f"{allievo.nome} {allievo.cognome}" if allievo else (f"{push_name} ({voter_id})".strip() if push_name else str(voter_id))
         log_entry = GeminiLog.objects.create(
             allievo=allievo,
@@ -545,30 +594,13 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             testo_originale=text,
             chiamata_ai=prompt,
             risposta_ai=risposta_ai,
-            esito_interpretato=esito
+            esito_interpretato=esito,
+            azione_presenze=azione_presenze,
+            partner_coinvolto=partner_coinvolto
         )
 
         with open('webhook_debug.log', 'a', encoding='utf-8') as f:
-            f.write(f"[{timezone.now()}] GeminiLog creato: ID={log_entry.id}, esito={esito}\n")
-
-        # 7. Aggiorna Presenze se l'allievo e la lezione sono noti e c'e un esito valido
-        if allievo and prossima_lezione and ('PRESENTE' in esito or 'ASSENTE' in esito):
-            is_present = 'PRESENTE' in esito
-            is_coppia = 'COPPIA' in esito
-
-            Presenza.objects.update_or_create(
-                lezione=prossima_lezione,
-                allievo=allievo,
-                defaults={'presente': is_present, 'fonte': 'whatsapp'}
-            )
-            
-            # Se la risposta e plurale e l'allievo ha un partner assegnato, aggiorniamo anche il partner
-            if is_coppia and allievo.partner:
-                Presenza.objects.update_or_create(
-                    lezione=prossima_lezione,
-                    allievo=allievo.partner,
-                    defaults={'presente': is_present, 'fonte': 'whatsapp'}
-                )
+            f.write(f"[{timezone.now()}] GeminiLog creato: ID={log_entry.id}, esito={esito}, azione={azione_presenze}\n")
 
         return JsonResponse({
             'success': True,
@@ -576,6 +608,7 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             'esito': esito,
             'allievo': str(allievo) if allievo else None,
             'corso': str(corso) if corso else None,
+            'azione_presenze': azione_presenze,
             'risposta_ai': risposta_ai
         })
 

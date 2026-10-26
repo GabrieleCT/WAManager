@@ -313,12 +313,12 @@ class _GeminiScreenState extends State<GeminiScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Gemini AI • Monitoraggio Gruppi WhatsApp Corsi',
+                                    'Gemini AI • Monitoraggio Esclusivo 7 Gruppi Corso WhatsApp',
                                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                   ),
                                   SizedBox(height: 2),
                                   Text(
-                                    'Registrazione automatica di messaggio ricevuto, chiamata prompt a Gemini e risposta per i 7 gruppi corso.',
+                                    'Intercetta solo i 7 gruppi dei corsi (esclusi gruppi generali scuola o chat esterne). Registra messaggio, prompt Gemini, risposta ed allievo/coppia segnato presente o assente.',
                                     style: TextStyle(fontSize: 12, color: Colors.grey),
                                   ),
                                 ],
@@ -844,8 +844,100 @@ class _GeminiScreenState extends State<GeminiScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+
+            // SEZIONE 4: 🎯 AGGIORNAMENTO PRESENZE (ALLIEVO O COPPIA)
+            _buildSezionePresenze(log, esito, mittente),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSezionePresenze(dynamic log, String esito, String mittente) {
+    String azione = log['azione_presenze']?.toString() ?? '';
+    final partner = log['partner_nome']?.toString() ?? '';
+
+    if (azione.isEmpty) {
+      if (esito == 'PRESENTE_COPPIA') {
+        azione = partner.isNotEmpty
+            ? 'Coppia impostata come PRESENTE: $mittente & $partner'
+            : 'Allievo impostato come PRESENTE: $mittente (risposta plurale ma nessun partner a sistema)';
+      } else if (esito == 'PRESENTE_SINGOLO') {
+        azione = 'Allievo impostato come PRESENTE: $mittente';
+      } else if (esito == 'ASSENTE_COPPIA') {
+        azione = partner.isNotEmpty
+            ? 'Coppia impostata come ASSENTE: $mittente & $partner'
+            : 'Allievo impostato come ASSENTE: $mittente (risposta plurale ma nessun partner a sistema)';
+      } else if (esito == 'ASSENTE_SINGOLO') {
+        azione = 'Allievo impostato come ASSENTE: $mittente';
+      } else if (esito == 'IGNOTA') {
+        azione = 'Nessuna presenza modificata per $mittente (il messaggio non è una conferma di presenza o assenza)';
+      } else {
+        azione = 'Nessuna presenza modificata (errore chiamata Gemini)';
+      }
+    }
+
+    final isPresente = esito.contains('PRESENTE');
+    final isAssente = esito.contains('ASSENTE');
+
+    Color bgColor = const Color(0xFFF1F5F9);
+    Color borderColor = const Color(0xFFCBD5E1);
+    Color textColor = Colors.blueGrey.shade900;
+    IconData iconData = Icons.info_outline;
+
+    if (isPresente) {
+      bgColor = const Color(0xFFE8F5E9);
+      borderColor = const Color(0xFF81C784);
+      textColor = Colors.green.shade900;
+      iconData = Icons.how_to_reg;
+    } else if (isAssente) {
+      bgColor = const Color(0xFFFFEBEE);
+      borderColor = const Color(0xFFE57373);
+      textColor = Colors.red.shade900;
+      iconData = Icons.person_off;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1.2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(iconData, size: 20, color: textColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '4. AGGIORNAMENTO PRESENZE (ALLIEVO / COPPIA)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  azione,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: (isPresente || isAssente) ? FontWeight.bold : FontWeight.normal,
+                    color: textColor,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

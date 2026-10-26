@@ -387,13 +387,15 @@ class GeminiLogSerializer(serializers.ModelSerializer):
     allievo_nome = serializers.SerializerMethodField()
     lezione_descrizione = serializers.CharField(source='lezione.__str__', read_only=True)
     corso_nome = serializers.SerializerMethodField()
+    partner_nome = serializers.SerializerMethodField()
 
     class Meta:
         model = GeminiLog
         fields = [
             'id', 'timestamp', 'allievo', 'allievo_nome', 'corso', 'corso_nome',
             'gruppo_whatsapp', 'mittente', 'lezione', 'lezione_descrizione',
-            'testo_originale', 'chiamata_ai', 'risposta_ai', 'esito_interpretato'
+            'testo_originale', 'chiamata_ai', 'risposta_ai', 'esito_interpretato',
+            'azione_presenze', 'partner_coinvolto', 'partner_nome'
         ]
 
     def get_allievo_nome(self, obj):
@@ -408,6 +410,13 @@ class GeminiLogSerializer(serializers.ModelSerializer):
             return str(obj.corso)
         if obj.lezione and obj.lezione.corso:
             return str(obj.lezione.corso)
+        return ""
+
+    def get_partner_nome(self, obj):
+        if obj.partner_coinvolto:
+            return f"{obj.partner_coinvolto.nome} {obj.partner_coinvolto.cognome}"
+        if obj.allievo and obj.allievo.partner:
+            return f"{obj.allievo.partner.nome} {obj.allievo.partner.cognome}"
         return ""
 
 

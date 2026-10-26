@@ -543,6 +543,8 @@ class GeminiLog(models.Model):
     chiamata_ai = models.TextField(blank=True, default='', help_text="Prompt/chiamata inviata a Gemini")
     risposta_ai = models.TextField(blank=True, default='', help_text="Risposta grezza restituita da Gemini")
     esito_interpretato = models.CharField(max_length=50) # PRESENTE_SINGOLO, PRESENTE_COPPIA, ASSENTE_SINGOLO, ASSENTE_COPPIA, IGNOTA, ERRORE
+    azione_presenze = models.TextField(blank=True, default='', help_text="Dettaglio allievo o coppia impostato come presente o assente")
+    partner_coinvolto = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True, related_name='gemini_logs_partner', help_text="Partner coinvolto se presente in coppia")
 
     class Meta:
         verbose_name = "Log Gemini"
