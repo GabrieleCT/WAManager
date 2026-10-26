@@ -489,24 +489,41 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             risposta_ai = "ERRORE: API Key di Gemini non configurata. Impostala nella sezione Impostazioni -> Gemini AI."
             esito = "ERRORE"
         else:
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
             headers = {'Content-Type': 'application/json'}
             payload_ai = {
                 "contents": [{"parts": [{"text": prompt}]}]
             }
-            try:
-                res = requests.post(gemini_url, headers=headers, json=payload_ai, timeout=30)
-                if res.status_code == 200:
-                    res_data = res.json()
-                    candidates = res_data.get('candidates', [])
-                    if candidates and 'content' in candidates[0] and 'parts' in candidates[0]['content']:
-                        risposta_ai = candidates[0]['content']['parts'][0]['text'].strip()
+            # Fallback cascade tra modelli per garantire continuita ed evitare blocchi quota HTTP 429
+            candidate_models = ['gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash']
+            success_call = False
+            last_err = ""
+
+            for model_name in candidate_models:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                try:
+                    res = requests.post(gemini_url, headers=headers, json=payload_ai, timeout=15)
+                    if res.status_code == 200:
+                        res_data = res.json()
+                        candidates = res_data.get('candidates', [])
+                        if candidates and 'content' in candidates[0] and 'parts' in candidates[0]['content']:
+                            risposta_ai = candidates[0]['content']['parts'][0]['text'].strip()
+                            success_call = True
+                            break
+                        else:
+                            risposta_ai = res.text
+                            success_call = True
+                            break
+                    elif res.status_code == 429:
+                        last_err = f"HTTP 429 ({model_name}): {res.text}"
+                        continue
                     else:
-                        risposta_ai = res.text
-                else:
-                    risposta_ai = f"HTTP {res.status_code}: {res.text}"
-            except Exception as e:
-                risposta_ai = f"ERRORE: {str(e)}"
+                        last_err = f"HTTP {res.status_code} ({model_name}): {res.text}"
+                except Exception as e:
+                    last_err = f"ERRORE ({model_name}): {str(e)}"
+                    continue
+
+            if not success_call:
+                risposta_ai = last_err or "ERRORE: Impossibile completare la chiamata a Gemini."
 
             # Pulisci eventuali formattazioni o markdown
             r_upper = risposta_ai.upper()
