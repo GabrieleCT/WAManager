@@ -613,21 +613,48 @@ class _AllieviScreenState extends State<AllieviScreen> {
                     ),
                   ),
                   if (allievo != null && allievo.partnerId != null) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(child: Text('Coppia con: ${allievo.partnerNomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                        TextButton.icon(
-                          icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
-                          label: const Text('Rimuovi', style: TextStyle(color: Colors.red)),
-                          onPressed: () async {
-                            await _api.setPartner(allievo.id, null);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            _loadAllievi();
-                          },
-                        )
-                      ],
-                    )
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Informazioni Coppia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.pink)),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.pink.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.pink.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.favorite, color: Colors.pink, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('In coppia con:', style: TextStyle(fontSize: 11, color: Colors.pink, fontWeight: FontWeight.w600)),
+                                Text(
+                                  allievo.partnerNomeCompleto.isNotEmpty ? allievo.partnerNomeCompleto : 'Partner assegnato',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                            label: const Text('Scollega', style: TextStyle(color: Colors.red)),
+                            onPressed: () async {
+                              await _api.setPartner(allievo.id, null);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _loadAllievi();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                   if (allievo != null) ...[
                     const SizedBox(height: 16),

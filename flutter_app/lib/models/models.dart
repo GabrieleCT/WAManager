@@ -52,6 +52,10 @@ class Corso {
   final int allieviCount;
   final int prospectsCount;
   final int pagantiCount;
+  final int leadersCount;
+  final int followersCount;
+  final int jollyNecessari;
+  final int lezioniFatte;
 
   Corso({
     required this.id,
@@ -66,6 +70,10 @@ class Corso {
     this.allieviCount = 0,
     this.prospectsCount = 0,
     this.pagantiCount = 0,
+    this.leadersCount = 0,
+    this.followersCount = 0,
+    this.jollyNecessari = 0,
+    this.lezioniFatte = 0,
   });
 
   String get nomeDisplay => '$scuolaNome - $livelloDisplay ($giornoSettimanaDisplay $orario)';
@@ -97,6 +105,10 @@ class Corso {
       allieviCount: json['allievi_count'] ?? 0,
       prospectsCount: json['prospects_count'] ?? 0,
       pagantiCount: json['paganti_count'] ?? 0,
+      leadersCount: json['leaders_count'] ?? 0,
+      followersCount: json['followers_count'] ?? 0,
+      jollyNecessari: json['jolly_necessari'] ?? 0,
+      lezioniFatte: json['lezioni_fatte'] ?? 0,
     );
   }
 

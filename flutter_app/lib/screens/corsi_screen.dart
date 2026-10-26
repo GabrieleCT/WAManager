@@ -764,21 +764,49 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     ),
                   ),
                   if (a.partnerId != null) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(child: Text('Coppia con: ${a.partnerNomeCompleto}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                        TextButton.icon(
-                          icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
-                          label: const Text('Rimuovi', style: TextStyle(color: Colors.red)),
-                          onPressed: () async {
-                            await _api.setPartner(a.id, null);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            _loadAll();
-                          },
-                        )
-                      ],
-                    )
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Informazioni Coppia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.pink)),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.pink.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.pink.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.favorite, color: Colors.pink, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('In coppia con:', style: TextStyle(fontSize: 11, color: Colors.pink, fontWeight: FontWeight.w600)),
+                                Text(
+                                  a.partnerNomeCompleto.isNotEmpty ? a.partnerNomeCompleto : 'Partner assegnato',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                            label: const Text('Scollega', style: TextStyle(color: Colors.red)),
+                            onPressed: () async {
+                              await _api.setPartner(a.id, null);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _fetchIscritti(c.id);
+                              _loadAll();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -881,6 +909,41 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
+  int _getLeadersCount(Corso c) {
+    final iscritti = _iscrittiMap[c.id];
+    if (iscritti != null) {
+      return iscritti.where((a) => a.ruolo == 'leader').length;
+    }
+    return c.leadersCount;
+  }
+
+  int _getFollowersCount(Corso c) {
+    final iscritti = _iscrittiMap[c.id];
+    if (iscritti != null) {
+      return iscritti.where((a) => a.ruolo == 'follower').length;
+    }
+    return c.followersCount;
+  }
+
+  int _getJollyNecessari(Corso c) {
+    final leaders = _getLeadersCount(c);
+    final followers = _getFollowersCount(c);
+    return (leaders - followers).abs();
+  }
+
+  int _getLezioniFatte(Corso c) {
+    final lezioni = _lezioniMap[c.id];
+    if (lezioni != null) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      return lezioni.where((l) {
+        final d = DateTime.tryParse(l.data);
+        return d != null && !d.isAfter(today);
+      }).length;
+    }
+    return c.lezioniFatte;
+  }
+
   Widget _buildRecapBadge({
     required IconData icon,
     required String label,
@@ -906,32 +969,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
           Text(
             '$count',
             style: TextStyle(fontSize: 12, color: color.shade900, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String label, String value, IconData icon, MaterialColor color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        border: Border.all(color: color.shade200),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: color.shade700),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: TextStyle(fontSize: 11, color: color.shade700, fontWeight: FontWeight.w500)),
-              Text(value, style: TextStyle(fontSize: 15, color: color.shade900, fontWeight: FontWeight.bold)),
-            ],
           ),
         ],
       ),
@@ -1042,8 +1079,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    int lezioniFatte = 0;
-    int lezioniTotaliTrimestre = 0;
     String activeTrimestreName = 'Trimestre';
 
     if (lezioni.isNotEmpty) {
@@ -1076,17 +1111,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
       activeKey ??= byTrimestre.keys.last;
       activeTrimestreName = activeKey;
 
-      final lezioniTrimestre = byTrimestre[activeKey] ?? sortedLezioni;
-      lezioniTotaliTrimestre = lezioniTrimestre.length;
 
-      for (final l in lezioniTrimestre) {
-        final d = DateTime.tryParse(l.data);
-        if (d != null) {
-          if (d.isBefore(today)) {
-            lezioniFatte++;
-          }
-        }
-      }
     }
 
     final pagamentiCorso = _pagamentiMap[c.id] ?? [];
@@ -1111,79 +1136,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
 
     final numPagati = effettivi.where(allievoHaPagato).length;
 
-    final effLeaders = effettivi.where((a) => a.ruolo == 'leader').length;
-    final effFollowers = effettivi.where((a) => a.ruolo == 'follower').length;
-    final effBoth = effettivi.where((a) => a.ruolo == 'both').length;
 
-    final prLeaders = prospects.where((a) => a.ruolo == 'leader').length;
-    final prFollowers = prospects.where((a) => a.ruolo == 'follower').length;
-
-    Widget balanceBadge;
-    if (effettivi.isEmpty) {
-      balanceBadge = const SizedBox.shrink();
-    } else if (effLeaders == effFollowers) {
-      balanceBadge = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.green.shade50,
-          border: Border.all(color: Colors.green.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle, size: 18, color: Colors.green.shade700),
-            const SizedBox(width: 6),
-            Text(
-              'Coppie bilanciate ($effLeaders Leader / $effFollowers Follower)',
-              style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-          ],
-        ),
-      );
-    } else if (effLeaders > effFollowers) {
-      final diff = effLeaders - effFollowers;
-      balanceBadge = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.amber.shade50,
-          border: Border.all(color: Colors.amber.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.warning_amber, size: 18, color: Colors.amber.shade800),
-            const SizedBox(width: 6),
-            Text(
-              '+$diff Leader di scarto (necessari $diff Follower o Jolly)',
-              style: TextStyle(color: Colors.amber.shade900, fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-          ],
-        ),
-      );
-    } else {
-      final diff = effFollowers - effLeaders;
-      balanceBadge = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.amber.shade50,
-          border: Border.all(color: Colors.amber.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.warning_amber, size: 18, color: Colors.amber.shade800),
-            const SizedBox(width: 6),
-            Text(
-              '+$diff Follower di scarto (necessari $diff Leader o Jolly)',
-              style: TextStyle(color: Colors.amber.shade900, fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-          ],
-        ),
-      );
-    }
 
     return Container(
       width: double.infinity,
@@ -1264,47 +1217,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _buildStatCard('Allievi Effettivi', '${effettivi.length}', Icons.groups, Colors.blueGrey),
-              _buildStatCard('Prospect in Prova', '${prospects.length}', Icons.contact_mail, Colors.amber),
-              _buildStatCard(
-                'Hanno Pagato',
-                '$numPagati / ${effettivi.length}',
-                Icons.payments_outlined,
-                (effettivi.isNotEmpty && numPagati == effettivi.length)
-                    ? Colors.green
-                    : (numPagati == 0 ? Colors.red : Colors.orange),
-              ),
-              _buildStatCard(
-                'Leader',
-                '$effLeaders${prLeaders > 0 ? " (+$prLeaders prova)" : ""}',
-                Icons.man,
-                Colors.blue,
-              ),
-              _buildStatCard(
-                'Follower',
-                '$effFollowers${prFollowers > 0 ? " (+$prFollowers prova)" : ""}',
-                Icons.woman,
-                Colors.purple,
-              ),
-              if (effBoth > 0)
-                _buildStatCard('Both', '$effBoth', Icons.people, Colors.teal),
-              if (lezioniTotaliTrimestre > 0)
-                _buildStatCard(
-                  'Lezioni Fatte ($activeTrimestreName)',
-                  '$lezioniFatte / $lezioniTotaliTrimestre',
-                  Icons.task_alt,
-                  Colors.teal,
-                ),
-              if (balanceBadge != const SizedBox.shrink())
-                balanceBadge,
-            ],
-          ),
+
           const Divider(height: 24),
 
           // SEZIONE 1: ALLIEVI EFFETTIVI
@@ -1334,11 +1247,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                   () {
                     final a = effettivi[idx];
                     final haPagato = allievoHaPagato(a);
-                    final aPagamenti = pagamentiCorso.where((p) => p.allievoId == a.id).toList();
-                    final Pagamento? pag = aPagamenti.cast<Pagamento?>().firstWhere(
-                      (p) => activeTrimestreCode == null || p?.trimestre == activeTrimestreCode,
-                      orElse: () => aPagamenti.isNotEmpty ? aPagamenti.first : null,
-                    );
+
 
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1368,40 +1277,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             ],
                           ],
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Text('📞 ${a.telefono}', style: const TextStyle(fontSize: 12)),
-                                if (a.partnerId != null) ...[
-                                  const SizedBox(width: 8),
-                                  Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink)),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            if (a.numeroTessera.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 2),
+                        subtitle: a.numeroTessera.isNotEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 2),
                                 child: Text(
                                   'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
                                   style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
                                 ),
-                              ),
-                            if (haPagato && pag != null)
-                              Text(
-                                '✓ Quota saldata (€${pag.importo.toStringAsFixed(0)} - ${pag.trimestreDisplay})',
-                                style: TextStyle(fontSize: 11, color: Colors.green.shade800, fontWeight: FontWeight.w600),
                               )
-                            else
-                              Text(
-                                '⚠️ Quota corso NON saldata',
-                                style: TextStyle(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.bold),
-                              ),
-                          ],
-                        ),
+                            : null,
                         trailing: Wrap(
                           spacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -1566,11 +1450,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text('📞 ${p.telefono}', style: const TextStyle(fontSize: 12)), const SizedBox(width: 8), _buildRuoloBadge(p.ruolo), if (p.partnerId != null) ...[const SizedBox(width: 8), Text('Partner: ${p.partnerNomeCompleto}', style: const TextStyle(fontSize: 11, color: Colors.pink))],
-                                ],
-                              ),
+                              _buildRuoloBadge(p.ruolo),
                               if (p.note.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
@@ -1766,6 +1646,30 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                                   label: 'Paganti',
                                                   count: c.pagantiCount,
                                                   color: Colors.green,
+                                                ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.man,
+                                                  label: 'Leader',
+                                                  count: _getLeadersCount(c),
+                                                  color: Colors.indigo,
+                                                ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.woman,
+                                                  label: 'Follower',
+                                                  count: _getFollowersCount(c),
+                                                  color: Colors.purple,
+                                                ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.star,
+                                                  label: 'Jolly nec.',
+                                                  count: _getJollyNecessari(c),
+                                                  color: Colors.amber,
+                                                ),
+                                                _buildRecapBadge(
+                                                  icon: Icons.task_alt,
+                                                  label: 'Lezioni fatte',
+                                                  count: _getLezioniFatte(c),
+                                                  color: Colors.teal,
                                                 ),
                                               ],
                                             ),

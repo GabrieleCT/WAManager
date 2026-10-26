@@ -74,6 +74,10 @@ class CorsoSerializer(serializers.ModelSerializer):
     allievi_count = serializers.SerializerMethodField()
     prospects_count = serializers.SerializerMethodField()
     paganti_count = serializers.SerializerMethodField()
+    leaders_count = serializers.SerializerMethodField()
+    followers_count = serializers.SerializerMethodField()
+    jolly_necessari = serializers.SerializerMethodField()
+    lezioni_fatte = serializers.SerializerMethodField()
 
     class Meta:
         model = Corso
@@ -81,7 +85,8 @@ class CorsoSerializer(serializers.ModelSerializer):
             'id', 'scuola', 'scuola_nome', 'scuola_sede', 'livello',
             'livello_display', 'giorno_settimana', 'giorno_settimana_display',
             'orario', 'anno_accademico', 'gruppo_whatsapp',
-            'allievi_count', 'prospects_count', 'paganti_count'
+            'allievi_count', 'prospects_count', 'paganti_count',
+            'leaders_count', 'followers_count', 'jolly_necessari', 'lezioni_fatte'
         ]
 
     def get_allievi_count(self, obj):
@@ -92,6 +97,22 @@ class CorsoSerializer(serializers.ModelSerializer):
 
     def get_paganti_count(self, obj):
         return Pagamento.objects.filter(corso=obj).values('allievo').distinct().count()
+
+    def get_leaders_count(self, obj):
+        return obj.allievi.filter(ruolo='leader').count()
+
+    def get_followers_count(self, obj):
+        return obj.allievi.filter(ruolo='follower').count()
+
+    def get_jolly_necessari(self, obj):
+        leaders = self.get_leaders_count(obj)
+        followers = self.get_followers_count(obj)
+        return abs(leaders - followers)
+
+    def get_lezioni_fatte(self, obj):
+        from datetime import date
+        today = date.today()
+        return obj.lezioni.filter(data__lte=today).count()
 
     def to_internal_value(self, data):
         if isinstance(data, dict) and 'giorno_settimana' in data and data['giorno_settimana']:
