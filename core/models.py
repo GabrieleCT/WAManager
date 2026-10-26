@@ -534,11 +534,15 @@ class SondaggioMattutinoConfig(models.Model):
 class GeminiLog(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     timestamp = models.DateTimeField(auto_now_add=True)
-    allievo = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True)
-    lezione = models.ForeignKey(Lezione, on_delete=models.SET_NULL, null=True, blank=True)
-    testo_originale = models.TextField()
-    risposta_ai = models.CharField(max_length=255)
-    esito_interpretato = models.CharField(max_length=50) # PRESENTE, ASSENTE, IGNOTA
+    corso = models.ForeignKey(Corso, on_delete=models.SET_NULL, null=True, blank=True, related_name='gemini_logs')
+    gruppo_whatsapp = models.CharField(max_length=200, blank=True, default='', help_text="JID del gruppo WhatsApp del corso")
+    mittente = models.CharField(max_length=200, blank=True, default='', help_text="Nome o numero del mittente del messaggio")
+    allievo = models.ForeignKey(Allievo, on_delete=models.SET_NULL, null=True, blank=True, related_name='gemini_logs')
+    lezione = models.ForeignKey(Lezione, on_delete=models.SET_NULL, null=True, blank=True, related_name='gemini_logs')
+    testo_originale = models.TextField(help_text="Messaggio WhatsApp ricevuto dal gruppo")
+    chiamata_ai = models.TextField(blank=True, default='', help_text="Prompt/chiamata inviata a Gemini")
+    risposta_ai = models.TextField(blank=True, default='', help_text="Risposta grezza restituita da Gemini")
+    esito_interpretato = models.CharField(max_length=50) # PRESENTE_SINGOLO, PRESENTE_COPPIA, ASSENTE_SINGOLO, ASSENTE_COPPIA, IGNOTA, ERRORE
 
     class Meta:
         verbose_name = "Log Gemini"
@@ -546,7 +550,9 @@ class GeminiLog(models.Model):
         ordering = ['-timestamp']
 
     def __str__(self):
-        return f"[{self.timestamp.strftime('%d/%m/%Y %H:%M')}] {self.allievo} -> {self.esito_interpretato}"
+        soggetto = self.allievo if self.allievo else (self.mittente or "Sconosciuto")
+        corso_str = f" [{self.corso}]" if self.corso else ""
+        return f"[{self.timestamp.strftime('%d/%m/%Y %H:%M')}]{corso_str} {soggetto} -> {self.esito_interpretato}"
 
 
 class DocumentTemplate(models.Model):

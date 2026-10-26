@@ -117,7 +117,8 @@ async function connectToWhatsApp() {
                 
                 // Filtra il parsing dei messaggi testuali solo al target group, per evitare log personali
                 const targetGroup = process.env.TARGET_GROUP_ID;
-                if (globalSettings.debugMode || !targetGroup || (targetGroup && msg.key.remoteJid === targetGroup)) {
+                const isGroupMsg = msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us');
+                if (globalSettings.debugMode || !targetGroup || (targetGroup && msg.key.remoteJid === targetGroup) || isGroupMsg) {
                     if (!msg.key.fromMe) {
                         logToFile(`Messaggio ricevuto: ${text} | remoteJid: ${msg.key.remoteJid} | participant: ${msg.key.participant}`);
                         

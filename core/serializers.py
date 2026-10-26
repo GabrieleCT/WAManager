@@ -386,16 +386,29 @@ class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
 class GeminiLogSerializer(serializers.ModelSerializer):
     allievo_nome = serializers.SerializerMethodField()
     lezione_descrizione = serializers.CharField(source='lezione.__str__', read_only=True)
+    corso_nome = serializers.SerializerMethodField()
 
     class Meta:
         model = GeminiLog
         fields = [
-            'id', 'timestamp', 'allievo', 'allievo_nome', 'lezione', 'lezione_descrizione',
-            'testo_originale', 'risposta_ai', 'esito_interpretato'
+            'id', 'timestamp', 'allievo', 'allievo_nome', 'corso', 'corso_nome',
+            'gruppo_whatsapp', 'mittente', 'lezione', 'lezione_descrizione',
+            'testo_originale', 'chiamata_ai', 'risposta_ai', 'esito_interpretato'
         ]
 
     def get_allievo_nome(self, obj):
-        return f"{obj.allievo.nome} {obj.allievo.cognome}" if obj.allievo else "Sconosciuto"
+        if obj.allievo:
+            return f"{obj.allievo.nome} {obj.allievo.cognome}"
+        if obj.mittente:
+            return obj.mittente
+        return "Mittente non registrato"
+
+    def get_corso_nome(self, obj):
+        if obj.corso:
+            return str(obj.corso)
+        if obj.lezione and obj.lezione.corso:
+            return str(obj.lezione.corso)
+        return ""
 
 
 class DocumentTemplateSerializer(serializers.ModelSerializer):

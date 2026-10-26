@@ -404,105 +404,138 @@ def whatsapp_message_webhook(request):
     try:
         data = json.loads(request.body)
         
-        # Estrarre voter_id e text. 
-        voter_id = data.get('voter', data.get('from', data.get('author', '')))
+        # Estrarre voter_id, group_id, push_name e text
+        voter_id = data.get('voter', data.get('from', data.get('author', data.get('sender', ''))))
         text = data.get('text', data.get('body', ''))
+        group_id = data.get('groupId', data.get('remoteJid', ''))
+        push_name = data.get('pushName', '')
 
         if 'payload' in data:
             payload = data['payload']
-            voter_id = payload.get('voter', payload.get('author', payload.get('from', voter_id)))
+            voter_id = payload.get('voter', payload.get('author', payload.get('from', payload.get('sender', voter_id))))
             if isinstance(voter_id, dict):
                 voter_id = voter_id.get('_serialized', '') or voter_id.get('user', '')
             text = payload.get('body', payload.get('text', text))
+            group_id = payload.get('groupId', payload.get('remoteJid', group_id))
+            push_name = payload.get('pushName', push_name)
             
-        with open('webhook_debug.log', 'a') as f:
-            f.write(f"[{timezone.now()}] Ricevuto webhook: voter={voter_id}, text={text}\\n")
+        with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+            f.write(f"[{timezone.now()}] Webhook ricevuto: voter={voter_id}, group={group_id}, text={text}\n")
         
-        if not voter_id or not text:
-            return JsonResponse({'success': False, 'message': 'Voter o testo mancante.'})
+        if not text:
+            return JsonResponse({'success': False, 'message': 'Testo mancante.'})
 
+        # 1. Identifica il corso corrispondente al gruppo WhatsApp
+        corso = None
+        if group_id:
+            clean_gid = str(group_id).strip()
+            gid_no_suffix = clean_gid.replace('@g.us', '')
+            gid_with_suffix = gid_no_suffix + '@g.us'
+            from django.db.models import Q
+            corso = Corso.objects.filter(
+                Q(gruppo_whatsapp__iexact=clean_gid) |
+                Q(gruppo_whatsapp__iexact=gid_no_suffix) |
+                Q(gruppo_whatsapp__iexact=gid_with_suffix)
+            ).first()
+
+        # 2. Cerca eventuale allievo associato al mittente
         phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
         last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
 
         allievo = None
         if last_10:
             for a in Allievo.objects.filter(is_active=True):
-                a_digits = ''.join(filter(str.isdigit, a.telefono))
+                a_digits = ''.join(filter(str.isdigit, a.telefono or ''))
                 if a_digits and a_digits.endswith(last_10):
                     allievo = a
                     break
 
-        if not allievo:
-            with open('webhook_debug.log', 'a') as f:
-                f.write(f"[{timezone.now()}] Allievo non trovato per voter={voter_id} (last_10={last_10})\\n")
-            return JsonResponse({'success': False, 'message': 'Allievo sconosciuto, messaggio ignorato.'})
+        if not corso and allievo and allievo.corso:
+            corso = allievo.corso
 
-        # Cerca la prossima lezione per il corso dell'allievo (o la pi vicina)
+        # 3. Cerca la lezione associata (imminente o piu recente del corso)
         now = timezone.now()
-        lezione_query = Lezione.objects.filter(data__gte=now.date())
-        if allievo.corso:
-            lezione_query = lezione_query.filter(corso=allievo.corso)
-        prossima_lezione = lezione_query.order_by('data').first()
+        prossima_lezione = None
+        if corso:
+            prossima_lezione = Lezione.objects.filter(corso=corso, data__gte=now.date()).order_by('data').first()
+            if not prossima_lezione:
+                prossima_lezione = Lezione.objects.filter(corso=corso).order_by('-data').first()
+        elif allievo and allievo.corso:
+            prossima_lezione = Lezione.objects.filter(corso=allievo.corso, data__gte=now.date()).order_by('data').first()
 
-        if not prossima_lezione:
-            with open('webhook_debug.log', 'a') as f:
-                f.write(f"[{timezone.now()}] Nessuna lezione trovata per {allievo}\\n")
-            return JsonResponse({'success': False, 'message': 'Nessuna lezione imminente trovata per questo allievo.'})
-
-        with open('webhook_debug.log', 'a') as f:
-            f.write(f"[{timezone.now()}] Inizio chiamata Gemini per {allievo} (Lezione: {prossima_lezione})\\n")
-
-        # Usa l'API Key globale
+        # 4. Recupero API Key Gemini
         sched = RecurringSchedule.objects.first()
         api_key = sched.gemini_api_key if sched else None
-        
-        if not api_key:
-            return JsonResponse({'success': False, 'message': 'API Key di Gemini non configurata. Salvala dalla sezione Gemini.'})
 
-        # Interrogazione Gemini per interpretare il messaggio testuale
-        prompt = f'''
-Analizza il seguente messaggio inviato da un allievo in risposta all'appello per la lezione di ballo.
+        # 5. Costruzione del prompt inviato a Gemini
+        mittente_label = f"{allievo.nome} {allievo.cognome}" if allievo else (push_name or (f"+{phone_digits}" if phone_digits else str(voter_id)) or "Allievo")
+        corso_label = str(corso) if corso else (str(allievo.corso) if allievo and allievo.corso else "Corso di tango")
+        lezione_label = f"del {prossima_lezione.data.strftime('%d/%m/%Y')} ore {prossima_lezione.corso.orario.strftime('%H:%M')}" if (prossima_lezione and prossima_lezione.corso and prossima_lezione.corso.orario) else ("imminente" if prossima_lezione else "")
+
+        prompt = f'''Analizza il seguente messaggio inviato nel gruppo WhatsApp del {corso_label} da {mittente_label} per la lezione {lezione_label}.
 Messaggio: "{text}"
 
-Devi restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o spazi aggiuntivi:
-- PRESENTE_SINGOLO (se ha confermato la sua presenza da solo)
-- ASSENTE_SINGOLO (se ha confermato che non ci sarà, solo per lui/lei)
+Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o spazi aggiuntivi:
+- PRESENTE_SINGOLO (se ha confermato la sua presenza da solo/a)
+- ASSENTE_SINGOLO (se ha comunicato che non ci sarà, solo per sé)
 - PRESENTE_COPPIA (se ha parlato al plurale, es. "ci siamo", "veniamo", confermando per sé e per il partner)
 - ASSENTE_COPPIA (se ha parlato al plurale, es. "non ci siamo", "saltiamo", confermando l'assenza per entrambi)
-- IGNOTA (se non si capisce se è un'affermazione di presenza/assenza o fa una domanda/battuta)
-'''
-        
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
-        headers = {'Content-Type': 'application/json'}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}]
-        }
-        
-        try:
-            res = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
-            res.raise_for_status()
-            res_data = res.json()
-            risposta_ai = res_data['candidates'][0]['content']['parts'][0]['text'].strip().upper()
-        except Exception as e:
-            risposta_ai = "ERRORE: " + str(e)
-            
-        # Pulisci eventuali formattazioni non volute da Gemini
-        if "PRESENTE_COPPIA" in risposta_ai: esito = "PRESENTE_COPPIA"
-        elif "ASSENTE_COPPIA" in risposta_ai: esito = "ASSENTE_COPPIA"
-        elif "PRESENTE_SINGOLO" in risposta_ai: esito = "PRESENTE_SINGOLO"
-        elif "ASSENTE_SINGOLO" in risposta_ai: esito = "ASSENTE_SINGOLO"
-        elif "ERRORE" in risposta_ai: esito = "ERRORE"
-        else: esito = "IGNOTA"
-        
-        GeminiLog.objects.create(
+- IGNOTA (se non è un messaggio di conferma presenza/assenza o è una domanda/saluto/battuta)'''
+
+        risposta_ai = ""
+        esito = "IGNOTA"
+
+        if not api_key:
+            risposta_ai = "ERRORE: API Key di Gemini non configurata. Impostala nella sezione Impostazioni -> Gemini AI."
+            esito = "ERRORE"
+        else:
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+            headers = {'Content-Type': 'application/json'}
+            payload_ai = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            try:
+                res = requests.post(gemini_url, headers=headers, json=payload_ai, timeout=30)
+                if res.status_code == 200:
+                    res_data = res.json()
+                    candidates = res_data.get('candidates', [])
+                    if candidates and 'content' in candidates[0] and 'parts' in candidates[0]['content']:
+                        risposta_ai = candidates[0]['content']['parts'][0]['text'].strip()
+                    else:
+                        risposta_ai = res.text
+                else:
+                    risposta_ai = f"HTTP {res.status_code}: {res.text}"
+            except Exception as e:
+                risposta_ai = f"ERRORE: {str(e)}"
+
+            # Pulisci eventuali formattazioni o markdown
+            r_upper = risposta_ai.upper()
+            if "PRESENTE_COPPIA" in r_upper: esito = "PRESENTE_COPPIA"
+            elif "ASSENTE_COPPIA" in r_upper: esito = "ASSENTE_COPPIA"
+            elif "PRESENTE_SINGOLO" in r_upper: esito = "PRESENTE_SINGOLO"
+            elif "ASSENTE_SINGOLO" in r_upper: esito = "ASSENTE_SINGOLO"
+            elif "ERRORE" in r_upper or "HTTP " in r_upper: esito = "ERRORE"
+            else: esito = "IGNOTA"
+
+        # 6. Registra SEMPRE il log in GeminiLog
+        mittente_str = f"{allievo.nome} {allievo.cognome}" if allievo else (f"{push_name} ({voter_id})".strip() if push_name else str(voter_id))
+        log_entry = GeminiLog.objects.create(
             allievo=allievo,
+            corso=corso,
+            gruppo_whatsapp=group_id or '',
+            mittente=mittente_str,
             lezione=prossima_lezione,
             testo_originale=text,
+            chiamata_ai=prompt,
             risposta_ai=risposta_ai,
             esito_interpretato=esito
         )
 
-        if 'PRESENTE' in esito or 'ASSENTE' in esito:
+        with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+            f.write(f"[{timezone.now()}] GeminiLog creato: ID={log_entry.id}, esito={esito}\n")
+
+        # 7. Aggiorna Presenze se l'allievo e la lezione sono noti e c'e un esito valido
+        if allievo and prossima_lezione and ('PRESENTE' in esito or 'ASSENTE' in esito):
             is_present = 'PRESENTE' in esito
             is_coppia = 'COPPIA' in esito
 
@@ -512,16 +545,24 @@ Devi restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, puntegg
                 defaults={'presente': is_present, 'fonte': 'whatsapp'}
             )
             
-            # Se la risposta è plurale e l'allievo ha un partner assegnato, aggiorniamo anche il partner
+            # Se la risposta e plurale e l'allievo ha un partner assegnato, aggiorniamo anche il partner
             if is_coppia and allievo.partner:
                 Presenza.objects.update_or_create(
                     lezione=prossima_lezione,
                     allievo=allievo.partner,
                     defaults={'presente': is_present, 'fonte': 'whatsapp'}
                 )
-                
-        return JsonResponse({'success': True, 'esito': esito, 'allievo': str(allievo)})
+
+        return JsonResponse({
+            'success': True,
+            'log_id': str(log_entry.id),
+            'esito': esito,
+            'allievo': str(allievo) if allievo else None,
+            'corso': str(corso) if corso else None,
+            'risposta_ai': risposta_ai
+        })
 
     except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)}, status=500)
-
+        with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+            f.write(f"[{timezone.now()}] Errore webhook: {e}\n")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

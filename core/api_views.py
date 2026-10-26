@@ -1419,12 +1419,19 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class GeminiLogViewSet(viewsets.ReadOnlyModelViewSet):
+class GeminiLogViewSet(viewsets.ModelViewSet):
     queryset = GeminiLog.objects.all().order_by('-timestamp')
     serializer_class = GeminiLogSerializer
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ['esito_interpretato', 'allievo', 'lezione']
+    filterset_fields = ['esito_interpretato', 'allievo', 'lezione', 'corso']
     ordering_fields = ['timestamp']
+
+    @action(detail=False, methods=['delete', 'post'], url_path='clear-all')
+    def clear_all(self, request):
+        """Elimina tutti i log di Gemini salvati nel database."""
+        count = GeminiLog.objects.count()
+        GeminiLog.objects.all().delete()
+        return Response({'success': True, 'deleted': count, 'message': f'{count} log Gemini eliminati con successo.'})
 
 
 class DocumentTemplateViewSet(viewsets.ModelViewSet):
