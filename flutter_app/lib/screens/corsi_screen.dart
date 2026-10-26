@@ -2085,15 +2085,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
                               ],
                             ),
-                            if (c.gruppoWhatsapp.isNotEmpty)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.chat, size: 13, color: Colors.green),
-                                  const SizedBox(width: 4),
-                                  Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
-                                ],
-                              ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -2219,15 +2210,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
                         ],
                       ),
-                      if (c.gruppoWhatsapp.isNotEmpty)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.chat, size: 13, color: Colors.green),
-                            const SizedBox(width: 4),
-                            Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
-                          ],
-                        ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -2454,15 +2436,6 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                     Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
                                   ],
                                 ),
-                                if (c.gruppoWhatsapp.isNotEmpty)
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.chat, size: 14, color: Colors.green),
-                                      const SizedBox(width: 4),
-                                      Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
-                                    ],
-                                  ),
                               ],
                             ),
                           ),
