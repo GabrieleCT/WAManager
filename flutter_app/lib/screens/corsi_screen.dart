@@ -950,28 +950,57 @@ class _CorsiScreenState extends State<CorsiScreen> {
     required int count,
     required MaterialColor color,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.shade200),
+    final isMobile = MediaQuery.of(context).size.width < 800;
+    return Tooltip(
+      message: '$label: $count',
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.shade200),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color.shade700),
+            const SizedBox(width: 3),
+            if (!isMobile)
+              Text(
+                '$label: ',
+                style: TextStyle(fontSize: 11, color: color.shade800, fontWeight: FontWeight.w600),
+              ),
+            Text(
+              '$count',
+              style: TextStyle(fontSize: 12, color: color.shade900, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color.shade700),
-          const SizedBox(width: 4),
-          Text(
-            '$label: ',
-            style: TextStyle(fontSize: 11, color: color.shade800, fontWeight: FontWeight.w600),
-          ),
-          Text(
-            '$count',
-            style: TextStyle(fontSize: 12, color: color.shade900, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
+    );
+  }
+
+  Widget _buildAllievoAvatar(String ruolo) {
+    Color bg;
+    Color fg;
+    IconData icon;
+    if (ruolo == 'leader') {
+      bg = Colors.blue.shade100;
+      fg = Colors.blue.shade900;
+      icon = Icons.man;
+    } else if (ruolo == 'follower') {
+      bg = Colors.purple.shade100;
+      fg = Colors.purple.shade900;
+      icon = Icons.woman;
+    } else {
+      bg = Colors.teal.shade100;
+      fg = Colors.teal.shade900;
+      icon = Icons.people;
+    }
+    return CircleAvatar(
+      radius: 14,
+      backgroundColor: bg,
+      child: Icon(icon, color: fg, size: 18),
     );
   }
 
@@ -1071,6 +1100,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
       );
     }
 
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final iscritti = _iscrittiMap[c.id] ?? [];
     final effettivi = iscritti.where((a) => !a.isProspect).toList();
     final prospects = iscritti.where((a) => a.isProspect).toList();
@@ -1149,74 +1179,144 @@ class _CorsiScreenState extends State<CorsiScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // RIASSUNTO HEADER CON PULSANTI
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.analytics_outlined, size: 18, color: Colors.indigo),
-                  SizedBox(width: 6),
-                  Text(
-                    'Riepilogo Partecipanti al Corso',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal.shade700,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          if (isMobile) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.analytics_outlined, size: 18, color: Colors.indigo),
+                    SizedBox(width: 6),
+                    Text(
+                      'Riepilogo Partecipanti al Corso',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
-                    icon: const Icon(Icons.picture_as_pdf, size: 16),
-                    label: const Text('Esporta Elenco'),
-                    onPressed: () => PdfReportService.generaElencoCorso(
-                      context: context,
-                      corso: c,
-                      iscritti: effettivi,
-                      prospects: prospects,
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: 'Ricarica iscritti',
+                  onPressed: () => _fetchIscritti(c.id),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  icon: const Icon(Icons.picture_as_pdf, size: 15),
+                  label: const Text('Esporta Elenco', style: TextStyle(fontSize: 12)),
+                  onPressed: () => PdfReportService.generaElencoCorso(
+                    context: context,
+                    corso: c,
+                    iscritti: effettivi,
+                    prospects: prospects,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.shade700,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  icon: const Icon(Icons.person_add_alt_1, size: 15),
+                  label: const Text('Assegna Prospect in Prova', style: TextStyle(fontSize: 12)),
+                  onPressed: () => _showAddProspectToCorsoDialog(c),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo.shade700,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  icon: const Icon(Icons.person_add, size: 15),
+                  label: const Text('Aggiungi Allievo', style: TextStyle(fontSize: 12)),
+                  onPressed: () => _showAddAllievoToCorsoDialog(c),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.analytics_outlined, size: 18, color: Colors.indigo),
+                    SizedBox(width: 6),
+                    Text(
+                      'Riepilogo Partecipanti al Corso',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber.shade700,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal.shade700,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf, size: 16),
+                      label: const Text('Esporta Elenco'),
+                      onPressed: () => PdfReportService.generaElencoCorso(
+                        context: context,
+                        corso: c,
+                        iscritti: effettivi,
+                        prospects: prospects,
+                      ),
                     ),
-                    icon: const Icon(Icons.person_add_alt_1, size: 16),
-                    label: const Text('Assegna Prospect in Prova'),
-                    onPressed: () => _showAddProspectToCorsoDialog(c),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo.shade700,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade700,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      icon: const Icon(Icons.person_add_alt_1, size: 16),
+                      label: const Text('Assegna Prospect in Prova'),
+                      onPressed: () => _showAddProspectToCorsoDialog(c),
                     ),
-                    icon: const Icon(Icons.person_add, size: 16),
-                    label: const Text('Aggiungi Allievo'),
-                    onPressed: () => _showAddAllievoToCorsoDialog(c),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, size: 18),
-                    tooltip: 'Ricarica iscritti',
-                    onPressed: () => _fetchIscritti(c.id),
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            ],
-          ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo.shade700,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      icon: const Icon(Icons.person_add, size: 16),
+                      label: const Text('Aggiungi Allievo'),
+                      onPressed: () => _showAddAllievoToCorsoDialog(c),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Ricarica iscritti',
+                      onPressed: () => _fetchIscritti(c.id),
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
 
           const Divider(height: 24),
 
@@ -1262,6 +1362,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       child: ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        leading: isMobile ? _buildAllievoAvatar(a.ruolo) : null,
                         title: Row(
                           children: [
                             Flexible(
@@ -1361,7 +1462,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                               constraints: const BoxConstraints(),
                               onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
                             ),
-                            _buildRuoloBadge(a.ruolo),
+                            if (!isMobile)
+                              _buildRuoloBadge(a.ruolo),
                             if (a.recensione == 'si')
                               const Tooltip(
                                 message: 'Recensione rilasciata',
@@ -1426,7 +1528,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     ),
                     child: Row(
                       children: [
-
+                        if (isMobile) ...[
+                          _buildAllievoAvatar(p.ruolo),
+                          const SizedBox(width: 10),
+                        ],
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1449,8 +1554,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              _buildRuoloBadge(p.ruolo),
+                              if (!isMobile) ...[
+                                const SizedBox(height: 4),
+                                _buildRuoloBadge(p.ruolo),
+                              ],
                               if (p.note.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
