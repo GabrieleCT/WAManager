@@ -24,6 +24,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
   final Map<String, List<Lezione>> _lezioniMap = {};
   final Map<String, List<Pagamento>> _pagamentiMap = {};
   final Set<String> _loadingIscritti = {};
+  String? _selectedScuolaIdMobile;
+  String? _selectedCorsoIdMobile;
 
   @override
   void initState() {
@@ -126,8 +128,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
     }
   }
 
-  void _showAddCorsoDialog([Corso? corso]) {
-    String? scuolaId = corso?.scuolaId ?? (_scuole.isNotEmpty ? _scuole.first.id : null);
+  void _showAddCorsoDialog([Corso? corso, String? initialScuolaId]) {
+    String? scuolaId = corso?.scuolaId ?? initialScuolaId ?? (_scuole.isNotEmpty ? _scuole.first.id : null);
     String giornoSettimana = _normalizeGiorno(corso?.giornoSettimana);
     String livello = corso?.livello ?? 'principiante';
     final orarioCtl = TextEditingController(text: corso?.orario ?? '20:30');
@@ -1199,11 +1201,13 @@ class _CorsiScreenState extends State<CorsiScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
+      padding: EdgeInsets.all(isMobile ? 8 : 16),
+      decoration: isMobile
+          ? null
+          : BoxDecoration(
+              color: Colors.grey.shade50,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1397,129 +1401,230 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           width: haPagato ? 1 : 1.5,
                         ),
                       ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        leading: isMobile ? _buildAllievoAvatar(a.ruolo) : null,
-                        title: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                a.nomeCompleto,
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (a.partnerId != null) ...[
-                              const SizedBox(width: 8),
-                              const Icon(Icons.favorite, size: 14, color: Colors.pink),
-                            ],
-                          ],
-                        ),
-                        subtitle: a.numeroTessera.isNotEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
-                                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
-                                ),
-                              )
-                            : null,
-                        trailing: Wrap(
-                          spacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            _buildStatoTesseraBadge(a),
-                            if (haPagato)
-                              Tooltip(
-                                message: 'Pagato',
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: Colors.green.shade400),
+                      child: isMobile
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              child: Row(
+                                children: [
+                                  _buildAllievoAvatar(a.ruolo),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                a.nomeCompleto,
+                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (a.partnerId != null) ...[
+                                              const SizedBox(width: 6),
+                                              const Icon(Icons.favorite, size: 14, color: Colors.pink),
+                                            ],
+                                            if (a.recensione == 'si') ...[
+                                              const SizedBox(width: 4),
+                                              const Icon(Icons.star, color: Colors.amber, size: 15),
+                                            ],
+                                          ],
+                                        ),
+                                        if (a.numeroTessera.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                              style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                  child: Row(
+                                  const SizedBox(width: 6),
+                                  Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.check_circle, size: isMobile ? 15 : 13, color: Colors.green.shade700),
-                                      if (!isMobile) ...[
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'PAGATO',
-                                          style: TextStyle(
-                                            color: Colors.green.shade900,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 11,
+                                      _buildStatoTesseraBadge(a),
+                                      const SizedBox(width: 4),
+                                      if (haPagato)
+                                        Tooltip(
+                                          message: 'Pagato',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: Colors.green.shade400),
+                                            ),
+                                            child: Icon(Icons.check_circle, size: 15, color: Colors.green.shade700),
+                                          ),
+                                        )
+                                      else ...[
+                                        Tooltip(
+                                          message: 'Non ha pagato',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.shade100,
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: Colors.red.shade600, width: 1.2),
+                                            ),
+                                            child: Icon(Icons.error_outline, size: 15, color: Colors.red.shade900),
                                           ),
                                         ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              )
-                            else ...[
-                              Tooltip(
-                                message: 'Non ha pagato',
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.shade100,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: Colors.red.shade600, width: 1.2),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.error_outline, size: isMobile ? 15 : 14, color: Colors.red.shade900),
-                                      if (!isMobile) ...[
                                         const SizedBox(width: 4),
-                                        Text(
-                                          'NON HA PAGATO',
-                                          style: TextStyle(
-                                            color: Colors.red.shade900,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 11,
-                                          ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_card, size: 18, color: Colors.green),
+                                          tooltip: 'Registra pagamento per ${a.nomeCompleto}',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
                                         ),
                                       ],
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                                        tooltip: 'Modifica ${a.nomeCompleto}',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _showEditAllievoDialog(c, a),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                        tooltip: 'Elimina/Rimuovi ${a.nomeCompleto}',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
+                                      ),
                                     ],
                                   ),
-                                ),
+                                ],
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.add_card, size: 18, color: Colors.green),
-                                tooltip: 'Registra pagamento per ${a.nomeCompleto}',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
+                            )
+                          : ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              leading: null,
+                              title: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      a.nomeCompleto,
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (a.partnerId != null) ...[
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.favorite, size: 14, color: Colors.pink),
+                                  ],
+                                ],
                               ),
-                            ],
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                              tooltip: 'Modifica ${a.nomeCompleto}',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => _showEditAllievoDialog(c, a),
+                              subtitle: a.numeroTessera.isNotEmpty
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                      ),
+                                    )
+                                  : null,
+                              trailing: Wrap(
+                                spacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  _buildStatoTesseraBadge(a),
+                                  if (haPagato)
+                                    Tooltip(
+                                      message: 'Pagato',
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.green.shade400),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.check_circle, size: 13, color: Colors.green.shade700),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'PAGATO',
+                                              style: TextStyle(
+                                                color: Colors.green.shade900,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  else ...[
+                                    Tooltip(
+                                      message: 'Non ha pagato',
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade100,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.red.shade600, width: 1.2),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.error_outline, size: 14, color: Colors.red.shade900),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'NON HA PAGATO',
+                                              style: TextStyle(
+                                                color: Colors.red.shade900,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.add_card, size: 18, color: Colors.green),
+                                      tooltip: 'Registra pagamento per ${a.nomeCompleto}',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => _showQuickPayDialog(c, a, activeTrimestreCode),
+                                    ),
+                                  ],
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                                    tooltip: 'Modifica ${a.nomeCompleto}',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _showEditAllievoDialog(c, a),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                    tooltip: 'Elimina/Rimuovi ${a.nomeCompleto}',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
+                                  ),
+                                  _buildRuoloBadge(a.ruolo),
+                                  if (a.recensione == 'si')
+                                    const Tooltip(
+                                      message: 'Recensione rilasciata',
+                                      child: Icon(Icons.star, color: Colors.amber, size: 16),
+                                    ),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                              tooltip: 'Elimina/Rimuovi ${a.nomeCompleto}',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => _confirmDeleteOrRemoveAllievo(c, a),
-                            ),
-                            if (!isMobile)
-                              _buildRuoloBadge(a.ruolo),
-                            if (a.recensione == 'si')
-                              const Tooltip(
-                                message: 'Recensione rilasciata',
-                                child: Icon(Icons.star, color: Colors.amber, size: 16),
-                              ),
-                          ],
-                        ),
-                      ),
                     );
                   }(),
                 ],
@@ -1568,7 +1673,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                 for (final p in prospects)
                   Container(
                     margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.all(isMobile ? 10 : 12),
                     decoration: BoxDecoration(
                       color: Colors.amber.shade50.withValues(alpha: 0.8),
                       borderRadius: BorderRadius.circular(10),
@@ -1586,18 +1691,27 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Text(p.nomeCompleto, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                  if (p.partnerId != null) ...[const SizedBox(width: 8), const Icon(Icons.favorite, size: 14, color: Colors.pink)],
-                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      p.nomeCompleto,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (p.partnerId != null) ...[
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.favorite, size: 14, color: Colors.pink),
+                                  ],
+                                  const SizedBox(width: 6),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: Colors.amber.shade700,
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: const Text(
-                                      'IN PROVA',
-                                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                      'PROVA',
+                                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                 ],
@@ -1607,7 +1721,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 _buildRuoloBadge(p.ruolo),
                               ],
                               if (p.note.isNotEmpty) ...[
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 3),
                                 Text(
                                   '📝 ${p.note}',
                                   style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.brown.shade800),
@@ -1618,52 +1732,88 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             ],
                           ),
                         ),
-                        Wrap(
-                          spacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        const SizedBox(width: 6),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Tooltip(
-                              message: 'Iscrive definitivamente il prospect come allievo effettivo',
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green.shade700,
-                                  foregroundColor: Colors.white,
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                ),
-                                icon: const Icon(Icons.school, size: 15),
-                                label: const Text('Converti ad Allievo', style: TextStyle(fontSize: 11)),
-                                onPressed: () async {
-                                  final res = await _api.convertProspectToStudent(p.id, c.id);
-                                  if (res != null && mounted) {
-                                    if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                                      checkAndShowGoogleSyncError(
-                                        context,
-                                        entityType: 'Allievo',
-                                        name: res.nomeCompleto,
-                                        error: res.googleSyncError,
-                                      );
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
-                                      );
-                                    }
-                                    _fetchIscritti(c.id);
-                                    _loadAll();
-                                  }
-                                },
-                              ),
+                              message: 'Converti ad allievo effettivo',
+                              child: isMobile
+                                  ? ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green.shade700,
+                                        foregroundColor: Colors.white,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.all(7),
+                                        minimumSize: const Size(32, 32),
+                                      ),
+                                      onPressed: () async {
+                                        final res = await _api.convertProspectToStudent(p.id, c.id);
+                                        if (res != null && mounted) {
+                                          if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                                            checkAndShowGoogleSyncError(
+                                              context,
+                                              entityType: 'Allievo',
+                                              name: res.nomeCompleto,
+                                              error: res.googleSyncError,
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
+                                            );
+                                          }
+                                          _fetchIscritti(c.id);
+                                          _loadAll();
+                                        }
+                                      },
+                                      child: const Icon(Icons.school, size: 16),
+                                    )
+                                  : ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green.shade700,
+                                        foregroundColor: Colors.white,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      ),
+                                      icon: const Icon(Icons.school, size: 15),
+                                      label: const Text('Converti ad Allievo', style: TextStyle(fontSize: 11)),
+                                      onPressed: () async {
+                                        final res = await _api.convertProspectToStudent(p.id, c.id);
+                                        if (res != null && mounted) {
+                                          if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                                            checkAndShowGoogleSyncError(
+                                              context,
+                                              entityType: 'Allievo',
+                                              name: res.nomeCompleto,
+                                              error: res.googleSyncError,
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
+                                            );
+                                          }
+                                          _fetchIscritti(c.id);
+                                          _loadAll();
+                                        }
+                                      },
+                                    ),
                             ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
                               tooltip: 'Modifica ${p.nomeCompleto}',
                               visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                               onPressed: () => _showEditAllievoDialog(c, p),
                             ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: const Icon(Icons.close, size: 18, color: Colors.red),
                               tooltip: 'Rimuovi o Elimina ${p.nomeCompleto}',
                               visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                               onPressed: () => _confirmDeleteOrRemoveAllievo(c, p),
                             ),
                           ],
@@ -1679,236 +1829,700 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 800;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Corsi'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica corsi',
-            onPressed: _loadAll,
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddCorsoDialog(),
-        tooltip: 'Aggiungi Corso',
-        child: const Icon(Icons.add),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _scuole.isEmpty
-              ? const Center(child: Text('Nessuna scuola configurata.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _scuole.length,
-                  itemBuilder: (ctx, i) {
-                    final scuola = _scuole[i];
-                    final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
-                    corsiScuola.sort((a, b) => a.orario.compareTo(b.orario));
-                    
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          initiallyExpanded: true,
-                          leading: isMobile
-                              ? null
-                              : CircleAvatar(
-                                  backgroundColor: Colors.indigo.shade100,
-                                  child: const Icon(Icons.school, color: Colors.indigo),
-                                ),
-                          title: Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                scuola.nome,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
-                              _buildRecapBadge(
-                                icon: Icons.people_alt,
-                                label: 'Totale allievi',
-                                count: scuola.allieviCount,
-                                color: Colors.blue,
-                              ),
-                              _buildRecapBadge(
-                                icon: Icons.person_search,
-                                label: 'Totale Prospect',
-                                count: scuola.prospectsCount,
-                                color: Colors.orange,
-                              ),
-                              _buildRecapBadge(
-                                icon: Icons.payments,
-                                label: 'Totale Paganti',
-                                count: scuola.pagantiCount,
-                                color: Colors.green,
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
+  Widget _buildMobileScuoleList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      itemCount: _scuole.length,
+      itemBuilder: (ctx, i) {
+        final scuola = _scuole[i];
+        final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+
+        return Card(
+          elevation: 1,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              setState(() {
+                _selectedScuolaIdMobile = scuola.id;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              scuola.nome,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
                               scuola.sede.isNotEmpty
                                   ? '${corsiScuola.length} corsi • ${scuola.sede}'
                                   : '${corsiScuola.length} corsi',
                               style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                             ),
-                          ),
-                          children: corsiScuola.isEmpty
-                              ? [const Padding(padding: EdgeInsets.all(16.0), child: Text('Nessun corso per questa scuola.'))]
-                              : corsiScuola.map((c) => Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                  elevation: 1,
-                                  child: Theme(
-                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                    child: ExpansionTile(
-                                      onExpansionChanged: (expanded) {
-                                        if (expanded) {
-                                          _fetchIscritti(c.id);
-                                        }
-                                      },
-                                      title: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Wrap(
-                                              spacing: 8,
-                                              runSpacing: 4,
-                                              crossAxisAlignment: WrapCrossAlignment.center,
-                                              children: [
-                                                Text(
-                                                  c.livelloDisplay,
-                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                                ),
-                                                if (isMobile) ...[
-                                                  IconButton(
-                                                    icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
-                                                    tooltip: 'Modifica Corso',
-                                                    visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(),
-                                                    onPressed: () => _showAddCorsoDialog(c),
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                                                    tooltip: 'Elimina Corso',
-                                                    visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(),
-                                                    onPressed: () => _confirmDeleteCorso(c),
-                                                  ),
-                                                ],
-                                                _buildRecapBadge(
-                                                  icon: Icons.people_alt,
-                                                  label: 'Allievi',
-                                                  count: c.allieviCount,
-                                                  color: Colors.blue,
-                                                ),
-                                                if (c.prospectsCount > 0)
-                                                  _buildRecapBadge(
-                                                    icon: Icons.person_search,
-                                                    label: 'Prospect',
-                                                    count: c.prospectsCount,
-                                                    color: Colors.orange,
-                                                  ),
-                                                _buildRecapBadge(
-                                                  icon: Icons.payments,
-                                                  label: 'Paganti',
-                                                  count: c.pagantiCount,
-                                                  color: Colors.green,
-                                                ),
-                                                _buildRecapBadge(
-                                                  icon: Icons.man,
-                                                  label: 'Leader',
-                                                  count: _getLeadersCount(c),
-                                                  color: Colors.indigo,
-                                                ),
-                                                _buildRecapBadge(
-                                                  icon: Icons.woman,
-                                                  label: 'Follower',
-                                                  count: _getFollowersCount(c),
-                                                  color: Colors.purple,
-                                                ),
-                                                _buildRecapBadge(
-                                                  icon: Icons.star,
-                                                  label: 'Jolly nec.',
-                                                  count: _getJollyNecessari(c),
-                                                  color: Colors.amber,
-                                                ),
-                                                _buildRecapBadge(
-                                                  icon: Icons.task_alt,
-                                                  label: 'Lezioni fatte',
-                                                  count: _getLezioniFatte(c),
-                                                  color: Colors.teal,
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          if (!isMobile) ...[
-                                            IconButton(
-                                              icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                                              tooltip: 'Modifica Corso',
-                                              onPressed: () => _showAddCorsoDialog(c),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                                              tooltip: 'Elimina Corso',
-                                              onPressed: () => _confirmDeleteCorso(c),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      subtitle: Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Wrap(
-                                          spacing: 8,
-                                          runSpacing: 4,
-                                          children: [
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                                                const SizedBox(width: 4),
-                                                Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
-                                              ],
-                                            ),
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.date_range, size: 14, color: Colors.grey),
-                                                const SizedBox(width: 4),
-                                                Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
-                                              ],
-                                            ),
-                                            if (c.gruppoWhatsapp.isNotEmpty)
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Icon(Icons.chat, size: 14, color: Colors.green),
-                                                  const SizedBox(width: 4),
-                                                  Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
-                                                ],
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      children: [
-                                        _buildDrillDownContent(c),
-                                      ],
-                                    ),
-                                  ),
-                                )).toList(),
+                          ],
                         ),
                       ),
-                    );
-                  },
+                      const Icon(Icons.chevron_right, color: Colors.indigo, size: 24),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      _buildRecapBadge(
+                        icon: Icons.people_alt,
+                        label: 'Totale allievi',
+                        count: scuola.allieviCount,
+                        color: Colors.blue,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.person_search,
+                        label: 'Totale Prospect',
+                        count: scuola.prospectsCount,
+                        color: Colors.orange,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.payments,
+                        label: 'Totale Paganti',
+                        count: scuola.pagantiCount,
+                        color: Colors.green,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileCorsiList(Scuola scuola) {
+    final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+    corsiScuola.sort((a, b) => a.orario.compareTo(b.orario));
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      children: [
+        // Banner della scuola selezionata con breadcrumb
+        Card(
+          elevation: 0,
+          color: Colors.indigo.shade50,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.school, size: 22, color: Colors.indigo),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        scuola.nome,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo),
+                      ),
+                      if (scuola.sede.isNotEmpty)
+                        Text(scuola.sede, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                    ],
+                  ),
                 ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  backgroundColor: Colors.white,
+                  label: Text(
+                    '${corsiScuola.length} corsi',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (corsiScuola.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Center(child: Text('Nessun corso configurato per questa scuola.')),
+          )
+        else
+          ...corsiScuola.map((c) => Card(
+                elevation: 1,
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    _fetchIscritti(c.id);
+                    setState(() {
+                      _selectedCorsoIdMobile = c.id;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                c.livelloDisplay,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                              tooltip: 'Modifica Corso',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => _showAddCorsoDialog(c, scuola.id),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                              tooltip: 'Elimina Corso',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () => _confirmDeleteCorso(c),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right, color: Colors.indigo, size: 22),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.calendar_today, size: 13, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
+                              ],
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.date_range, size: 13, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
+                              ],
+                            ),
+                            if (c.gruppoWhatsapp.isNotEmpty)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.chat, size: 13, color: Colors.green),
+                                  const SizedBox(width: 4),
+                                  Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
+                                ],
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _buildRecapBadge(
+                              icon: Icons.people_alt,
+                              label: 'Allievi',
+                              count: c.allieviCount,
+                              color: Colors.blue,
+                            ),
+                            if (c.prospectsCount > 0)
+                              _buildRecapBadge(
+                                icon: Icons.person_search,
+                                label: 'Prospect',
+                                count: c.prospectsCount,
+                                color: Colors.orange,
+                              ),
+                            _buildRecapBadge(
+                              icon: Icons.payments,
+                              label: 'Paganti',
+                              count: c.pagantiCount,
+                              color: Colors.green,
+                            ),
+                            _buildRecapBadge(
+                              icon: Icons.man,
+                              label: 'Leader',
+                              count: _getLeadersCount(c),
+                              color: Colors.indigo,
+                            ),
+                            _buildRecapBadge(
+                              icon: Icons.woman,
+                              label: 'Follower',
+                              count: _getFollowersCount(c),
+                              color: Colors.purple,
+                            ),
+                            _buildRecapBadge(
+                              icon: Icons.star,
+                              label: 'Jolly nec.',
+                              count: _getJollyNecessari(c),
+                              color: Colors.amber,
+                            ),
+                            _buildRecapBadge(
+                              icon: Icons.task_alt,
+                              label: 'Lezioni fatte',
+                              count: _getLezioniFatte(c),
+                              color: Colors.teal,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )),
+      ],
+    );
+  }
+
+  Widget _buildMobileCorsoDetail(Corso c, Scuola scuola) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Scheda riepilogo del corso selezionato
+          Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${c.livelloDisplay} • ${scuola.nome}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                        tooltip: 'Modifica Corso',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _showAddCorsoDialog(c, scuola.id),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                        tooltip: 'Elimina Corso',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _confirmDeleteCorso(c),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.calendar_today, size: 13, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.date_range, size: 13, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
+                        ],
+                      ),
+                      if (c.gruppoWhatsapp.isNotEmpty)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.chat, size: 13, color: Colors.green),
+                            const SizedBox(width: 4),
+                            Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
+                          ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _buildRecapBadge(
+                        icon: Icons.people_alt,
+                        label: 'Allievi',
+                        count: c.allieviCount,
+                        color: Colors.blue,
+                      ),
+                      if (c.prospectsCount > 0)
+                        _buildRecapBadge(
+                          icon: Icons.person_search,
+                          label: 'Prospect',
+                          count: c.prospectsCount,
+                          color: Colors.orange,
+                        ),
+                      _buildRecapBadge(
+                        icon: Icons.payments,
+                        label: 'Paganti',
+                        count: c.pagantiCount,
+                        color: Colors.green,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.man,
+                        label: 'Leader',
+                        count: _getLeadersCount(c),
+                        color: Colors.indigo,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.woman,
+                        label: 'Follower',
+                        count: _getFollowersCount(c),
+                        color: Colors.purple,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.star,
+                        label: 'Jolly nec.',
+                        count: _getJollyNecessari(c),
+                        color: Colors.amber,
+                      ),
+                      _buildRecapBadge(
+                        icon: Icons.task_alt,
+                        label: 'Lezioni fatte',
+                        count: _getLezioniFatte(c),
+                        color: Colors.teal,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildDrillDownContent(c),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopScuoleList() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _scuole.length,
+      itemBuilder: (ctx, i) {
+        final scuola = _scuole[i];
+        final corsiScuola = _corsi.where((c) => c.scuolaId == scuola.id).toList();
+        corsiScuola.sort((a, b) => a.orario.compareTo(b.orario));
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              leading: CircleAvatar(
+                backgroundColor: Colors.indigo.shade100,
+                child: const Icon(Icons.school, color: Colors.indigo),
+              ),
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    scuola.nome,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  _buildRecapBadge(
+                    icon: Icons.people_alt,
+                    label: 'Totale allievi',
+                    count: scuola.allieviCount,
+                    color: Colors.blue,
+                  ),
+                  _buildRecapBadge(
+                    icon: Icons.person_search,
+                    label: 'Totale Prospect',
+                    count: scuola.prospectsCount,
+                    color: Colors.orange,
+                  ),
+                  _buildRecapBadge(
+                    icon: Icons.payments,
+                    label: 'Totale Paganti',
+                    count: scuola.pagantiCount,
+                    color: Colors.green,
+                  ),
+                ],
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  scuola.sede.isNotEmpty
+                      ? '${corsiScuola.length} corsi • ${scuola.sede}'
+                      : '${corsiScuola.length} corsi',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ),
+              children: corsiScuola.isEmpty
+                  ? [const Padding(padding: EdgeInsets.all(16.0), child: Text('Nessun corso per questa scuola.'))]
+                  : corsiScuola.map((c) => Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      elevation: 1,
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          onExpansionChanged: (expanded) {
+                            if (expanded) {
+                              _fetchIscritti(c.id);
+                            }
+                          },
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      c.livelloDisplay,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                    ),
+                                    _buildRecapBadge(
+                                      icon: Icons.people_alt,
+                                      label: 'Allievi',
+                                      count: c.allieviCount,
+                                      color: Colors.blue,
+                                    ),
+                                    if (c.prospectsCount > 0)
+                                      _buildRecapBadge(
+                                        icon: Icons.person_search,
+                                        label: 'Prospect',
+                                        count: c.prospectsCount,
+                                        color: Colors.orange,
+                                      ),
+                                    _buildRecapBadge(
+                                      icon: Icons.payments,
+                                      label: 'Paganti',
+                                      count: c.pagantiCount,
+                                      color: Colors.green,
+                                    ),
+                                    _buildRecapBadge(
+                                      icon: Icons.man,
+                                      label: 'Leader',
+                                      count: _getLeadersCount(c),
+                                      color: Colors.indigo,
+                                    ),
+                                    _buildRecapBadge(
+                                      icon: Icons.woman,
+                                      label: 'Follower',
+                                      count: _getFollowersCount(c),
+                                      color: Colors.purple,
+                                    ),
+                                    _buildRecapBadge(
+                                      icon: Icons.star,
+                                      label: 'Jolly nec.',
+                                      count: _getJollyNecessari(c),
+                                      color: Colors.amber,
+                                    ),
+                                    _buildRecapBadge(
+                                      icon: Icons.task_alt,
+                                      label: 'Lezioni fatte',
+                                      count: _getLezioniFatte(c),
+                                      color: Colors.teal,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
+                                tooltip: 'Modifica Corso',
+                                onPressed: () => _showAddCorsoDialog(c),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                tooltip: 'Elimina Corso',
+                                onPressed: () => _confirmDeleteCorso(c),
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Text('${c.giornoSettimanaDisplay} ore ${c.orario}', style: const TextStyle(fontSize: 13)),
+                                  ],
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.date_range, size: 14, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Text(c.annoAccademico, style: const TextStyle(fontSize: 13)),
+                                  ],
+                                ),
+                                if (c.gruppoWhatsapp.isNotEmpty)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.chat, size: 14, color: Colors.green),
+                                      const SizedBox(width: 4),
+                                      Text(c.gruppoWhatsapp, style: const TextStyle(fontSize: 13, color: Colors.green)),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                          children: [
+                            _buildDrillDownContent(c),
+                          ],
+                        ),
+                      ),
+                    )).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
+    Scuola? selectedScuola;
+    if (_selectedScuolaIdMobile != null) {
+      for (final s in _scuole) {
+        if (s.id == _selectedScuolaIdMobile) {
+          selectedScuola = s;
+          break;
+        }
+      }
+      if (selectedScuola == null) {
+        _selectedScuolaIdMobile = null;
+        _selectedCorsoIdMobile = null;
+      }
+    }
+
+    Corso? selectedCorso;
+    if (_selectedCorsoIdMobile != null) {
+      for (final c in _corsi) {
+        if (c.id == _selectedCorsoIdMobile) {
+          selectedCorso = c;
+          break;
+        }
+      }
+      if (selectedCorso == null) {
+        _selectedCorsoIdMobile = null;
+      }
+    }
+
+    return PopScope(
+      canPop: !isMobile || (_selectedScuolaIdMobile == null && _selectedCorsoIdMobile == null),
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_selectedCorsoIdMobile != null) {
+          setState(() {
+            _selectedCorsoIdMobile = null;
+          });
+        } else if (_selectedScuolaIdMobile != null) {
+          setState(() {
+            _selectedScuolaIdMobile = null;
+          });
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: isMobile && _selectedScuolaIdMobile != null
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Torna indietro',
+                  onPressed: () {
+                    setState(() {
+                      if (_selectedCorsoIdMobile != null) {
+                        _selectedCorsoIdMobile = null;
+                      } else {
+                        _selectedScuolaIdMobile = null;
+                      }
+                    });
+                  },
+                )
+              : null,
+          title: Text(
+            isMobile
+                ? (selectedCorso != null
+                    ? selectedCorso.livelloDisplay
+                    : (selectedScuola != null ? selectedScuola.nome : 'Corsi'))
+                : 'Corsi',
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Ricarica',
+              onPressed: () {
+                if (selectedCorso != null) {
+                  _fetchIscritti(selectedCorso.id);
+                }
+                _loadAll();
+              },
+            ),
+          ],
+        ),
+        floatingActionButton: (isMobile && selectedCorso != null)
+            ? null
+            : FloatingActionButton(
+                onPressed: () => _showAddCorsoDialog(null, selectedScuola?.id),
+                tooltip: 'Aggiungi Corso',
+                child: const Icon(Icons.add),
+              ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _scuole.isEmpty
+                ? const Center(child: Text('Nessuna scuola configurata.'))
+                : isMobile
+                    ? (selectedCorso != null
+                        ? _buildMobileCorsoDetail(selectedCorso, selectedScuola!)
+                        : selectedScuola != null
+                            ? _buildMobileCorsiList(selectedScuola)
+                            : _buildMobileScuoleList())
+                    : _buildDesktopScuoleList(),
+      ),
     );
   }
 }
