@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
 import '../widgets/google_sync_dialog.dart';
+import '../widgets/delete_allievo_dialog.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -913,23 +914,19 @@ class _CorsiScreenState extends State<CorsiScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               Navigator.pop(ctx);
-              final ok = await _api.deleteAllievo(a.id);
-              if (mounted) {
-                if (ok) {
+              final deleted = await showDeleteAllievoDialog(context, allievo: a);
+              if (deleted == true) {
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Allievo ${a.nomeCompleto} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
+                      content: Text('${a.isProspect ? "Prospect" : "Allievo"} ${a.nomeCompleto} eliminato con successo.'),
                       backgroundColor: Colors.green.shade800,
                     ),
                   );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Errore durante l\'eliminazione dal DB.')),
-                  );
                 }
+                _fetchIscritti(c.id);
+                _loadAll();
               }
-              _fetchIscritti(c.id);
-              _loadAll();
             },
             child: const Text('Elimina dal DB'),
           ),

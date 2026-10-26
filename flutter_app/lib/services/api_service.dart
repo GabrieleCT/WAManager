@@ -281,6 +281,27 @@ class ApiService {
     return res.statusCode == 204;
   }
 
+  Future<Map<String, dynamic>> cleanupAllievoStep(String allievoId, String step) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/cleanup-step/'),
+        headers: _headers,
+        body: jsonEncode({'step': step}),
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      } else {
+        final body = jsonDecode(utf8.decode(res.bodyBytes));
+        return {
+          'success': false,
+          'error': body['error'] ?? 'Errore HTTP ${res.statusCode}',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   Future<Allievo?> convertProspectToStudent(String allievoId, String corsoId) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/allievi/$allievoId/convert_to_student/'),

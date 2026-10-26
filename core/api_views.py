@@ -273,6 +273,99 @@ class AllievoViewSet(viewsets.ModelViewSet):
         res = sync_allievo_to_google_contacts(allievo)
         return Response(res)
 
+    @action(detail=True, methods=['post'], url_path='cleanup-step')
+    def cleanup_step(self, request, pk=None):
+        """
+        Esegue un singolo step di pulizia/eliminazione per l'allievo/prospect:
+        - google_contacts: elimina da Google Contacts
+        - whatsapp_groups: rimuove dai gruppi WhatsApp (solo per corsisti, non per prospect)
+        - whatsapp_chat: elimina la chat individuale WhatsApp se presente
+        - delete_database: elimina definitivamente dal database
+        """
+        allievo = self.get_object()
+        step = request.data.get('step')
+
+        if step == 'google_contacts':
+            try:
+                from .google_contacts_service import delete_google_contact_for_allievo
+                res = delete_google_contact_for_allievo(allievo)
+                if res.get('success') and getattr(allievo, 'google_contact_id', None):
+                    allievo.google_contact_id = None
+                    allievo.save(update_fields=['google_contact_id'])
+                return Response(res)
+            except Exception as e:
+                return Response({'success': False, 'error': str(e)})
+
+        elif step == 'whatsapp_groups':
+            if allievo.is_prospect:
+                return Response({'success': True, 'skipped': True, 'message': 'Non applicabile per i prospect.'})
+            phone = (getattr(allievo, 'telefono', '') or '').strip()
+            if not phone:
+                return Response({'success': True, 'skipped': True, 'message': 'Nessun numero di telefono disponibile.'})
+            group_ids = []
+            if getattr(allievo, 'corso', None):
+                if getattr(allievo.corso, 'gruppo_whatsapp', None):
+                    group_ids.append(allievo.corso.gruppo_whatsapp)
+                if getattr(allievo.corso, 'scuola', None) and getattr(allievo.corso.scuola, 'gruppo_whatsapp', None):
+                    group_ids.append(allievo.corso.scuola.gruppo_whatsapp)
+            try:
+                from .wa_client import cleanup_whatsapp_contact
+                res = cleanup_whatsapp_contact(
+                    phone=phone,
+                    group_ids=group_ids,
+                    remove_from_all_groups=True,
+                    delete_chat=False
+                )
+                if res.get('skipped'):
+                    msg = res.get('warning') or res.get('message') or 'WhatsApp non connesso.'
+                    return Response({'success': True, 'skipped': True, 'message': msg})
+                elif res.get('success'):
+                    removed = res.get('removedFromGroups', [])
+                    if removed:
+                        msg = f"Rimosso da {len(removed)} gruppo/i WhatsApp."
+                    else:
+                        msg = "Non presente in alcun gruppo WhatsApp."
+                    return Response({'success': True, 'message': msg, 'removed': removed})
+                else:
+                    return Response({'success': False, 'error': res.get('error', 'Errore durante la rimozione dai gruppi WhatsApp.')})
+            except Exception as e:
+                return Response({'success': False, 'error': str(e)})
+
+        elif step == 'whatsapp_chat':
+            phone = (getattr(allievo, 'telefono', '') or '').strip()
+            if not phone:
+                return Response({'success': True, 'skipped': True, 'message': 'Nessun numero di telefono disponibile.'})
+            try:
+                from .wa_client import delete_whatsapp_chat
+                res = delete_whatsapp_chat(phone)
+                if res.get('skipped'):
+                    msg = res.get('warning') or res.get('message') or 'WhatsApp non connesso.'
+                    return Response({'success': True, 'skipped': True, 'message': msg})
+                elif res.get('success'):
+                    return Response({'success': True, 'message': res.get('message', 'Chat WhatsApp eliminata.')})
+                else:
+                    err = res.get('error', 'Errore eliminazione chat WhatsApp.')
+                    return Response({'success': False, 'error': err})
+            except Exception as e:
+                return Response({'success': False, 'error': str(e)})
+
+        elif step == 'delete_database':
+            try:
+                if getattr(allievo, 'partner', None):
+                    other = allievo.partner
+                    other.partner = None
+                    other.save(update_fields=['partner'])
+                    allievo.partner = None
+                Allievo.objects.filter(partner=allievo).update(partner=None)
+
+                allievo._skip_pre_delete_cleanup = True
+                allievo.delete()
+                return Response({'success': True, 'message': 'Eliminato definitivamente dal database.'})
+            except Exception as e:
+                return Response({'success': False, 'error': str(e)})
+
+        return Response({'success': False, 'error': f'Step sconosciuto: {step}'}, status=status.HTTP_400_BAD_REQUEST)
+
     def get_queryset(self):
         qs = super().get_queryset()
         stato_tessera = self.request.query_params.get('stato_tessera')

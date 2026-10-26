@@ -264,6 +264,8 @@ def allievo_pre_delete_cleanup(sender, instance, **kwargs):
     2. Elimina la chat WhatsApp individuale
     3. Elimina il contatto dalla Rubrica Google (Google Contacts)
     """
+    if getattr(instance, '_skip_pre_delete_cleanup', False):
+        return
     try:
         from .services import cleanup_allievo_on_deletion
         cleanup_allievo_on_deletion(instance)

@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 
 import '../widgets/google_sync_dialog.dart';
+import '../widgets/delete_allievo_dialog.dart';
 
 
 
@@ -652,46 +653,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
 
   Future<void> _deleteProspect(Allievo p) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Conferma Eliminazione'),
-        content: Text(
-          'Vuoi eliminare definitivamente il prospect ${p.nomeCompleto}?\n\n'
-          'L\'operazione comporterà automaticamente:\n'
-          '• Rimozione dai gruppi WhatsApp\n'
-          '• Eliminazione della chat WhatsApp\n'
-          '• Eliminazione del contatto dalla Rubrica Google',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      final ok = await _api.deleteAllievo(p.id);
+    final deleted = await showDeleteAllievoDialog(context, allievo: p);
+    if (deleted == true) {
       if (mounted) {
-        if (ok) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Prospect ${p.nomeCompleto} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
-              backgroundColor: Colors.green.shade800,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Errore durante l\'eliminazione del prospect.')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Prospect ${p.nomeCompleto} eliminato con successo.'),
+            backgroundColor: Colors.green.shade800,
+          ),
+        );
       }
-      if (ok) {
-        _loadData();
-      }
+      _loadData();
     }
   }
 

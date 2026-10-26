@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
+import '../widgets/delete_allievo_dialog.dart';
 
 class AllieviScreen extends StatefulWidget {
   final bool embedded;
@@ -1284,45 +1285,15 @@ class _AllieviScreenState extends State<AllieviScreen> {
   }
 
   Future<void> _confirmDeleteAllievo(Allievo a) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Conferma eliminazione allievo'),
-        content: Text(
-          'Sei sicuro di voler eliminare l\'allievo ${a.nome} ${a.cognome}?\n\n'
-          'L\'operazione comporterà automaticamente:\n'
-          '• Rimozione dai gruppi WhatsApp (corso e scuola)\n'
-          '• Eliminazione della chat WhatsApp\n'
-          '• Eliminazione del contatto dalla Rubrica Google',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Elimina definitivamente'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      final ok = await _api.deleteAllievo(a.id);
+    final deleted = await showDeleteAllievoDialog(context, allievo: a);
+    if (deleted == true) {
       if (mounted) {
-        if (ok) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Allievo ${a.nome} ${a.cognome} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
-              backgroundColor: Colors.green.shade800,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Errore durante l\'eliminazione dell\'allievo.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Allievo ${a.nomeCompleto} eliminato con successo.'),
+            backgroundColor: Colors.green.shade800,
+          ),
+        );
       }
       _loadAllievi();
     }
@@ -1414,50 +1385,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Conferma eliminazione allievo'),
-                    content: Text(
-                      'Sei sicuro di voler eliminare l\'allievo ${a.nome} ${a.cognome}?\n\n'
-                      'L\'operazione comporterà automaticamente:\n'
-                      '• Rimozione dai gruppi WhatsApp (corso e scuola)\n'
-                      '• Eliminazione della chat WhatsApp\n'
-                      '• Eliminazione del contatto dalla Rubrica Google',
-                    ),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Elimina definitivamente'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  final ok = await _api.deleteAllievo(a.id);
-                  if (mounted) {
-                    if (ok) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Allievo ${a.nome} ${a.cognome} eliminato dal sistema, dai gruppi WhatsApp, dalla chat e dalla rubrica Google.'),
-                          backgroundColor: Colors.green.shade800,
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Errore durante l\'eliminazione dell\'allievo.'),
-                          backgroundColor: Colors.red.shade800,
-                        ),
-                      );
-                    }
-                  }
-                  _loadAllievi();
-                }
-              },
+              tooltip: 'Elimina allievo',
+              onPressed: () => _confirmDeleteAllievo(a),
               constraints: const BoxConstraints(),
               padding: EdgeInsets.zero,
             ),
