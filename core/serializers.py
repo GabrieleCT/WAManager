@@ -388,6 +388,7 @@ class GeminiLogSerializer(serializers.ModelSerializer):
     lezione_descrizione = serializers.CharField(source='lezione.__str__', read_only=True)
     corso_nome = serializers.SerializerMethodField()
     partner_nome = serializers.SerializerMethodField()
+    presenze_segnate = serializers.SerializerMethodField()
 
     class Meta:
         model = GeminiLog
@@ -395,7 +396,7 @@ class GeminiLogSerializer(serializers.ModelSerializer):
             'id', 'timestamp', 'allievo', 'allievo_nome', 'corso', 'corso_nome',
             'gruppo_whatsapp', 'mittente', 'lezione', 'lezione_descrizione',
             'testo_originale', 'chiamata_ai', 'risposta_ai', 'esito_interpretato',
-            'azione_presenze', 'partner_coinvolto', 'partner_nome'
+            'azione_presenze', 'partner_coinvolto', 'partner_nome', 'presenze_segnate'
         ]
 
     def get_allievo_nome(self, obj):
@@ -406,11 +407,11 @@ class GeminiLogSerializer(serializers.ModelSerializer):
         return "Mittente non registrato"
 
     def get_corso_nome(self, obj):
-        if obj.corso:
-            return str(obj.corso)
-        if obj.lezione and obj.lezione.corso:
-            return str(obj.lezione.corso)
-        return ""
+        c = obj.corso or (obj.lezione.corso if obj.lezione else None)
+        if c:
+            orario_str = c.orario.strftime('%H:%M') if c.orario else ''
+            return f"{c.scuola.nome} {c.get_livello_display()} {orario_str}".strip()
+        return obj.gruppo_whatsapp or ""
 
     def get_partner_nome(self, obj):
         if obj.partner_coinvolto:
@@ -418,6 +419,28 @@ class GeminiLogSerializer(serializers.ModelSerializer):
         if obj.allievo and obj.allievo.partner:
             return f"{obj.allievo.partner.nome} {obj.allievo.partner.cognome}"
         return ""
+
+    def get_presenze_segnate(self, obj):
+        esito = (obj.esito_interpretato or '').upper()
+        if not obj.allievo:
+            return "Nessuna (allievo non censito)"
+        allievo_str = f"{obj.allievo.nome} {obj.allievo.cognome}"
+        partner_str = ""
+        if obj.partner_coinvolto:
+            partner_str = f"{obj.partner_coinvolto.nome} {obj.partner_coinvolto.cognome}"
+        elif obj.allievo.partner:
+            partner_str = f"{obj.allievo.partner.nome} {obj.allievo.partner.cognome}"
+            
+        if "PRESENTE_COPPIA" in esito:
+            return f"{allievo_str} & {partner_str}" if partner_str else f"{allievo_str} (partner non associato)"
+        elif "PRESENTE_SINGOLO" in esito:
+            return allievo_str
+        elif "ASSENTE_COPPIA" in esito:
+            return f"Assenti: {allievo_str} & {partner_str}" if partner_str else f"Assente: {allievo_str}"
+        elif "ASSENTE_SINGOLO" in esito:
+            return f"Assente: {allievo_str}"
+        else:
+            return "Nessuna"
 
 
 class DocumentTemplateSerializer(serializers.ModelSerializer):

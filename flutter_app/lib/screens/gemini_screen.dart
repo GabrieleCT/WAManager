@@ -196,16 +196,16 @@ class _GeminiScreenState extends State<GeminiScreen> {
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
         final text = (log['testo_originale'] ?? '').toString().toLowerCase();
-        final mitt = (log['mittente'] ?? log['allievo_nome'] ?? '').toString().toLowerCase();
+        final mitt = (log['allievo_nome'] ?? log['mittente'] ?? '').toString().toLowerCase();
         final corso = (log['corso_nome'] ?? '').toString().toLowerCase();
         final resp = (log['risposta_ai'] ?? '').toString().toLowerCase();
-        final call = (log['chiamata_ai'] ?? '').toString().toLowerCase();
+        final pres = (log['presenze_segnate'] ?? log['azione_presenze'] ?? '').toString().toLowerCase();
 
         if (!text.contains(q) &&
             !mitt.contains(q) &&
             !corso.contains(q) &&
             !resp.contains(q) &&
-            !call.contains(q)) {
+            !pres.contains(q)) {
           return false;
         }
       }
@@ -225,55 +225,80 @@ class _GeminiScreenState extends State<GeminiScreen> {
   }
 
   Map<String, dynamic> _getEsitoStyle(String? esito) {
-    final e = (esito ?? '').toUpperCase();
-    if (e.contains('PRESENTE_SINGOLO')) {
+    final e = (esito ?? '').toUpperCase().trim();
+    if (e == 'PRESENTE_SINGOLO') {
       return {
-        'label': 'Presente (Singolo)',
-        'color': Colors.green.shade700,
+        'label': 'PRESENTE_SINGOLO',
+        'color': Colors.green.shade800,
         'bg': Colors.green.shade50,
-        'border': Colors.green.shade300,
+        'border': Colors.green.shade400,
         'icon': Icons.check_circle_outline,
       };
-    } else if (e.contains('PRESENTE_COPPIA')) {
+    } else if (e == 'PRESENTE_COPPIA') {
       return {
-        'label': 'Presente (Coppia)',
-        'color': Colors.teal.shade800,
+        'label': 'PRESENTE_COPPIA',
+        'color': Colors.teal.shade900,
         'bg': Colors.teal.shade50,
-        'border': Colors.teal.shade300,
+        'border': Colors.teal.shade400,
         'icon': Icons.group,
       };
-    } else if (e.contains('ASSENTE_SINGOLO')) {
+    } else if (e == 'ASSENTE_SINGOLO') {
       return {
-        'label': 'Assente (Singolo)',
+        'label': 'ASSENTE_SINGOLO',
         'color': Colors.orange.shade900,
         'bg': Colors.orange.shade50,
-        'border': Colors.orange.shade300,
-        'icon': Icons.cancel_outlined,
+        'border': Colors.orange.shade400,
+        'icon': Icons.person_off,
       };
-    } else if (e.contains('ASSENTE_COPPIA')) {
+    } else if (e == 'ASSENTE_COPPIA') {
       return {
-        'label': 'Assente (Coppia)',
-        'color': Colors.red.shade800,
+        'label': 'ASSENTE_COPPIA',
+        'color': Colors.red.shade900,
         'bg': Colors.red.shade50,
-        'border': Colors.red.shade300,
+        'border': Colors.red.shade400,
         'icon': Icons.group_off,
       };
-    } else if (e.contains('ERRORE')) {
+    } else if (e == 'IGNOTA') {
       return {
-        'label': 'Errore Chiamata',
+        'label': 'IGNOTA',
+        'color': Colors.blueGrey.shade800,
+        'bg': Colors.blueGrey.shade50,
+        'border': Colors.blueGrey.shade300,
+        'icon': Icons.help_outline,
+      };
+    } else {
+      return {
+        'label': e.isNotEmpty ? e : 'IGNOTA',
         'color': Colors.deepOrange.shade800,
         'bg': Colors.deepOrange.shade50,
         'border': Colors.deepOrange.shade300,
         'icon': Icons.warning_amber_rounded,
       };
+    }
+  }
+
+  String _getPresenzeSegnate(dynamic log) {
+    if (log['presenze_segnate'] != null && log['presenze_segnate'].toString().isNotEmpty) {
+      return log['presenze_segnate'].toString();
+    }
+    final esito = (log['esito_interpretato'] ?? '').toString().toUpperCase();
+    final allievo = log['allievo_nome']?.toString() ?? log['mittente']?.toString() ?? '';
+    final partner = log['partner_nome']?.toString() ?? '';
+
+    if (allievo.isEmpty || allievo.contains('@s.whatsapp.net')) {
+      return 'Nessuna (allievo non censito)';
+    }
+
+    if (esito == 'PRESENTE_COPPIA') {
+      return partner.isNotEmpty ? '$allievo & $partner' : allievo;
+    } else if (esito == 'PRESENTE_SINGOLO') {
+      return allievo;
+    } else if (esito == 'ASSENTE_COPPIA') {
+      return partner.isNotEmpty ? 'Assenti: $allievo & $partner' : 'Assente: $allievo';
+    } else if (esito == 'ASSENTE_SINGOLO') {
+      return 'Assente: $allievo';
     } else {
-      return {
-        'label': 'Altro / Non Specificato',
-        'color': Colors.blueGrey.shade700,
-        'bg': Colors.blueGrey.shade50,
-        'border': Colors.blueGrey.shade200,
-        'icon': Icons.help_outline,
-      };
+      return 'Nessuna';
     }
   }
 
@@ -284,8 +309,9 @@ class _GeminiScreenState extends State<GeminiScreen> {
     final content = _isLoading
         ? const Center(child: CircularProgressIndicator())
         : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. PANNELLO CONFIGURAZIONE & MONITORAGGIO 7 CORSI
+              // 1. PANNELLO CONFIGURAZIONE & STATO MONITORAGGIO
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Card(
@@ -296,7 +322,6 @@ class _GeminiScreenState extends State<GeminiScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Titolo e Azioni
                         Row(
                           children: [
                             Container(
@@ -313,12 +338,12 @@ class _GeminiScreenState extends State<GeminiScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Gemini AI • Monitoraggio Esclusivo 7 Gruppi Corso WhatsApp',
+                                    'Gemini AI • Monitoraggio Gruppi Corsi WhatsApp',
                                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                   ),
                                   SizedBox(height: 2),
                                   Text(
-                                    'Intercetta solo i 7 gruppi dei corsi (esclusi gruppi generali scuola o chat esterne). Registra messaggio, prompt Gemini, risposta ed allievo/coppia segnato presente o assente.',
+                                    'Intercetta solo i 7 gruppi dei corsi (esclusi gruppi generali scuola o chat esterne). Registra data, allievo, messaggio, risposta AI ed esito presenze.',
                                     style: TextStyle(fontSize: 12, color: Colors.grey),
                                   ),
                                 ],
@@ -387,7 +412,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
                               Icon(Icons.hub_outlined, size: 16, color: Colors.indigo.shade600),
                               const SizedBox(width: 8),
                               Text(
-                                '7 Corsi Monitorati in Tempo Reale:',
+                                '7 Corsi Monitorati:',
                                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
                               ),
                               const SizedBox(width: 8),
@@ -396,13 +421,13 @@ class _GeminiScreenState extends State<GeminiScreen> {
                                   scrollDirection: Axis.horizontal,
                                   child: Row(
                                     children: [
-                                      _buildCourseBadge('Ripamonti - Avanzato'),
-                                      _buildCourseBadge('Ripamonti - Intermedio'),
-                                      _buildCourseBadge('Ripamonti - Principiante'),
-                                      _buildCourseBadge('San Donato - Int 20:30'),
-                                      _buildCourseBadge('San Donato - Int 21:30'),
-                                      _buildCourseBadge('San Donato - Princ 19:30'),
-                                      _buildCourseBadge('San Donato - Princ 20:30'),
+                                      _buildCourseBadge('Ripamonti Avanzato 21:30'),
+                                      _buildCourseBadge('Ripamonti Intermedio 20:30'),
+                                      _buildCourseBadge('Ripamonti Principiante 19:30'),
+                                      _buildCourseBadge('San Donato Intermedio 20:30'),
+                                      _buildCourseBadge('San Donato Intermedio 21:30'),
+                                      _buildCourseBadge('San Donato Principiante 19:30'),
+                                      _buildCourseBadge('San Donato Principiante 20:30'),
                                     ],
                                   ),
                                 ),
@@ -426,7 +451,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
                       flex: 3,
                       child: TextField(
                         decoration: InputDecoration(
-                          hintText: 'Cerca per mittente, testo, prompt o risposta...',
+                          hintText: 'Cerca per allievo, messaggio, corso o risposta...',
                           prefixIcon: const Icon(Icons.search, size: 20),
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -461,7 +486,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
                           ),
                           ..._corsi.map((c) => DropdownMenuItem(
                                 value: c.id,
-                                child: Text('${c.scuolaNome} - ${c.livello}', overflow: TextOverflow.ellipsis),
+                                child: Text('${c.scuolaNome} ${c.livello}', overflow: TextOverflow.ellipsis),
                               )),
                         ],
                         onChanged: (val) => setState(() => _selectedCorsoId = val),
@@ -478,14 +503,15 @@ class _GeminiScreenState extends State<GeminiScreen> {
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          labelText: 'Filtra Esito',
+                          labelText: 'Filtra Risposta AI',
                         ),
                         items: const [
-                          DropdownMenuItem(value: null, child: Text('Tutti gli esiti')),
-                          DropdownMenuItem(value: 'PRESENTE', child: Text('Presente (Singolo o Coppia)')),
-                          DropdownMenuItem(value: 'ASSENTE', child: Text('Assente (Singolo o Coppia)')),
-                          DropdownMenuItem(value: 'IGNOTA', child: Text('Non classificato')),
-                          DropdownMenuItem(value: 'ERRORE', child: Text('Errore API')),
+                          DropdownMenuItem(value: null, child: Text('Tutte le risposte')),
+                          DropdownMenuItem(value: 'PRESENTE_SINGOLO', child: Text('PRESENTE_SINGOLO')),
+                          DropdownMenuItem(value: 'PRESENTE_COPPIA', child: Text('PRESENTE_COPPIA')),
+                          DropdownMenuItem(value: 'ASSENTE_SINGOLO', child: Text('ASSENTE_SINGOLO')),
+                          DropdownMenuItem(value: 'ASSENTE_COPPIA', child: Text('ASSENTE_COPPIA')),
+                          DropdownMenuItem(value: 'IGNOTA', child: Text('IGNOTA')),
                         ],
                         onChanged: (val) => setState(() => _selectedEsito = val),
                       ),
@@ -521,33 +547,261 @@ class _GeminiScreenState extends State<GeminiScreen> {
                   ],
                 ),
               ),
-              const Divider(height: 12),
+              const SizedBox(height: 6),
 
-              // 3. LISTA DEI LOG CON LE 3 SEZIONI RICHIESTE
+              // 3. TABELLA DEI LOG (7 COLONNE COME RICHIESTO)
               Expanded(
                 child: filteredLogs.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.mark_chat_read_outlined, size: 64, color: Colors.grey.shade300),
+                            Icon(Icons.table_rows_outlined, size: 64, color: Colors.grey.shade300),
                             const SizedBox(height: 12),
                             Text(
                               _logs.isEmpty
-                                  ? 'Nessun messaggio WhatsApp ancora ricevuto sui gruppi dei corsi.'
+                                  ? 'Nessun messaggio WhatsApp ancora ricevuto sui 7 gruppi dei corsi.'
                                   : 'Nessun log corrisponde ai filtri selezionati.',
                               style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
                             ),
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        itemCount: filteredLogs.length,
-                        itemBuilder: (context, index) {
-                          final log = filteredLogs[index];
-                          return _buildLogCard(log);
-                        },
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              return Scrollbar(
+                                thumbVisibility: true,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                                      child: DataTable(
+                                        headingRowColor: WidgetStateProperty.all(Colors.blueGrey.shade50),
+                                        headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 13),
+                                        dataRowMinHeight: 48,
+                                        dataRowMaxHeight: 64,
+                                        horizontalMargin: 16,
+                                        columnSpacing: 18,
+                                        columns: const [
+                                          // 1. Data e orario del messaggio intercettato
+                                          DataColumn(
+                                            label: Text('1. Data e Orario'),
+                                            tooltip: 'Data e orario del messaggio intercettato',
+                                          ),
+                                          // 2. Nome e cognome dell\'allievo che ha scritto
+                                          DataColumn(
+                                            label: Text('2. Allievo'),
+                                            tooltip: 'Nome e cognome dell\'allievo che ha scritto',
+                                          ),
+                                          // 3. Messaggio intercettato
+                                          DataColumn(
+                                            label: Text('3. Messaggio Intercettato'),
+                                            tooltip: 'Testo del messaggio ricevuto nel gruppo WhatsApp',
+                                          ),
+                                          // 4. Risposta di GEMINI (PRESENTE_SINGOLO, ASSENTE_SINGOLO, PRESENTE_COPPIA, ASSENTE_COPPIA, IGNOTA)
+                                          DataColumn(
+                                            label: Text('4. Risposta di GEMINI'),
+                                            tooltip: 'Valore restituito da Gemini (PRESENTE_SINGOLO, ASSENTE_SINGOLO, PRESENTE_COPPIA, ASSENTE_COPPIA, IGNOTA)',
+                                          ),
+                                          // 5. Gruppo di provenienza messaggio (es: Ripamonti Principiante 19:30)
+                                          DataColumn(
+                                            label: Text('5. Gruppo di Provenienza'),
+                                            tooltip: 'Gruppo corso WhatsApp di provenienza (es: Ripamonti Principiante 19:30)',
+                                          ),
+                                          // 6. Presenza o presenze che verranno segnate
+                                          DataColumn(
+                                            label: Text('6. Presenze Segnate'),
+                                            tooltip: 'Presenza o presenze che verranno segnate nel gestionale',
+                                          ),
+                                          // 7. Dettaglio (icona lente di ingrandimento)
+                                          DataColumn(
+                                            label: Center(child: Text('7. Dettaglio')),
+                                            tooltip: 'Clicca sulla lente per vedere tutti i dettagli completi',
+                                          ),
+                                        ],
+                                        rows: filteredLogs.map((log) {
+                                          final esito = (log['esito_interpretato'] ?? 'IGNOTA').toString().trim();
+                                          final esitoStyle = _getEsitoStyle(esito);
+
+                                          final allievo = (log['allievo_nome']?.toString().isNotEmpty == true)
+                                              ? log['allievo_nome'].toString()
+                                              : (log['mittente']?.toString() ?? 'Sconosciuto');
+
+                                          final testo = log['testo_originale']?.toString() ?? '';
+                                          final corso = (log['corso_nome']?.toString().isNotEmpty == true)
+                                              ? log['corso_nome'].toString()
+                                              : (log['gruppo_whatsapp']?.toString() ?? '-');
+
+                                          final presenze = _getPresenzeSegnate(log);
+                                          final dataOra = _formatDateTime(log['timestamp']);
+
+                                          return DataRow(
+                                            cells: [
+                                              // 1. Data e orario
+                                              DataCell(
+                                                Text(
+                                                  dataOra,
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                                ),
+                                              ),
+
+                                              // 2. Nome e cognome allievo
+                                              DataCell(
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    CircleAvatar(
+                                                      radius: 12,
+                                                      backgroundColor: Colors.blue.shade100,
+                                                      child: Text(
+                                                        allievo.isNotEmpty ? allievo[0].toUpperCase() : '?',
+                                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    ConstrainedBox(
+                                                      constraints: const BoxConstraints(maxWidth: 160),
+                                                      child: Text(
+                                                        allievo,
+                                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+
+                                              // 3. Messaggio intercettato
+                                              DataCell(
+                                                ConstrainedBox(
+                                                  constraints: const BoxConstraints(maxWidth: 240),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFE7FBD3), // Tonalita WhatsApp
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: const Color(0xFFB4E7A1)),
+                                                    ),
+                                                    child: Text(
+                                                      testo.isNotEmpty ? testo : '(Vuoto)',
+                                                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                                      maxLines: 2,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+
+                                              // 4. Risposta di GEMINI (Badged)
+                                              DataCell(
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                  decoration: BoxDecoration(
+                                                    color: esitoStyle['bg'] as Color,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(color: esitoStyle['border'] as Color),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(esitoStyle['icon'] as IconData, size: 14, color: esitoStyle['color'] as Color),
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        esitoStyle['label'] as String,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: esitoStyle['color'] as Color,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+
+                                              // 5. Gruppo di provenienza (es: Ripamonti Principiante 19:30)
+                                              DataCell(
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.indigo.shade50,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(color: Colors.indigo.shade200),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.school, size: 13, color: Colors.indigo.shade800),
+                                                      const SizedBox(width: 5),
+                                                      ConstrainedBox(
+                                                        constraints: const BoxConstraints(maxWidth: 180),
+                                                        child: Text(
+                                                          corso,
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.indigo.shade900,
+                                                          ),
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+
+                                              // 6. Presenza o presenze che verranno segnate
+                                              DataCell(
+                                                ConstrainedBox(
+                                                  constraints: const BoxConstraints(maxWidth: 220),
+                                                  child: Text(
+                                                    presenze,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: (esito.contains('PRESENTE') || esito.contains('ASSENTE'))
+                                                          ? FontWeight.bold
+                                                          : FontWeight.normal,
+                                                      color: esito.contains('PRESENTE')
+                                                          ? Colors.green.shade900
+                                                          : (esito.contains('ASSENTE') ? Colors.red.shade900 : Colors.black87),
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ),
+
+                                              // 7. Dettaglio (Icona lente di ingrandimento)
+                                              DataCell(
+                                                Center(
+                                                  child: IconButton(
+                                                    icon: const Icon(Icons.search, color: Colors.blue),
+                                                    tooltip: 'Visualizza dettaglio completo',
+                                                    onPressed: () => _mostraDettaglioModal(context, log),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
               ),
             ],
@@ -559,7 +813,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gemini AI • Monitoraggio Gruppi WhatsApp'),
+        title: const Text('Gemini AI • Tabella Log Corsi WhatsApp'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
@@ -584,81 +838,138 @@ class _GeminiScreenState extends State<GeminiScreen> {
     );
   }
 
-  Widget _buildLogCard(dynamic log) {
-    final esito = log['esito_interpretato']?.toString() ?? 'IGNOTA';
+  // ─── MODALE DETTAGLIO LOG (Lente di ingrandimento) ───────────────
+  void _mostraDettaglioModal(BuildContext context, dynamic log) {
+    final esito = (log['esito_interpretato'] ?? 'IGNOTA').toString().trim();
     final esitoStyle = _getEsitoStyle(esito);
 
-    final mittente = (log['mittente']?.toString().isNotEmpty == true)
-        ? log['mittente']
-        : (log['allievo_nome'] ?? 'Mittente WhatsApp');
+    final allievo = (log['allievo_nome']?.toString().isNotEmpty == true)
+        ? log['allievo_nome'].toString()
+        : (log['mittente']?.toString() ?? 'Sconosciuto');
 
-    final corsoNome = (log['corso_nome']?.toString().isNotEmpty == true)
-        ? log['corso_nome']
-        : (log['gruppo_whatsapp'] ?? 'Gruppo WhatsApp');
+    final corso = (log['corso_nome']?.toString().isNotEmpty == true)
+        ? log['corso_nome'].toString()
+        : (log['gruppo_whatsapp']?.toString() ?? '-');
 
-    final dataOraStr = _formatDateTime(log['timestamp']);
+    final dataOra = _formatDateTime(log['timestamp']);
     final testo = log['testo_originale']?.toString() ?? '';
-    final chiamataPrompt = log['chiamata_ai']?.toString() ?? '';
-    final rispostaAi = log['risposta_ai']?.toString() ?? '';
+    final prompt = log['chiamata_ai']?.toString() ?? '';
+    final risposta = log['risposta_ai']?.toString() ?? '';
+    final azionePresenze = log['azione_presenze']?.toString() ?? _getPresenzeSegnate(log);
 
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 14),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: esitoStyle['border'] as Color, width: 1.2),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Intestazione Card: Mittente, Corso, Esito e Data
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: esitoStyle['bg'] as Color,
-                  child: Icon(esitoStyle['icon'] as IconData, size: 18, color: esitoStyle['color'] as Color),
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 780, maxHeight: 850),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header modale
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blueGrey.shade50,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.zoom_in, color: Colors.blue.shade800, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Dettaglio Intercettazione & Risposta Gemini',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$dataOra • $corso',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Chiudi',
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Contenuto scrollabile con le sezioni dettagliate
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Badge riassuntivo Mittente & Esito
                       Row(
                         children: [
-                          Flexible(
-                            child: Text(
-                              mittente,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: Colors.blue.shade100,
+                                    child: Text(
+                                      allievo.isNotEmpty ? allievo[0].toUpperCase() : '?',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          allievo,
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                        ),
+                                        if (log['mittente'] != null && log['mittente'] != allievo)
+                                          Text(
+                                            'Numero/ID: ${log['mittente']}',
+                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.blue.shade200),
+                              color: esitoStyle['bg'] as Color,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: esitoStyle['border'] as Color),
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.school, size: 12, color: Colors.blue.shade800),
-                                const SizedBox(width: 4),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 220),
-                                  child: Text(
-                                    corsoNome,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.blue.shade900,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                Icon(esitoStyle['icon'] as IconData, size: 20, color: esitoStyle['color'] as Color),
+                                const SizedBox(width: 8),
+                                Text(
+                                  esitoStyle['label'] as String,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: esitoStyle['color'] as Color,
                                   ),
                                 ),
                               ],
@@ -666,277 +977,174 @@ class _GeminiScreenState extends State<GeminiScreen> {
                           ),
                         ],
                       ),
-                      if (log['lezione_descrizione'] != null && log['lezione_descrizione'].toString().isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            'Lezione: ${log['lezione_descrizione']}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      const SizedBox(height: 16),
+
+                      // 1. Messaggio WhatsApp
+                      _buildModalSectionBox(
+                        title: '1. MESSAGGIO WHATSAPP INTERCETTATO',
+                        icon: Icons.chat,
+                        titleColor: Colors.green.shade900,
+                        bgColor: const Color(0xFFE7FBD3),
+                        borderColor: const Color(0xFFB4E7A1),
+                        content: SelectableText(
+                          testo.isNotEmpty ? testo : '(Nessun testo)',
+                          style: const TextStyle(fontSize: 14, height: 1.35, color: Colors.black87),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 2. Chiamata inviata a Gemini AI (Prompt)
+                      _buildModalSectionBox(
+                        title: '2. CHIAMATA A GEMINI AI (PROMPT INVIATO)',
+                        icon: Icons.terminal,
+                        titleColor: Colors.cyanAccent,
+                        bgColor: const Color(0xFF1E293B),
+                        borderColor: const Color(0xFF334155),
+                        trailing: prompt.isNotEmpty
+                            ? InkWell(
+                                onTap: () {
+                                  Clipboard.setData(ClipboardData(text: prompt));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Prompt copiato negli appunti!'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.copy, size: 13, color: Colors.white70),
+                                    SizedBox(width: 4),
+                                    Text('Copia', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                                  ],
+                                ),
+                              )
+                            : null,
+                        content: SelectableText(
+                          prompt.isNotEmpty ? prompt : '(Prompt non registrato per questo log)',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: Color(0xFFE2E8F0),
+                            height: 1.4,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-
-                // Esito Badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: esitoStyle['bg'] as Color,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: esitoStyle['border'] as Color),
-                  ),
-                  child: Text(
-                    esitoStyle['label'] as String,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: esitoStyle['color'] as Color,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  dataOraStr,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // SEZIONE 1: 💬 MESSAGGIO RICEVUTO DAL GRUPPO
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE7FBD3), // Tonalità fumetto WhatsApp
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFB4E7A1)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.chat, size: 14, color: Colors.green.shade900),
-                      const SizedBox(width: 6),
-                      Text(
-                        '1. MESSAGGIO RICEVUTO SUL GRUPPO WHATSAPP',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade900,
-                          letterSpacing: 0.5,
-                        ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    testo.isNotEmpty ? testo : '(Nessun testo)',
-                    style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.35),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+                      const SizedBox(height: 14),
 
-            // SEZIONE 2: 🤖 CHIAMATA A GEMINI AI (PROMPT INVIATO)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B), // Dark slate moderno stile console/prompt
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF334155)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.terminal, size: 14, color: Colors.cyanAccent),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '2. CHIAMATA A GEMINI AI (PROMPT INVIATO)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.cyanAccent,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (chiamataPrompt.isNotEmpty)
-                        InkWell(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: chiamataPrompt));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Prompt copiato negli appunti!'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.copy, size: 12, color: Colors.white70),
-                              SizedBox(width: 4),
-                              Text('Copia', style: TextStyle(fontSize: 11, color: Colors.white70)),
-                            ],
+                      // 3. Risposta di Gemini AI
+                      _buildModalSectionBox(
+                        title: '3. RISPOSTA DI GEMINI AI',
+                        icon: Icons.auto_awesome,
+                        titleColor: Colors.purple.shade900,
+                        bgColor: const Color(0xFFF3E8FF),
+                        borderColor: const Color(0xFFD8B4FE),
+                        content: SelectableText(
+                          risposta.isNotEmpty ? risposta : '(Nessuna risposta registrata)',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF3B0764),
+                            height: 1.35,
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    chiamataPrompt.isNotEmpty ? chiamataPrompt : '(Prompt non registrato per log precedenti)',
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: Color(0xFFE2E8F0),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+                      ),
+                      const SizedBox(height: 14),
 
-            // SEZIONE 3: 💡 RISPOSTA DI GEMINI
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3E8FF), // Viola chiaro AI
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFD8B4FE)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.auto_awesome, size: 14, color: Colors.purple.shade900),
-                      const SizedBox(width: 6),
-                      Text(
-                        '3. RISPOSTA DI GEMINI AI',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.purple.shade900,
-                          letterSpacing: 0.5,
+                      // 4. Aggiornamento Presenze
+                      _buildModalSectionBox(
+                        title: '4. PRESENZA O PRESENZE CHE VERRANNO SEGNATE',
+                        icon: Icons.how_to_reg,
+                        titleColor: esito.contains('PRESENTE')
+                            ? Colors.green.shade900
+                            : (esito.contains('ASSENTE') ? Colors.red.shade900 : Colors.blueGrey.shade900),
+                        bgColor: esito.contains('PRESENTE')
+                            ? const Color(0xFFE8F5E9)
+                            : (esito.contains('ASSENTE') ? const Color(0xFFFFEBEE) : const Color(0xFFF1F5F9)),
+                        borderColor: esito.contains('PRESENTE')
+                            ? const Color(0xFF81C784)
+                            : (esito.contains('ASSENTE') ? const Color(0xFFE57373) : const Color(0xFFCBD5E1)),
+                        content: SelectableText(
+                          azionePresenze,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: (esito.contains('PRESENTE') || esito.contains('ASSENTE')) ? FontWeight.bold : FontWeight.w500,
+                            color: esito.contains('PRESENTE')
+                                ? Colors.green.shade900
+                                : (esito.contains('ASSENTE') ? Colors.red.shade900 : Colors.blueGrey.shade900),
+                            height: 1.35,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    rispostaAi.isNotEmpty ? rispostaAi : '(Nessuna risposta registrata)',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF3B0764),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
 
-            // SEZIONE 4: 🎯 AGGIORNAMENTO PRESENZE (ALLIEVO O COPPIA)
-            _buildSezionePresenze(log, esito, mittente),
-          ],
+              // Footer modale
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Chiudi'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSezionePresenze(dynamic log, String esito, String mittente) {
-    String azione = log['azione_presenze']?.toString() ?? '';
-    final partner = log['partner_nome']?.toString() ?? '';
-
-    if (azione.isEmpty) {
-      if (esito == 'PRESENTE_COPPIA') {
-        azione = partner.isNotEmpty
-            ? 'Coppia impostata come PRESENTE: $mittente & $partner'
-            : 'Allievo impostato come PRESENTE: $mittente (risposta plurale ma nessun partner a sistema)';
-      } else if (esito == 'PRESENTE_SINGOLO') {
-        azione = 'Allievo impostato come PRESENTE: $mittente';
-      } else if (esito == 'ASSENTE_COPPIA') {
-        azione = partner.isNotEmpty
-            ? 'Coppia impostata come ASSENTE: $mittente & $partner'
-            : 'Allievo impostato come ASSENTE: $mittente (risposta plurale ma nessun partner a sistema)';
-      } else if (esito == 'ASSENTE_SINGOLO') {
-        azione = 'Allievo impostato come ASSENTE: $mittente';
-      } else if (esito == 'IGNOTA') {
-        azione = 'Nessuna presenza modificata per $mittente (il messaggio non è una conferma di presenza o assenza)';
-      } else {
-        azione = 'Nessuna presenza modificata (errore chiamata Gemini)';
-      }
-    }
-
-    final isPresente = esito.contains('PRESENTE');
-    final isAssente = esito.contains('ASSENTE');
-
-    Color bgColor = const Color(0xFFF1F5F9);
-    Color borderColor = const Color(0xFFCBD5E1);
-    Color textColor = Colors.blueGrey.shade900;
-    IconData iconData = Icons.info_outline;
-
-    if (isPresente) {
-      bgColor = const Color(0xFFE8F5E9);
-      borderColor = const Color(0xFF81C784);
-      textColor = Colors.green.shade900;
-      iconData = Icons.how_to_reg;
-    } else if (isAssente) {
-      bgColor = const Color(0xFFFFEBEE);
-      borderColor = const Color(0xFFE57373);
-      textColor = Colors.red.shade900;
-      iconData = Icons.person_off;
-    }
-
+  Widget _buildModalSectionBox({
+    required String title,
+    required IconData icon,
+    required Color titleColor,
+    required Color bgColor,
+    required Color borderColor,
+    required Widget content,
+    Widget? trailing,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: borderColor, width: 1.2),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(iconData, size: 20, color: textColor),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '4. AGGIORNAMENTO PRESENZE (ALLIEVO / COPPIA)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                    letterSpacing: 0.5,
-                  ),
+          Row(
+            children: [
+              Icon(icon, size: 15, color: titleColor),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: titleColor,
+                  letterSpacing: 0.5,
                 ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  azione,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: (isPresente || isAssente) ? FontWeight.bold : FontWeight.normal,
-                    color: textColor,
-                    height: 1.3,
-                  ),
-                ),
+              ),
+              if (trailing != null) ...[
+                const Spacer(),
+                trailing,
               ],
-            ),
+            ],
           ),
+          const SizedBox(height: 8),
+          content,
         ],
       ),
     );
