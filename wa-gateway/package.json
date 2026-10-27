@@ -1,6 +1,6 @@
 {
   "name": "wa-gateway",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "WhatsApp Gateway with API",
   "main": "index.js",
   "scripts": {
