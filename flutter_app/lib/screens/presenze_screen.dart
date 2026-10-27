@@ -24,7 +24,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     Map<String, dynamic>? _matchStats;
 
   List<Scuola> _scuole = [];
-  List<Corso> _corsi = [];
   String _sollecitoTemplate = 'Ciao <nome_allievo>, ci sei stasera al corso?';
 
   @override
@@ -54,7 +53,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     setState(() => _loading = true);
     final lezioni = await _api.getLezioni();
     final scuole = await _api.getScuole();
-    final corsi = await _api.getCorsi();
     final daemonConfig = await _api.getDaemonConfig();
     if (daemonConfig != null && daemonConfig.sollecitoTesto.trim().isNotEmpty) {
       _sollecitoTemplate = daemonConfig.sollecitoTesto.trim();
@@ -115,7 +113,6 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     if (mounted) {
       setState(() {
         _scuole = scuole;
-        _corsi = corsi;
         _allLezioni = allSorted;
         _lezioniMenu = menuLezioni;
         _menuDate = closestDate;
@@ -314,148 +311,274 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     );
   }
 
-  void _showSelectAnyLezioneDialog() {
-    String? selectedScuolaId;
-    String? selectedCorsoId;
+  void _showSelectDateCalendarDialog() {
+    DateTime initialDate;
+    if (_menuDate != null && DateTime.tryParse(_menuDate!) != null) {
+      initialDate = DateTime.parse(_menuDate!);
+    } else {
+      initialDate = DateTime.now();
+    }
+
+    DateTime viewMonth = DateTime(initialDate.year, initialDate.month, 1);
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    // Raggruppa le lezioni per data
+    final Map<String, List<Lezione>> lezioniPerData = {};
+    for (final l in _allLezioni) {
+      lezioniPerData.putIfAbsent(l.data, () => []).add(l);
+    }
+
+    const mesi = [
+      'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+      'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+    ];
+    const giorniSettimana = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
-          List<Corso> availableCorsi = selectedScuolaId == null 
-              ? [] 
-              : _corsi.where((c) => c.scuolaId == selectedScuolaId).toList();
-              
-          List<Lezione> filteredLezioni = _allLezioni;
-          if (selectedCorsoId != null) {
-            filteredLezioni = _allLezioni.where((l) => l.corsoId == selectedCorsoId).toList();
-          } else if (selectedScuolaId != null) {
-            filteredLezioni = _allLezioni.where((l) => l.scuolaId == selectedScuolaId || availableCorsi.any((c) => c.id == l.corsoId)).toList();
-          }
-          
-          filteredLezioni.sort((a, b) {
-            final cmpData = a.data.compareTo(b.data);
-            if (cmpData != 0) return cmpData;
-            return a.orarioEffettivo.compareTo(b.orarioEffettivo);
-          });
+          final daysInMonth = DateTime(viewMonth.year, viewMonth.month + 1, 0).day;
+          final firstWeekday = DateTime(viewMonth.year, viewMonth.month, 1).weekday; // 1=Lun, 7=Dom
+          final prefixEmptyDays = firstWeekday - 1;
+          final isMobile = MediaQuery.of(context).size.width < 500;
 
           return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.calendar_month, color: Colors.deepPurple),
-              SizedBox(width: 10),
-              Text('Scegli una Lezione'),
-            ],
-          ),
-          content: SizedBox(
-            width: 600,
-            height: 480,
-            child: Column(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            title: Row(
               children: [
-                DropdownButtonFormField<String?>(
-                  value: selectedScuolaId,
-                  decoration: InputDecoration(
-                    labelText: 'Filtra per Scuola',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    shape: BoxShape.circle,
                   ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Tutte le Scuole')),
-                    ..._scuole.map((s) => DropdownMenuItem(value: s.id, child: Text(s.nome))),
-                  ],
-                  onChanged: (val) {
-                    setDlgState(() {
-                      selectedScuolaId = val;
-                      selectedCorsoId = null; // reset corso when scuola changes
-                    });
-                  },
+                  child: Icon(Icons.calendar_month, color: Colors.blue.shade700, size: 24),
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
-                  value: selectedCorsoId,
-                  decoration: InputDecoration(
-                    labelText: 'Filtra per Corso',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Scegli Data Lezione',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Seleziona un giorno dal calendario mensile',
+                        style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.normal),
+                      ),
+                    ],
                   ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Tutti i Corsi')),
-                    ...availableCorsi.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'))),
-                  ],
-                  onChanged: selectedScuolaId == null ? null : (val) {
-                    setDlgState(() {
-                      selectedCorsoId = val;
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: filteredLezioni.isEmpty
-                      ? const Center(child: Text('Nessuna lezione corrispondente ai filtri.'))
-                      : ListView.separated(
-                          itemCount: filteredLezioni.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (ctx, i) {
-                            final l = filteredLezioni[i];
-                            final isCurrent = _selectedLezione?.id == l.id;
-
-                            return ListTile(
-                              selected: isCurrent,
-                              selectedTileColor: Colors.deepPurple.shade50,
-                              leading: CircleAvatar(
-                                backgroundColor: isCurrent ? Colors.deepPurple : Colors.grey.shade200,
-                                foregroundColor: isCurrent ? Colors.white : Colors.black87,
-                                child: const Icon(Icons.event, size: 20),
-                              ),
-                              title: Row(
-                                children: [
-                                  Text(_formatData(l.data), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  if (l.titolo.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.deepPurple.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        l.titolo,
-                                        style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade900, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              subtitle: Text(
-                                '${l.scuolaNome != null ? "${l.scuolaNome} • " : ""}${l.corsoDescrizione}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                              ),
-                              trailing: isCurrent ? const Icon(Icons.check, color: Colors.deepPurple) : null,
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                final isMenu = _lezioniMenu.any((o) => o.id == l.id);
-                                setState(() {
-                                  _selectedLezione = l;
-                                  _isCustomSelection = !isMenu;
-                                });
-                                _loadPresenze(l.id);
-                              },
-                            );
-                          },
-                        ),
                 ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Chiudi'),
+            content: SizedBox(
+              width: isMobile ? MediaQuery.of(context).size.width * 0.9 : 380,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Barra navigazione mese
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            tooltip: 'Mese precedente',
+                            onPressed: () {
+                              setDlgState(() {
+                                viewMonth = DateTime(viewMonth.year, viewMonth.month - 1, 1);
+                              });
+                            },
+                          ),
+                          Text(
+                            '${mesi[viewMonth.month - 1]} ${viewMonth.year}',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            tooltip: 'Mese successivo',
+                            onPressed: () {
+                              setDlgState(() {
+                                viewMonth = DateTime(viewMonth.year, viewMonth.month + 1, 1);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Giorni della settimana
+                    Row(
+                      children: giorniSettimana.map((g) {
+                        final isWeekend = g == 'Sab' || g == 'Dom';
+                        return Expanded(
+                          child: Center(
+                            child: Text(
+                              g,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: isWeekend ? Colors.red.shade400 : Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const Divider(height: 16),
+
+                    // Giorni del mese
+                    Builder(
+                      builder: (context) {
+                        final totalSlots = prefixEmptyDays + daysInMonth;
+                        final totalRows = (totalSlots / 7).ceil();
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(totalRows, (rowIndex) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                children: List.generate(7, (colIndex) {
+                                  final slotIndex = rowIndex * 7 + colIndex;
+                                  final dayNumber = slotIndex - prefixEmptyDays + 1;
+
+                                  if (dayNumber < 1 || dayNumber > daysInMonth) {
+                                    return const Expanded(child: SizedBox(height: 44));
+                                  }
+
+                                  final dayDate = DateTime(viewMonth.year, viewMonth.month, dayNumber);
+                                  final dateStr = DateFormat('yyyy-MM-dd').format(dayDate);
+                                  final lezioniGiorno = lezioniPerData[dateStr] ?? [];
+                                  final hasLessons = lezioniGiorno.isNotEmpty;
+                                  final isSelected = _menuDate == dateStr;
+                                  final isToday = todayStr == dateStr;
+
+                                  return Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () {
+                                        if (!hasLessons) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Nessuna lezione programmata per ${_formatData(dateStr)}'),
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        final sortedLezioni = List<Lezione>.from(lezioniGiorno)
+                                          ..sort((a, b) => a.orarioEffettivo.compareTo(b.orarioEffettivo));
+
+                                        Navigator.pop(ctx);
+                                        setState(() {
+                                          _menuDate = dateStr;
+                                          _lezioniMenu = sortedLezioni;
+                                          _selectedLezione = sortedLezioni.first;
+                                          _isCustomSelection = false;
+                                        });
+                                        _loadPresenze(_selectedLezione!.id);
+                                      },
+                                      child: Container(
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? Colors.deepPurple.shade100
+                                              : (isToday ? Colors.grey.shade200 : Colors.transparent),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: isToday
+                                              ? Border.all(color: Colors.deepPurple.shade300, width: 1.5)
+                                              : (isSelected ? Border.all(color: Colors.deepPurple, width: 1.5) : null),
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              '$dayNumber',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: (isSelected || isToday || hasLessons)
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                                color: isSelected
+                                                    ? Colors.deepPurple.shade900
+                                                    : (hasLessons ? Colors.black87 : Colors.grey.shade400),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            if (hasLessons)
+                                              Container(
+                                                width: 6,
+                                                height: 6,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade600,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              )
+                                            else
+                                              const SizedBox(height: 6),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            );
+                          }),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 12),
+                    // Legenda puntino blu
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade600,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Puntino blu = lezione presente',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        );
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Chiudi'),
+              ),
+            ],
+          );
         },
       ),
     );
   }
+
 
   void _showAddJollyDialog() {
     if (_selectedLezione == null) return;
@@ -797,16 +920,16 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             },
           );
 
-    final Widget scegliAltraLezioneBtn = ElevatedButton.icon(
+    final Widget scegliAltraDataBtn = ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: _isCustomSelection ? Colors.deepPurple : Colors.grey.shade800,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      icon: const Icon(Icons.event_note, size: 18),
-      label: const Text('Scegli Altra Lezione'),
-      onPressed: _showSelectAnyLezioneDialog,
+      icon: const Icon(Icons.calendar_month, size: 18),
+      label: const Text('Scegli Altra Data'),
+      onPressed: _showSelectDateCalendarDialog,
     );
 
     return Scaffold(
@@ -849,7 +972,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    child: scegliAltraLezioneBtn,
+                    child: scegliAltraDataBtn,
                   ),
                 ] else ...[
                   Row(
@@ -860,7 +983,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                         child: lezioneSelectorWidget,
                       ),
                       const SizedBox(width: 12),
-                      scegliAltraLezioneBtn,
+                      scegliAltraDataBtn,
                     ],
                   ),
                 ],
