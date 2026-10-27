@@ -364,6 +364,7 @@ class Lezione {
   final String id;
   final String corsoId;
   final String corsoDescrizione;
+  final String? corsoOrario;
   final String? scuolaId;
   final String? scuolaNome;
   final String data;
@@ -377,6 +378,7 @@ class Lezione {
     required this.id,
     required this.corsoId,
     required this.corsoDescrizione,
+    this.corsoOrario,
     this.scuolaId,
     this.scuolaNome,
     required this.data,
@@ -387,11 +389,28 @@ class Lezione {
     this.presentiCount = 0,
   });
 
+  String get orarioEffettivo {
+    if (corsoOrario != null && corsoOrario!.isNotEmpty) return corsoOrario!;
+    final match = RegExp(r'\((\d{1,2}:\d{2})\)').firstMatch(corsoDescrizione);
+    if (match != null) return match.group(1)!;
+    return '';
+  }
+
   factory Lezione.fromJson(Map<String, dynamic> json) {
+    String? orario = json['corso_orario'] ?? json['orario'];
+    if (orario == null || orario.isEmpty) {
+      final desc = json['corso_descrizione'] ?? '';
+      final match = RegExp(r'\((\d{1,2}:\d{2})\)').firstMatch(desc);
+      if (match != null) {
+        orario = match.group(1);
+      }
+    }
+
     return Lezione(
       id: json['id'] ?? '',
       corsoId: json['corso'] ?? '',
       corsoDescrizione: json['corso_descrizione'] ?? '',
+      corsoOrario: orario,
       scuolaId: json['scuola_id'],
       scuolaNome: json['scuola_nome'],
       data: json['data'] ?? '',

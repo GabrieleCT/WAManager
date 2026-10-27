@@ -61,24 +61,34 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     }
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    // Ordine cronologico decrescente per facile reperibilità
+    // Ordine cronologico decrescente per facile reperibilità (a parità di data, crescente per orario)
     final allSorted = List<Lezione>.from(lezioni)
-      ..sort((a, b) => b.data.compareTo(a.data));
+      ..sort((a, b) {
+        final cmpData = b.data.compareTo(a.data);
+        if (cmpData != 0) return cmpData;
+        return a.orarioEffettivo.compareTo(b.orarioEffettivo);
+      });
 
     // Seleziona la data futura più vicina (incluso oggi se presente)
     final futureSorted = allSorted.where((l) => l.data.compareTo(todayStr) >= 0).toList()
-      ..sort((a, b) => a.data.compareTo(b.data));
+      ..sort((a, b) {
+        final cmpData = a.data.compareTo(b.data);
+        if (cmpData != 0) return cmpData;
+        return a.orarioEffettivo.compareTo(b.orarioEffettivo);
+      });
 
     String? closestDate;
     List<Lezione> menuLezioni = [];
 
     if (futureSorted.isNotEmpty) {
       closestDate = futureSorted.first.data;
-      menuLezioni = allSorted.where((l) => l.data == closestDate).toList();
+      menuLezioni = allSorted.where((l) => l.data == closestDate).toList()
+        ..sort((a, b) => a.orarioEffettivo.compareTo(b.orarioEffettivo));
     } else if (allSorted.isNotEmpty) {
       // Se non ci sono lezioni future, prendi la data più recente passata
       closestDate = allSorted.first.data;
-      menuLezioni = allSorted.where((l) => l.data == closestDate).toList();
+      menuLezioni = allSorted.where((l) => l.data == closestDate).toList()
+        ..sort((a, b) => a.orarioEffettivo.compareTo(b.orarioEffettivo));
     }
 
     Lezione? target;
@@ -323,7 +333,11 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
             filteredLezioni = _allLezioni.where((l) => l.scuolaId == selectedScuolaId || availableCorsi.any((c) => c.id == l.corsoId)).toList();
           }
           
-          filteredLezioni.sort((a, b) => a.data.compareTo(b.data));
+          filteredLezioni.sort((a, b) {
+            final cmpData = a.data.compareTo(b.data);
+            if (cmpData != 0) return cmpData;
+            return a.orarioEffettivo.compareTo(b.orarioEffettivo);
+          });
 
           return AlertDialog(
           title: const Row(
@@ -712,6 +726,11 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     if (_selectedLezione != null && !dropdownItems.any((l) => l.id == _selectedLezione!.id)) {
       dropdownItems.insert(0, _selectedLezione!);
     }
+    dropdownItems.sort((a, b) {
+      final cmpData = a.data.compareTo(b.data);
+      if (cmpData != 0) return cmpData;
+      return a.orarioEffettivo.compareTo(b.orarioEffettivo);
+    });
 
     String dropdownLabel = '📅 Lezioni';
     if (_selectedLezione != null && _isCustomSelection) {

@@ -216,6 +216,7 @@ class JollySerializer(serializers.ModelSerializer):
 
 class LezioneSerializer(serializers.ModelSerializer):
     corso_descrizione = serializers.SerializerMethodField()
+    corso_orario = serializers.CharField(source='corso.orario', read_only=True)
     scuola_id = serializers.UUIDField(source='corso.scuola.id', read_only=True)
     scuola_nome = serializers.CharField(source='corso.scuola.nome', read_only=True)
     argomento_titolo = serializers.CharField(source='argomento.titolo', read_only=True)
@@ -225,7 +226,7 @@ class LezioneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lezione
         fields = [
-            'id', 'corso', 'corso_descrizione', 'scuola_id', 'scuola_nome',
+            'id', 'corso', 'corso_descrizione', 'corso_orario', 'scuola_id', 'scuola_nome',
             'data', 'titolo', 'argomento', 'argomento_titolo',
             'presenze_totali', 'presenti_count'
         ]

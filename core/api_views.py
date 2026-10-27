@@ -907,12 +907,12 @@ class JollyViewSet(viewsets.ModelViewSet):
 
 
 class LezioneViewSet(viewsets.ModelViewSet):
-    queryset = Lezione.objects.select_related('corso', 'corso__scuola', 'argomento').all()
+    queryset = Lezione.objects.select_related('corso', 'corso__scuola', 'argomento').order_by('data', 'corso__orario')
     serializer_class = LezioneSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['corso', 'corso__scuola', 'data', 'argomento']
     search_fields = ['corso__scuola__nome', 'argomento__titolo']
-    ordering_fields = ['data']
+    ordering_fields = ['data', 'corso__orario']
 
     @action(detail=True, methods=['get'])
     def presenze(self, request, pk=None):
