@@ -32,6 +32,9 @@ class _GeminiScreenState extends State<GeminiScreen> {
   List<String> _customDays = ['LUNEDI', 'MERCOLEDI', 'GIOVEDI'];
   bool _isSavingConfig = false;
 
+  bool _isApiConfigExpanded = false;
+  bool _isRulesConfigExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -336,130 +339,173 @@ class _GeminiScreenState extends State<GeminiScreen> {
         : Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. PANNELLO CONFIGURAZIONE & STATO MONITORAGGIO
+              // 1. PANNELLO CONFIGURAZIONE & STATO MONITORAGGIO (COMPRIMIBILE)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: Card(
                   elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(14.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.psychology, color: Colors.blue.shade700, size: 24),
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Gemini AI • Monitoraggio Gruppi Corsi WhatsApp',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'Intercetta solo i 7 gruppi dei corsi (esclusi gruppi generali scuola o chat esterne). Registra data, allievo, messaggio, risposta AI ed esito presenze.',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.refresh),
-                              tooltip: 'Ricarica log e stato',
-                              onPressed: _loadData,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_sweep, color: Colors.red),
-                              tooltip: 'Svuota tutti i log Gemini',
-                              onPressed: _logs.isEmpty ? null : _svuotaTuttiILog,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-
-                        // Campo API Key
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _apiKeyController,
-                                obscureText: _isObscureKey,
-                                decoration: InputDecoration(
-                                  labelText: 'Gemini API Key',
-                                  hintText: 'Incolla la chiave API di Google Gemini (es. AIzaSy...)',
-                                  prefixIcon: const Icon(Icons.vpn_key),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(_isObscureKey ? Icons.visibility_off : Icons.visibility),
-                                    onPressed: () => setState(() => _isObscureKey = !_isObscureKey),
-                                  ),
-                                  isDense: true,
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            ElevatedButton.icon(
-                              onPressed: _isSavingApiKey ? null : _saveApiKey,
-                              icon: _isSavingApiKey
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.save),
-                              label: Text(_isSavingApiKey ? 'Salvataggio...' : 'Salva Chiave'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Chips 7 Gruppi Corso Monitorati
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => setState(() => _isApiConfigExpanded = !_isApiConfigExpanded),
                           child: Row(
                             children: [
-                              Icon(Icons.hub_outlined, size: 16, color: Colors.indigo.shade600),
-                              const SizedBox(width: 8),
-                              Text(
-                                '7 Corsi Monitorati:',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: [
-                                      _buildCourseBadge('Ripamonti Avanzato 21:30'),
-                                      _buildCourseBadge('Ripamonti Intermedio 20:30'),
-                                      _buildCourseBadge('Ripamonti Principiante 19:30'),
-                                      _buildCourseBadge('San Donato Intermedio 20:30'),
-                                      _buildCourseBadge('San Donato Intermedio 21:30'),
-                                      _buildCourseBadge('San Donato Principiante 19:30'),
-                                      _buildCourseBadge('San Donato Principiante 20:30'),
-                                    ],
-                                  ),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  shape: BoxShape.circle,
                                 ),
+                                child: Icon(Icons.psychology, color: Colors.blue.shade700, size: 24),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Text(
+                                          'Gemini AI • Configurazione Base & Gruppi',
+                                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: _apiKeyController.text.trim().isNotEmpty
+                                                ? Colors.green.shade50
+                                                : Colors.amber.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: _apiKeyController.text.trim().isNotEmpty
+                                                  ? Colors.green.shade300
+                                                  : Colors.amber.shade300,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _apiKeyController.text.trim().isNotEmpty ? 'API Key OK' : 'Nessuna Chiave',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: _apiKeyController.text.trim().isNotEmpty
+                                                  ? Colors.green.shade800
+                                                  : Colors.amber.shade900,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _isApiConfigExpanded
+                                          ? 'Intercetta solo i 7 gruppi dei corsi (esclusi gruppi generali scuola o chat esterne).'
+                                          : '7 corsi monitorati • Clicca per espandere/modificare API Key',
+                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.refresh, size: 20),
+                                tooltip: 'Ricarica log e stato',
+                                onPressed: _loadData,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_sweep, color: Colors.red, size: 20),
+                                tooltip: 'Svuota tutti i log Gemini',
+                                onPressed: _logs.isEmpty ? null : _svuotaTuttiILog,
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: Icon(_isApiConfigExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                                tooltip: _isApiConfigExpanded ? 'Comprimi pannello' : 'Espandi pannello',
+                                onPressed: () => setState(() => _isApiConfigExpanded = !_isApiConfigExpanded),
                               ),
                             ],
                           ),
                         ),
+
+                        if (_isApiConfigExpanded) ...[
+                          const Divider(height: 20),
+                          // Campo API Key
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _apiKeyController,
+                                  obscureText: _isObscureKey,
+                                  decoration: InputDecoration(
+                                    labelText: 'Gemini API Key',
+                                    hintText: 'Incolla la chiave API di Google Gemini (es. AIzaSy...)',
+                                    prefixIcon: const Icon(Icons.vpn_key),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_isObscureKey ? Icons.visibility_off : Icons.visibility),
+                                      onPressed: () => setState(() => _isObscureKey = !_isObscureKey),
+                                    ),
+                                    isDense: true,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton.icon(
+                                onPressed: _isSavingApiKey ? null : _saveApiKey,
+                                icon: _isSavingApiKey
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.save),
+                                label: Text(_isSavingApiKey ? 'Salvataggio...' : 'Salva Chiave'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Chips 7 Gruppi Corso Monitorati
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.hub_outlined, size: 16, color: Colors.indigo.shade600),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '7 Corsi Monitorati:',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade900),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        _buildCourseBadge('Ripamonti Avanzato 21:30'),
+                                        _buildCourseBadge('Ripamonti Intermedio 20:30'),
+                                        _buildCourseBadge('Ripamonti Principiante 19:30'),
+                                        _buildCourseBadge('San Donato Intermedio 20:30'),
+                                        _buildCourseBadge('San Donato Intermedio 21:30'),
+                                        _buildCourseBadge('San Donato Principiante 19:30'),
+                                        _buildCourseBadge('San Donato Principiante 20:30'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -947,79 +993,94 @@ class _GeminiScreenState extends State<GeminiScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Intestazione con Titolo e Badge di Stato Attuale
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.indigo.shade50,
-                    shape: BoxShape.circle,
+            // Intestazione con Titolo, Badge di Stato Attuale e Freccia Espandi/Comprimi
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => _isRulesConfigExpanded = !_isRulesConfigExpanded),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.timer_outlined, color: Colors.indigo.shade700, size: 22),
                   ),
-                  child: Icon(Icons.timer_outlined, color: Colors.indigo.shade700, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Intervalli Temporali e Regole di Monitoraggio',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Imposta la fascia oraria e i giorni in cui i messaggi WhatsApp vengono elaborati per registrare le presenze.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: !_monitoringActive
-                        ? Colors.grey.shade200
-                        : (isInWindow ? Colors.green.shade50 : Colors.amber.shade50),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: !_monitoringActive
-                          ? Colors.grey.shade400
-                          : (isInWindow ? Colors.green.shade400 : Colors.amber.shade400),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Intervalli Temporali e Regole di Monitoraggio',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _isRulesConfigExpanded
+                              ? 'Fascia oraria e giorni in cui i messaggi WhatsApp vengono elaborati per registrare le presenze.'
+                              : '${!_monitoringActive ? "Spento" : "Attivo: ${formatTimeOfDay(_timeStart)} - ${formatTimeOfDay(_timeEnd)} (${_onlyCourseDays ? "Solo Giorni Corsi" : "Giorni Custom"})"} • Clicca per modificare',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: !_monitoringActive
-                              ? Colors.grey.shade600
-                              : (isInWindow ? Colors.green.shade700 : Colors.amber.shade700),
-                        ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: !_monitoringActive
+                          ? Colors.grey.shade200
+                          : (isInWindow ? Colors.green.shade50 : Colors.amber.shade50),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: !_monitoringActive
+                            ? Colors.grey.shade400
+                            : (isInWindow ? Colors.green.shade400 : Colors.amber.shade400),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        !_monitoringActive
-                            ? 'Monitoraggio Spento'
-                            : (isInWindow ? 'In Finestra Attiva' : 'In Attesa (Fuori Orario/Giorno)'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: !_monitoringActive
-                              ? Colors.grey.shade800
-                              : (isInWindow ? Colors.green.shade800 : Colors.amber.shade900),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: !_monitoringActive
+                                ? Colors.grey.shade600
+                                : (isInWindow ? Colors.green.shade700 : Colors.amber.shade700),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Text(
+                          !_monitoringActive
+                              ? 'Monitoraggio Spento'
+                              : (isInWindow ? 'In Finestra Attiva' : 'In Attesa'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: !_monitoringActive
+                                ? Colors.grey.shade800
+                                : (isInWindow ? Colors.green.shade800 : Colors.amber.shade900),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: Icon(_isRulesConfigExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                    tooltip: _isRulesConfigExpanded ? 'Comprimi pannello' : 'Espandi pannello',
+                    onPressed: () => setState(() => _isRulesConfigExpanded = !_isRulesConfigExpanded),
+                  ),
+                ],
+              ),
             ),
-            const Divider(height: 24),
+
+            if (_isRulesConfigExpanded) ...[
+              const Divider(height: 24),
 
             // Switch Abilitazione Generale
             SwitchListTile.adaptive(
@@ -1268,6 +1329,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
                 ),
               ),
             ),
+            ],
           ],
         ),
       ),
