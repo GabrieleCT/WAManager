@@ -463,6 +463,29 @@ class RecurringSchedule(models.Model):
     gemini_api_key = models.CharField(max_length=255, blank=True, null=True)
     debug_mode = models.BooleanField(default=True)
 
+    gemini_monitoring_active = models.BooleanField(
+        default=True,
+        help_text="Attiva monitoraggio messaggi WhatsApp con Gemini"
+    )
+    gemini_time_start = models.TimeField(
+        default='07:00:00',
+        help_text="Ora inizio monitoraggio (default 07:00)"
+    )
+    gemini_time_end = models.TimeField(
+        default='13:00:00',
+        help_text="Ora fine monitoraggio (default 13:00)"
+    )
+    gemini_only_course_days = models.BooleanField(
+        default=True,
+        help_text="Monitora solo nei giorni di svolgimento del relativo corso"
+    )
+    gemini_custom_days = models.CharField(
+        max_length=100,
+        default="LUNEDI,MERCOLEDI,GIOVEDI",
+        blank=True,
+        help_text="Giorni abilitati separati da virgola (se non solo giorni corso)"
+    )
+
     def __str__(self):
         corso_str = str(self.corso) if self.corso else "Globale"
         return f"{corso_str} - Giorni {self.days_of_week} alle {self.time}"

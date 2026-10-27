@@ -447,6 +447,69 @@ def whatsapp_message_webhook(request):
                 f.write(f"[{timezone.now()}] Messaggio SCARTATO: gruppo {group_id} NON appartiene a nessun corso (es. gruppo scuola o gruppo esterno).\n")
             return JsonResponse({'success': False, 'message': f'Gruppo {group_id} ignorato: appartiene alla scuola o a chat esterna, non a uno dei 7 corsi.'})
 
+        # 1.1 VERIFICA FINESTRA TEMPORALE E GIORNI DI MONITORAGGIO GEMINI
+        import datetime as dt_mod
+        now_local = timezone.localtime()
+        current_time = now_local.time()
+
+        sched = RecurringSchedule.objects.first()
+        monitoring_active = sched.gemini_monitoring_active if (sched and hasattr(sched, 'gemini_monitoring_active')) else True
+        time_start = sched.gemini_time_start if (sched and hasattr(sched, 'gemini_time_start') and sched.gemini_time_start) else dt_mod.time(7, 0)
+        time_end = sched.gemini_time_end if (sched and hasattr(sched, 'gemini_time_end') and sched.gemini_time_end) else dt_mod.time(13, 0)
+        only_course_days = sched.gemini_only_course_days if (sched and hasattr(sched, 'gemini_only_course_days')) else True
+        custom_days = (sched.gemini_custom_days if (sched and hasattr(sched, 'gemini_custom_days') and sched.gemini_custom_days) else "LUNEDI,MERCOLEDI,GIOVEDI").upper()
+
+        if not monitoring_active:
+            with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{now_local}] Messaggio SCARTATO: Monitoraggio Gemini disattivato da configurazione.\n")
+            return JsonResponse({'success': False, 'message': 'Monitoraggio Gemini disattivato da configurazione.'})
+
+        # Verifica finestra oraria
+        if time_start <= time_end:
+            in_time_window = (time_start <= current_time <= time_end)
+        else:
+            in_time_window = (current_time >= time_start or current_time <= time_end)
+
+        if not in_time_window:
+            with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{now_local}] Messaggio SCARTATO: fuori orario monitoraggio ({current_time.strftime('%H:%M')} fuori da {time_start.strftime('%H:%M')} - {time_end.strftime('%H:%M')}).\n")
+            return JsonResponse({
+                'success': False,
+                'message': f"Fuori finestra oraria di monitoraggio ({current_time.strftime('%H:%M')} non compreso tra {time_start.strftime('%H:%M')} e {time_end.strftime('%H:%M')})."
+            })
+
+        # Verifica giorni monitoraggio
+        giorni_map = {
+            0: 'LUNEDI',
+            1: 'MARTEDI',
+            2: 'MERCOLEDI',
+            3: 'GIOVEDI',
+            4: 'VENERDI',
+            5: 'SABATO',
+            6: 'DOMENICA',
+        }
+        today_giorno = giorni_map.get(now_local.weekday(), '')
+
+        if only_course_days:
+            is_course_day = (corso.giorno_settimana and corso.giorno_settimana.upper() == today_giorno)
+            has_lesson_today = Lezione.objects.filter(corso=corso, data=now_local.date()).exists()
+            if not is_course_day and not has_lesson_today:
+                with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                    f.write(f"[{now_local}] Messaggio SCARTATO: oggi ({today_giorno}) non e il giorno di corso per {corso} ({corso.giorno_settimana}).\n")
+                return JsonResponse({
+                    'success': False,
+                    'message': f"Oggi ({today_giorno}) non e il giorno di lezione per {corso.nome_display if hasattr(corso, 'nome_display') else corso}."
+                })
+        else:
+            allowed_days = [d.strip() for d in custom_days.split(',') if d.strip()]
+            if today_giorno not in allowed_days:
+                with open('webhook_debug.log', 'a', encoding='utf-8') as f:
+                    f.write(f"[{now_local}] Messaggio SCARTATO: oggi ({today_giorno}) non e tra i giorni abilitati ({custom_days}).\n")
+                return JsonResponse({
+                    'success': False,
+                    'message': f"Oggi ({today_giorno}) non rientra nei giorni di monitoraggio abilitati ({custom_days})."
+                })
+
         # 2. Cerca l'allievo associato al mittente
         phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
         last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits

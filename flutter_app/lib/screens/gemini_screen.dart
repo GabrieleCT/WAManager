@@ -25,6 +25,13 @@ class _GeminiScreenState extends State<GeminiScreen> {
   String? _selectedEsito;
   String _searchQuery = '';
 
+  bool _monitoringActive = true;
+  TimeOfDay _timeStart = const TimeOfDay(hour: 7, minute: 0);
+  TimeOfDay _timeEnd = const TimeOfDay(hour: 13, minute: 0);
+  bool _onlyCourseDays = true;
+  List<String> _customDays = ['LUNEDI', 'MERCOLEDI', 'GIOVEDI'];
+  bool _isSavingConfig = false;
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +61,25 @@ class _GeminiScreenState extends State<GeminiScreen> {
         _logs = logsRes is List ? logsRes : [];
         _corsi = corsiRes;
         if (scheduleRes is List && scheduleRes.isNotEmpty) {
-          _apiKeyController.text = scheduleRes[0]['gemini_api_key'] ?? '';
+          final sched = scheduleRes[0];
+          _apiKeyController.text = sched['gemini_api_key'] ?? '';
+          _monitoringActive = sched['gemini_monitoring_active'] ?? true;
+          _onlyCourseDays = sched['gemini_only_course_days'] ?? true;
+
+          final startStr = sched['gemini_time_start']?.toString() ?? '07:00:00';
+          final startParts = startStr.split(':');
+          if (startParts.length >= 2) {
+            _timeStart = TimeOfDay(hour: int.tryParse(startParts[0]) ?? 7, minute: int.tryParse(startParts[1]) ?? 0);
+          }
+
+          final endStr = sched['gemini_time_end']?.toString() ?? '13:00:00';
+          final endParts = endStr.split(':');
+          if (endParts.length >= 2) {
+            _timeEnd = TimeOfDay(hour: int.tryParse(endParts[0]) ?? 13, minute: int.tryParse(endParts[1]) ?? 0);
+          }
+
+          final customDaysStr = sched['gemini_custom_days']?.toString() ?? 'LUNEDI,MERCOLEDI,GIOVEDI';
+          _customDays = customDaysStr.split(',').map((e) => e.trim().toUpperCase()).where((e) => e.isNotEmpty).toList();
         }
       });
     } catch (e) {
@@ -441,6 +466,12 @@ class _GeminiScreenState extends State<GeminiScreen> {
                 ),
               ),
 
+              // 1.2 PANNELLO CONFIGURAZIONE INTERVALLI E REGOLE DI MONITORAGGIO
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+                child: _buildMonitoringConfigCard(),
+              ),
+
               // 2. FILTRI & RICERCA
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -819,6 +850,427 @@ class _GeminiScreenState extends State<GeminiScreen> {
         ],
       ),
       body: content,
+    );
+  }
+
+
+  bool _isCurrentlyInWindow() {
+    if (!_monitoringActive) return false;
+    final now = DateTime.now();
+    final currentMinutes = now.hour * 60 + now.minute;
+    final startMinutes = _timeStart.hour * 60 + _timeStart.minute;
+    final endMinutes = _timeEnd.hour * 60 + _timeEnd.minute;
+
+    bool inTime = false;
+    if (startMinutes <= endMinutes) {
+      inTime = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      inTime = currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+    if (!inTime) return false;
+
+    const weekdayNames = ['LUNEDI', 'MARTEDI', 'MERCOLEDI', 'GIOVEDI', 'VENERDI', 'SABATO', 'DOMENICA'];
+    final todayName = weekdayNames[now.weekday - 1];
+
+    if (_onlyCourseDays) {
+      return todayName == 'LUNEDI' || todayName == 'MERCOLEDI' || todayName == 'GIOVEDI';
+    } else {
+      return _customDays.contains(todayName);
+    }
+  }
+
+  Future<void> _saveMonitoringConfig() async {
+    setState(() => _isSavingConfig = true);
+    try {
+      final scheduleRes = await ApiService().get('schedules/');
+      String formatTime(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+
+      final payload = {
+        'gemini_monitoring_active': _monitoringActive,
+        'gemini_time_start': formatTime(_timeStart),
+        'gemini_time_end': formatTime(_timeEnd),
+        'gemini_only_course_days': _onlyCourseDays,
+        'gemini_custom_days': _customDays.join(','),
+      };
+
+      if (scheduleRes is List && scheduleRes.isNotEmpty) {
+        final id = scheduleRes[0]['id'];
+        await ApiService().put('schedules/$id/', payload);
+      } else {
+        await ApiService().post('schedules/', {
+          ...payload,
+          'time': '20:00:00',
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurazione intervalli di monitoraggio salvata con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore durante il salvataggio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingConfig = false);
+    }
+  }
+
+  Widget _buildMonitoringConfigCard() {
+    final isInWindow = _isCurrentlyInWindow();
+    String formatTimeOfDay(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+    const allWeekdays = [
+      {'key': 'LUNEDI', 'label': 'Lunedì'},
+      {'key': 'MARTEDI', 'label': 'Martedì'},
+      {'key': 'MERCOLEDI', 'label': 'Mercoledì'},
+      {'key': 'GIOVEDI', 'label': 'Giovedì'},
+      {'key': 'VENERDI', 'label': 'Venerdì'},
+      {'key': 'SABATO', 'label': 'Sabato'},
+      {'key': 'DOMENICA', 'label': 'Domenica'},
+    ];
+
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Intestazione con Titolo e Badge di Stato Attuale
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.timer_outlined, color: Colors.indigo.shade700, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Intervalli Temporali e Regole di Monitoraggio',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Imposta la fascia oraria e i giorni in cui i messaggi WhatsApp vengono elaborati per registrare le presenze.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: !_monitoringActive
+                        ? Colors.grey.shade200
+                        : (isInWindow ? Colors.green.shade50 : Colors.amber.shade50),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: !_monitoringActive
+                          ? Colors.grey.shade400
+                          : (isInWindow ? Colors.green.shade400 : Colors.amber.shade400),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: !_monitoringActive
+                              ? Colors.grey.shade600
+                              : (isInWindow ? Colors.green.shade700 : Colors.amber.shade700),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        !_monitoringActive
+                            ? 'Monitoraggio Spento'
+                            : (isInWindow ? 'In Finestra Attiva' : 'In Attesa (Fuori Orario/Giorno)'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: !_monitoringActive
+                              ? Colors.grey.shade800
+                              : (isInWindow ? Colors.green.shade800 : Colors.amber.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+
+            // Switch Abilitazione Generale
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Attiva Monitoraggio Automatico Messaggi WhatsApp',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Se disattivato, i messaggi ricevuti nei gruppi non verranno elaborati e non modificheranno le presenze.',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _monitoringActive,
+              activeColor: Colors.indigo,
+              onChanged: (val) => setState(() => _monitoringActive = val),
+            ),
+            const SizedBox(height: 12),
+
+            // Sezione Orario (Dalle 07:00 alle 13:00)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.schedule, size: 18, color: Colors.indigo.shade700),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Fascia Oraria di Monitoraggio',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        ),
+                        icon: const Icon(Icons.restore, size: 14),
+                        label: const Text('Predefinito (07:00 - 13:00)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          setState(() {
+                            _timeStart = const TimeOfDay(hour: 7, minute: 0);
+                            _timeEnd = const TimeOfDay(hour: 13, minute: 0);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      // Ora Inizio
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Dalle ore: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            icon: const Icon(Icons.access_time, size: 16, color: Colors.indigo),
+                            label: Text(
+                              formatTimeOfDay(_timeStart),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                            ),
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: _timeStart,
+                              );
+                              if (picked != null) {
+                                setState(() => _timeStart = picked);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+
+                      // Ora Fine
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Alle ore: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            icon: const Icon(Icons.access_time, size: 16, color: Colors.indigo),
+                            label: Text(
+                              formatTimeOfDay(_timeEnd),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                            ),
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: _timeEnd,
+                              );
+                              if (picked != null) {
+                                setState(() => _timeEnd = picked);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+
+                      Text(
+                        'Intervallo impostato: ${formatTimeOfDay(_timeStart)} - ${formatTimeOfDay(_timeEnd)}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Sezione Giorni di Monitoraggio
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined, size: 18, color: Colors.indigo.shade700),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Regola Giorni della Settimana',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Opzione 1: Solo nei giorni dei corsi
+                  RadioListTile<bool>(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'Solo nei giorni dei corsi (Consigliato)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    subtitle: const Text(
+                      'I messaggi del gruppo WhatsApp vengono intercettati solo nel giorno in cui si tiene ciascun rispettivo corso: Lunedì per i corsi di Ripamonti, Mercoledì e Giovedì per i corsi di San Donato (o se c\'è una lezione programmata oggi).',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: true,
+                    groupValue: _onlyCourseDays,
+                    activeColor: Colors.indigo,
+                    onChanged: (val) => setState(() => _onlyCourseDays = true),
+                  ),
+
+                  // Opzione 2: Giorni personalizzati
+                  RadioListTile<bool>(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'Giorni personalizzati specifici',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    subtitle: const Text(
+                      'Seleziona manualmente i giorni della settimana in cui il monitoraggio deve essere attivo.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: false,
+                    groupValue: _onlyCourseDays,
+                    activeColor: Colors.indigo,
+                    onChanged: (val) => setState(() => _onlyCourseDays = false),
+                  ),
+
+                  if (!_onlyCourseDays) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12.0),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: allWeekdays.map((d) {
+                          final key = d['key']!;
+                          final label = d['label']!;
+                          final isSelected = _customDays.contains(key);
+
+                          return FilterChip(
+                            label: Text(label),
+                            selected: isSelected,
+                            selectedColor: Colors.indigo.shade100,
+                            checkmarkColor: Colors.indigo.shade900,
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? Colors.indigo.shade900 : Colors.black87,
+                            ),
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  if (!_customDays.contains(key)) _customDays.add(key);
+                                } else {
+                                  _customDays.remove(key);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Pulsante Salva Regole
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _isSavingConfig ? null : _saveMonitoringConfig,
+                icon: _isSavingConfig
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_outlined),
+                label: Text(_isSavingConfig ? 'Salvataggio...' : 'Salva Regole di Monitoraggio'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

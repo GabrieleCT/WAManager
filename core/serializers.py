@@ -364,7 +364,9 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             'id', 'corso', 'corso_descrizione', 'days_of_week', 'time',
             'start_date', 'end_date', 'rsvp_days_before', 'rsvp_time',
             'match_days_before', 'match_time', 'rsvp_mode',
-            'gemini_api_key', 'debug_mode'
+            'gemini_api_key', 'debug_mode',
+            'gemini_monitoring_active', 'gemini_time_start', 'gemini_time_end',
+            'gemini_only_course_days', 'gemini_custom_days'
         ]
 
 
