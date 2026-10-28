@@ -194,6 +194,43 @@ class _GeminiScreenState extends State<GeminiScreen> {
     }
   }
 
+  Future<void> _retryLog(dynamic log) async {
+    final logId = log['id'];
+    if (logId == null) return;
+    setState(() => _isLoading = true);
+    try {
+      final res = await ApiService().post('gemini-logs/$logId/retry/', {});
+      if (mounted) {
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Interpretazione completata con successo e presenze aggiornate!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Errore durante la ripetizione: ${res['error'] ?? 'Impossibile completare'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore di connessione: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      await _loadData();
+    }
+  }
+
   List<dynamic> _getFilteredLogs() {
     return _logs.where((log) {
       // Filtro per Corso
@@ -858,13 +895,24 @@ class _GeminiScreenState extends State<GeminiScreen> {
                                                 ),
                                               ),
 
-                                              // 7. Dettaglio (Icona lente di ingrandimento)
+                                              // 7. Dettaglio & Riprova
                                               DataCell(
                                                 Center(
-                                                  child: IconButton(
-                                                    icon: const Icon(Icons.search, color: Colors.blue),
-                                                    tooltip: 'Visualizza dettaglio completo',
-                                                    onPressed: () => _mostraDettaglioModal(context, log),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: const Icon(Icons.search, color: Colors.blue),
+                                                        tooltip: 'Visualizza dettaglio completo',
+                                                        onPressed: () => _mostraDettaglioModal(context, log),
+                                                      ),
+                                                      if (esito == 'ERRORE')
+                                                        IconButton(
+                                                          icon: const Icon(Icons.refresh, color: Colors.orange),
+                                                          tooltip: 'Riprova interpretazione con Gemini',
+                                                          onPressed: () => _retryLog(log),
+                                                        ),
+                                                    ],
                                                   ),
                                                 ),
                                               ),
@@ -1603,12 +1651,29 @@ class _GeminiScreenState extends State<GeminiScreen> {
                   color: Colors.grey.shade100,
                   borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
                 ),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Chiudi'),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (esito == 'ERRORE') ...[
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Riprova con Gemini'),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _retryLog(log);
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Chiudi'),
+                    ),
+                  ],
                 ),
               ),
             ],

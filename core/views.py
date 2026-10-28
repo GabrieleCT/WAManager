@@ -14,6 +14,7 @@ from .models import (
     Allievo, Corso, Scuola, Argomento, Lezione, Presenza, Match, MessageTemplate,
     MessageLog, RecurringSchedule, Role, Level, Recensione, GeminiLog
 )
+from .gemini_service import call_gemini_with_fallback, parse_and_apply_presenze, start_background_retry
 
 
 # ─── RSVP Pubblico (per lezione) ────────────────────────────────
@@ -555,96 +556,30 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
 - ASSENTE_COPPIA (se ha parlato al plurale, es. "non ci siamo", "saltiamo", confermando l'assenza per entrambi)
 - IGNOTA (se non è un messaggio di conferma presenza/assenza o è una domanda/saluto/battuta)'''
 
-        risposta_ai = ""
-        esito = "IGNOTA"
-
         if not api_key:
             risposta_ai = "ERRORE: API Key di Gemini non configurata. Impostala nella sezione Impostazioni -> Gemini AI."
             esito = "ERRORE"
+            azione_presenze = "Nessuna presenza modificata (API Key non configurata)"
+            partner_coinvolto = None
         else:
-            headers = {'Content-Type': 'application/json'}
-            payload_ai = {
-                "contents": [{"parts": [{"text": prompt}]}]
-            }
-            # Fallback cascade su modelli disponibili per evitare blocchi quota HTTP 429
-            candidate_models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash']
-            success_call = False
-            last_err = ""
-
-            for model_name in candidate_models:
-                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                try:
-                    res = requests.post(gemini_url, headers=headers, json=payload_ai, timeout=15)
-                    if res.status_code == 200:
-                        res_data = res.json()
-                        candidates = res_data.get('candidates', [])
-                        if candidates and 'content' in candidates[0] and 'parts' in candidates[0]['content']:
-                            risposta_ai = candidates[0]['content']['parts'][0]['text'].strip()
-                            success_call = True
-                            break
-                        else:
-                            risposta_ai = res.text
-                            success_call = True
-                            break
-                    elif res.status_code == 429:
-                        last_err = f"HTTP 429 ({model_name}): {res.text}"
-                        continue
-                    else:
-                        last_err = f"HTTP {res.status_code} ({model_name}): {res.text}"
-                except Exception as e:
-                    last_err = f"ERRORE ({model_name}): {str(e)}"
-                    continue
-
-            if not success_call:
-                risposta_ai = last_err or "ERRORE: Impossibile completare la chiamata a Gemini."
-
-            # Pulisci eventuali formattazioni o markdown
-            r_upper = risposta_ai.upper()
-            if "PRESENTE_COPPIA" in r_upper: esito = "PRESENTE_COPPIA"
-            elif "ASSENTE_COPPIA" in r_upper: esito = "ASSENTE_COPPIA"
-            elif "PRESENTE_SINGOLO" in r_upper: esito = "PRESENTE_SINGOLO"
-            elif "ASSENTE_SINGOLO" in r_upper: esito = "ASSENTE_SINGOLO"
-            elif "ERRORE" in r_upper or "HTTP " in r_upper: esito = "ERRORE"
-            else: esito = "IGNOTA"
-
-        # 6. Aggiorna Presenze e determina ESATTAMENTE quale allievo o coppia viene modificata
-        azione_presenze = ""
-        partner_coinvolto = None
-
-        if not allievo:
-            azione_presenze = f"Nessun allievo identificato nel database per il mittente ({mittente_label}). Nessuna presenza modificata."
-        elif not prossima_lezione:
-            azione_presenze = f"Nessuna lezione imminente trovata per il corso {corso}. Nessuna presenza modificata."
-        elif 'PRESENTE' in esito or 'ASSENTE' in esito:
-            is_present = 'PRESENTE' in esito
-            is_coppia = 'COPPIA' in esito
-            stato_label = "PRESENTE" if is_present else "ASSENTE"
-
-            # 1. Imposta la presenza dell'allievo mittente
-            Presenza.objects.update_or_create(
-                lezione=prossima_lezione,
-                allievo=allievo,
-                defaults={'presente': is_present, 'fonte': 'whatsapp'}
+            success, raw_risposta, used_model, attempts, err_summary = call_gemini_with_fallback(
+                prompt=prompt,
+                api_key=api_key,
+                max_attempts=3,
+                backoff_seconds=2.0
             )
-
-            # 2. Se risposta plurale/coppia, verifica presenza del partner
-            if is_coppia:
-                partner_coinvolto = allievo.partner
-                if partner_coinvolto:
-                    Presenza.objects.update_or_create(
-                        lezione=prossima_lezione,
-                        allievo=partner_coinvolto,
-                        defaults={'presente': is_present, 'fonte': 'whatsapp'}
-                    )
-                    azione_presenze = f"Coppia impostata come {stato_label}: {allievo.nome} {allievo.cognome} & {partner_coinvolto.nome} {partner_coinvolto.cognome}"
-                else:
-                    azione_presenze = f"Allievo impostato come {stato_label}: {allievo.nome} {allievo.cognome} (Risposta plurale, ma nessun partner associato a sistema per questo allievo)"
+            if success:
+                risposta_ai = raw_risposta
             else:
-                azione_presenze = f"Allievo impostato come {stato_label}: {allievo.nome} {allievo.cognome}"
-        elif esito == "IGNOTA":
-            azione_presenze = f"Nessuna presenza modificata per {allievo.nome} {allievo.cognome} (il messaggio non e una conferma di presenza o assenza)"
-        else:
-            azione_presenze = f"Nessuna presenza modificata (errore elaborazione AI: {risposta_ai})"
+                risposta_ai = raw_risposta or err_summary or "ERRORE: Impossibile completare la chiamata a Gemini."
+
+            esito, azione_presenze, partner_coinvolto = parse_and_apply_presenze(
+                allievo=allievo,
+                prossima_lezione=prossima_lezione,
+                risposta_ai=risposta_ai,
+                mittente_label=mittente_label,
+                corso=corso
+            )
 
         # 7. Registra SEMPRE il log completo in GeminiLog
         mittente_str = f"{allievo.nome} {allievo.cognome}" if allievo else (f"{push_name} ({voter_id})".strip() if push_name else str(voter_id))
@@ -661,6 +596,10 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             azione_presenze=azione_presenze,
             partner_coinvolto=partner_coinvolto
         )
+
+        # Avvia retry asincrono in background dopo 2 minuti (fino a 3 tentativi) se errore transitorio (es. 503, 429)
+        if esito == "ERRORE" and api_key and any(k in risposta_ai for k in ("503", "429", "Timeout", "UNAVAILABLE")):
+            start_background_retry(log_entry.id, delay_seconds=120, max_attempts=3)
 
         with open('webhook_debug.log', 'a', encoding='utf-8') as f:
             f.write(f"[{timezone.now()}] GeminiLog creato: ID={log_entry.id}, esito={esito}, azione={azione_presenze}\n")

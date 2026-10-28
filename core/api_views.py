@@ -1433,6 +1433,16 @@ class GeminiLogViewSet(viewsets.ModelViewSet):
         GeminiLog.objects.all().delete()
         return Response({'success': True, 'deleted': count, 'message': f'{count} log Gemini eliminati con successo.'})
 
+    @action(detail=True, methods=['post'], url_path='retry')
+    def retry(self, request, pk=None):
+        """Riesegue la chiamata a Gemini per questo specifico log e aggiorna le presenze."""
+        from .gemini_service import retry_gemini_log
+        success, res = retry_gemini_log(pk)
+        if success:
+            serializer = self.get_serializer(res)
+            return Response({'success': True, 'log': serializer.data, 'message': 'Log rieseguito con successo.'})
+        return Response({'success': False, 'error': str(res)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class DocumentTemplateViewSet(viewsets.ModelViewSet):
     queryset = DocumentTemplate.objects.all()
