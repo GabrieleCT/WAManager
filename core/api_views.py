@@ -1358,6 +1358,11 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
                 config.is_active = bool(data['is_active'])
             if 'sollecito_attivo' in data:
                 config.sollecito_attivo = bool(data['sollecito_attivo'])
+            if 'sollecito_ore_attesa' in data:
+                try:
+                    config.sollecito_ore_attesa = max(1, int(data['sollecito_ore_attesa']))
+                except (ValueError, TypeError):
+                    pass
             if 'sollecito_orario' in data:
                 config.sollecito_orario = data['sollecito_orario']
             if 'sollecito_testo' in data:
@@ -1415,6 +1420,23 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
         try:
             corso_ids = request.data.get('corso_ids', None)
             res = invia_messaggio_sollecito(corso_ids=corso_ids)
+            return Response(res)
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='invia-sollecito-mancata-risposta-ora')
+    def invia_sollecito_mancata_risposta_ora(self, request):
+        """Invia immediatamente il sollecito individuale a tutti gli allievi di oggi che non hanno ancora risposto."""
+        try:
+            from .tasks import controlla_e_invia_solleciti_mancata_risposta
+            lezione_id = request.data.get('lezione_id')
+            corso_ids = request.data.get('corso_ids')
+            force = request.data.get('force', True)
+            res = controlla_e_invia_solleciti_mancata_risposta(
+                lezione_id=lezione_id,
+                corso_ids=corso_ids,
+                force=force
+            )
             return Response(res)
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

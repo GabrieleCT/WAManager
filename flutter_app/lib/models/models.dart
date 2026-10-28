@@ -467,6 +467,8 @@ class Presenza {
 
   bool? presente;
   String fonte;
+  final bool sollecitoInviato;
+  final String? sollecitoInviatoAt;
 
   Presenza({
     required this.id,
@@ -483,6 +485,8 @@ class Presenza {
     this.allievoPartnerNome,
     this.presente,
     this.fonte = 'manuale',
+    this.sollecitoInviato = false,
+    this.sollecitoInviatoAt,
   });
 
   factory Presenza.fromJson(Map<String, dynamic> json) {
@@ -501,6 +505,8 @@ class Presenza {
       allievoPartnerNome: json['allievo_partner_nome'],
       presente: json['presente'],
       fonte: json['fonte'] ?? 'manuale',
+      sollecitoInviato: json['sollecito_inviato'] ?? false,
+      sollecitoInviatoAt: json['sollecito_inviato_at'],
     );
   }
 }
@@ -611,6 +617,7 @@ class SondaggioMattutinoConfig {
   final int oreAscoltoRisposte;
   final bool isActive;
   final bool sollecitoAttivo;
+  final int sollecitoOreAttesa;
   final String sollecitoOrario;
   final String sollecitoTesto;
   final String jollyTesto;
@@ -631,6 +638,7 @@ class SondaggioMattutinoConfig {
     this.oreAscoltoRisposte = 5,
     this.isActive = true,
     this.sollecitoAttivo = false,
+    this.sollecitoOreAttesa = 3,
     this.sollecitoOrario = '16:00',
     this.sollecitoTesto = '',
     this.jollyTesto = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
@@ -653,6 +661,7 @@ class SondaggioMattutinoConfig {
       oreAscoltoRisposte: json['ore_ascolto_risposte'] ?? 5,
       isActive: json['is_active'] ?? true,
       sollecitoAttivo: json['sollecito_attivo'] ?? false,
+      sollecitoOreAttesa: json['sollecito_ore_attesa'] ?? 3,
       sollecitoOrario: json['sollecito_orario'] ?? '16:00',
       sollecitoTesto: json['sollecito_testo'] ?? '',
       jollyTesto: json['jolly_testo'] ?? 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
@@ -672,6 +681,7 @@ class SondaggioMattutinoConfig {
     'ore_ascolto_risposte': oreAscoltoRisposte,
     'is_active': isActive,
     'sollecito_attivo': sollecitoAttivo,
+    'sollecito_ore_attesa': sollecitoOreAttesa,
     'sollecito_orario': sollecitoOrario,
     'sollecito_testo': sollecitoTesto,
   };

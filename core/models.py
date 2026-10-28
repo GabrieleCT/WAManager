@@ -345,6 +345,8 @@ class Presenza(models.Model):
     fonte = models.CharField(max_length=20, choices=FONTE_CHOICES, default='manuale')
     is_jolly = models.BooleanField(default=False, help_text="Se True, è presente alla lezione come Jolly")
     timestamp = models.DateTimeField(auto_now_add=True)
+    sollecito_inviato = models.BooleanField(default=False, help_text="Se True, è già stato inviato il messaggio di sollecito per questa lezione")
+    sollecito_inviato_at = models.DateTimeField(null=True, blank=True, help_text="Data e ora in cui è stato inviato il sollecito")
 
     class Meta:
         verbose_name_plural = 'Presenze'
@@ -535,6 +537,10 @@ class SondaggioMattutinoConfig(models.Model):
         max_length=5,
         default='16:00',
         help_text="Orario invio sollecito nel formato HH:MM (es. 16:00)"
+    )
+    sollecito_ore_attesa = models.IntegerField(
+        default=3,
+        help_text="Ore di attesa dall'invio del sondaggio prima di inviare il sollecito a chi non ha ancora risposto"
     )
     sollecito_testo = models.TextField(
         default="Ciao <nome_allievo>, ci sei stasera al corso?",

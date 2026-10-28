@@ -46,8 +46,10 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
 
   // 3. Configurazione Sollecito
   bool _sollecitoAttivo = false;
+  int _sollecitoOreAttesa = 3;
   TimeOfDay _sollecitoTime = const TimeOfDay(hour: 16, minute: 0);
   final TextEditingController _testoSollecitoCtl = TextEditingController();
+  bool _invioSollecitoManualeInCorso = false;
 
   final List<String> _giorniNomi = [
     'Lunedì',
@@ -113,6 +115,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
 
         // Parsing sollecito
         _sollecitoAttivo = config.sollecitoAttivo;
+        _sollecitoOreAttesa = config.sollecitoOreAttesa;
         final solParts = config.sollecitoOrario.split(':');
         if (solParts.length >= 2) {
           final sh = int.tryParse(solParts[0]) ?? 16;
@@ -285,7 +288,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
 
     final data = {
       'sollecito_testo': _testoSollecitoCtl.text.trim(),
-      'sollecito_attivo': false,
+      'sollecito_attivo': _sollecitoAttivo,
+      'sollecito_ore_attesa': _sollecitoOreAttesa,
     };
 
     final res = await _api.saveDaemonConfig(data);
@@ -306,6 +310,77 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _eseguiSollecitiMancataRispostaOra() async {
+    final confermato = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.notification_important, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Conferma Invio Solleciti'),
+          ],
+        ),
+        content: const Text(
+          'Vuoi controllare le lezioni di oggi e inviare il messaggio di sollecito '
+          'individuale su WhatsApp a tutti gli allievi di cui non è stata registrata '
+          'una risposta (sia ASSENTE che PRESENTE)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber.shade900,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.send, size: 16),
+            label: const Text('Invia Ora'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confermato != true) return;
+
+    setState(() => _invioSollecitoManualeInCorso = true);
+    try {
+      final res = await _api.inviaSollecitiMancataRispostaOra(force: true);
+      if (mounted) {
+        if (res['success'] == true) {
+          final count = res['solleciti_inviati_totali'] ?? 0;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Operazione completata: $count messaggi di sollecito inviati con successo!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Errore durante l\'invio: ${res['error'] ?? res['message'] ?? 'Errore'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore di connessione: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _invioSollecitoManualeInCorso = false);
       }
     }
   }
@@ -1245,8 +1320,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'Questo messaggio viene utilizzato nella sezione Presenze quando clicchi sull\'icona WhatsApp '
-                              'accanto a ciascun allievo o prospect per inviargli un sollecito individuale di conferma presenza.',
+                              'Se dopo l\'intervallo configurato dall\'invio del sondaggio ci sono allievi di cui non è stata '
+                              'registrata una risposta (né ASSENTE né PRESENTE), il sistema invia loro automaticamente questo sollecito individuale.',
                               style: TextStyle(fontSize: 13, height: 1.3),
                             ),
                           ],
@@ -1258,7 +1333,137 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
               ),
               const SizedBox(height: 20),
 
-              // CARD: TESTO E TEMPLATE SOLLECITO INDIVIDUALE
+              // CARD 1: AUTOMAZIONE INVIO SOLLECITO PER MANCATA RISPOSTA
+              Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.alarm, color: Colors.amber.shade900),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Automazione Sollecito Mancata Risposta',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 28),
+
+                      // Switch Attivazione Sollecito Automatico
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Invio automatico sollecito per mancata risposta',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        subtitle: const Text(
+                          'Invia automaticamente un messaggio individuale su WhatsApp a tutti gli allievi del corso '
+                          'che non hanno risposto al sondaggio entro l\'intervallo di ore stabilito.',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        value: _sollecitoAttivo,
+                        activeColor: Colors.amber.shade900,
+                        onChanged: (val) => setState(() => _sollecitoAttivo = val),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Configurazione Intervallo Ore Mancata Risposta
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.timer_outlined, color: Colors.blueGrey.shade700, size: 20),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Intervallo mancata risposta:',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade400),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove, size: 18),
+                                        tooltip: 'Diminuisci ore',
+                                        onPressed: _sollecitoOreAttesa > 1
+                                            ? () => setState(() => _sollecitoOreAttesa--)
+                                            : null,
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        child: Text(
+                                          '$_sollecitoOreAttesa ore',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.add, size: 18),
+                                        tooltip: 'Aumenta ore',
+                                        onPressed: _sollecitoOreAttesa < 24
+                                            ? () => setState(() => _sollecitoOreAttesa++)
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Il sistema attenderà $_sollecitoOreAttesa ore dall\'invio del sondaggio mattutino o manuale. '
+                              'Trascorso questo tempo, chi non ha confermato né presenza né assenza riceverà il messaggio sotto riportato.',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Bottone esegui ora
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.amber.shade900,
+                            side: BorderSide(color: Colors.amber.shade800),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          icon: _invioSollecitoManualeInCorso
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.outgoing_mail, size: 18),
+                          label: Text(
+                            _invioSollecitoManualeInCorso ? 'Invio in corso...' : 'Verifica e Invia Solleciti Ora (Oggi)',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          onPressed: _invioSollecitoManualeInCorso ? null : _eseguiSollecitiMancataRispostaOra,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // CARD 2: TESTO E TEMPLATE SOLLECITO INDIVIDUALE
               Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 2,

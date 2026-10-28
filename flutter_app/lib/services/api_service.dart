@@ -978,6 +978,27 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> inviaSollecitiMancataRispostaOra({String? lezioneId, List<String>? corsoIds, bool force = true}) async {
+    final body = {
+      if (lezioneId != null) 'lezione_id': lezioneId,
+      if (corsoIds != null && corsoIds.isNotEmpty) 'corso_ids': corsoIds,
+      'force': force,
+    };
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sondaggio-mattutino/invia-sollecito-mancata-risposta-ora/'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
+    }
+  }
+
   Future<Map<String, dynamic>> inviaSollecitoAllievo(String allievoId, {String? testo}) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/allievi/$allievoId/invia-sollecito/'),

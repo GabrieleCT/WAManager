@@ -1368,14 +1368,22 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                     const SizedBox(width: 6),
                                     // 4. Invia sollecito WhatsApp (dopo il punto interrogativo)
                                     _buildPresenzaButton(
-                                      isSelected: false,
-                                      activeBgColor: Colors.green.shade600,
-                                      inactiveBgColor: p.allievoTelefono.trim().isNotEmpty ? Colors.green.shade50 : Colors.grey.shade100,
-                                      iconColor: p.allievoTelefono.trim().isNotEmpty ? Colors.green.shade700 : Colors.grey.shade400,
-                                      borderColor: p.allievoTelefono.trim().isNotEmpty ? Colors.green.shade300 : Colors.grey.shade300,
-                                      icon: Icons.chat,
+                                      isSelected: p.sollecitoInviato,
+                                      activeBgColor: Colors.orange.shade600,
+                                      inactiveBgColor: p.allievoTelefono.trim().isNotEmpty
+                                          ? (p.sollecitoInviato ? Colors.orange.shade50 : Colors.green.shade50)
+                                          : Colors.grey.shade100,
+                                      iconColor: p.allievoTelefono.trim().isNotEmpty
+                                          ? (p.sollecitoInviato ? Colors.orange.shade800 : Colors.green.shade700)
+                                          : Colors.grey.shade400,
+                                      borderColor: p.allievoTelefono.trim().isNotEmpty
+                                          ? (p.sollecitoInviato ? Colors.orange.shade300 : Colors.green.shade300)
+                                          : Colors.grey.shade300,
+                                      icon: p.sollecitoInviato ? Icons.mark_chat_read : Icons.chat,
                                       tooltip: p.allievoTelefono.trim().isNotEmpty
-                                          ? 'Invia sollecito WhatsApp a ${p.allievoNome}'
+                                          ? (p.sollecitoInviato
+                                              ? 'Sollecito già inviato a ${p.allievoNome}'
+                                              : 'Invia sollecito WhatsApp a ${p.allievoNome}')
                                           : 'Nessun numero di telefono per ${p.allievoNome}',
                                       onTap: () => _inviaSollecitoRisposta(p),
                                     ),

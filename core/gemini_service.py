@@ -237,3 +237,4 @@ def start_background_retry(log_id, delay_seconds=120, max_attempts=3):
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
+

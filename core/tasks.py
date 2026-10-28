@@ -1,3 +1,5 @@
+import threading
+import time
 import datetime
 from django.utils import timezone
 from django.db.models import Q
@@ -328,6 +330,17 @@ def invia_sondaggio_mattutino_giornaliero():
             if res.get('success'):
                 inviati += 1
                 print(f"[Sondaggio Mattutino] Inviato con successo a {group_target} per {corso.nome}")
+                # Programma controllo solleciti mancata risposta dopo intervallo ore configurato
+                if getattr(cfg, 'sollecito_attivo', False):
+                    ore_attesa = getattr(cfg, 'sollecito_ore_attesa', 3) or 3
+                    timer = threading.Timer(
+                        ore_attesa * 3600,
+                        controlla_e_invia_solleciti_mancata_risposta,
+                        kwargs={'lezione_id': lezione.id}
+                    )
+                    timer.daemon = True
+                    timer.start()
+                    print(f"[Sondaggio Mattutino] Timer sollecito mancata risposta programmato tra {ore_attesa}h per lezione {lezione.id}")
             else:
                 print(f"[Sondaggio Mattutino] Errore invio a {group_target}: {err_msg}")
         except Exception as e:
@@ -418,6 +431,19 @@ def invia_sondaggio_manuale_corsi(corso_ids, testo_custom=None, is_poll=True, po
                     status='Inviato' if is_ok else 'Errore',
                     error_message=err_msg
                 )
+
+            if is_ok and lezione:
+                g_cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+                if g_cfg and getattr(g_cfg, 'sollecito_attivo', False):
+                    ore_attesa = getattr(g_cfg, 'sollecito_ore_attesa', 3) or 3
+                    timer = threading.Timer(
+                        ore_attesa * 3600,
+                        controlla_e_invia_solleciti_mancata_risposta,
+                        kwargs={'lezione_id': lezione.id}
+                    )
+                    timer.daemon = True
+                    timer.start()
+                    print(f"[Sondaggio Manuale] Timer sollecito mancata risposta programmato tra {ore_attesa}h per lezione {lezione.id}")
 
             results.append({
                 'corso_id': str(corso.id),
@@ -575,3 +601,192 @@ def invia_sollecito_giornaliero():
     print(f"[Sollecito Giornaliero] Inviati {res['inviati_con_successo']} su {res['totale_corsi']}.")
 
 
+
+
+def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None, force=False):
+    """
+    Controlla se dopo l'intervallo specificato (sollecito_ore_attesa, default 3 ore) dall'invio del sondaggio
+    ci sono allievi che NON hanno ancora registrato una risposta (né PRESENTE né ASSENTE).
+    Invia a ciascuno di essi il messaggio individuale di sollecito configurato in 'Configurazione Messaggio di Sollecito'.
+    Evita invii duplicati registrando lo stato sollecito_inviato su Presenza e in MessageLog.
+    """
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+
+    global_config = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+    if not global_config:
+        return {'success': False, 'message': 'Nessuna configurazione globale trovata.'}
+
+    if not global_config.sollecito_attivo and not force:
+        return {'success': False, 'message': 'Invio automatico solleciti disattivato nelle impostazioni.'}
+
+    ore_attesa = getattr(global_config, 'sollecito_ore_attesa', 3) or 3
+    base_template = (global_config.sollecito_testo or '').strip()
+    if not base_template:
+        base_template = "Ciao <nome_allievo>, ci sei stasera al corso?"
+
+    if lezione_id:
+        lezioni = Lezione.objects.filter(id=lezione_id).select_related('corso', 'corso__scuola')
+    elif corso_ids:
+        lezioni = Lezione.objects.filter(corso_id__in=corso_ids, data=today).select_related('corso', 'corso__scuola')
+    else:
+        lezioni = Lezione.objects.filter(data=today).select_related('corso', 'corso__scuola')
+
+    results = []
+    solleciti_inviati_totali = 0
+
+    for lezione in lezioni:
+        corso = lezione.corso
+        if not corso:
+            continue
+
+        # Cerca l'ultimo sondaggio inviato per questa lezione
+        poll_log = MessageLog.objects.filter(
+            lezione=lezione,
+            template__name__in=['SONDAGGIO_MATTUTINO', 'SONDAGGIO_MANUALE'],
+            status='Inviato'
+        ).order_by('-timestamp').first()
+
+        # Se non è stato inviato alcun sondaggio e non è forzato, non inviare solleciti
+        if not poll_log and not force:
+            continue
+
+        # Verifica se sono trascorse almeno ore_attesa ore
+        if poll_log and not force:
+            poll_time = timezone.localtime(poll_log.timestamp)
+            ore_trascorse = (now - poll_time).total_seconds() / 3600.0
+            if ore_trascorse < ore_attesa:
+                continue
+
+        allievi = Allievo.objects.filter(corso=corso, is_active=True).order_by('cognome', 'nome')
+        allievi_sollecitati = []
+
+        orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
+        data_str = lezione.data.strftime('%d/%m/%Y')
+        scuola_str = corso.scuola.nome if corso.scuola else ''
+        argomento_str = lezione.argomento.titolo if lezione.argomento else 'Da definire'
+
+        for allievo in allievi:
+            p, _ = Presenza.objects.get_or_create(
+                lezione=lezione,
+                allievo=allievo,
+                defaults={'presente': None, 'fonte': 'manuale'}
+            )
+
+            # Se ha risposto (sia PRESENTE [True] che ASSENTE [False]), NON sollecitare
+            if p.presente is not None:
+                continue
+
+            # Se ha già ricevuto il sollecito per questa lezione e non è richiesta forzata, salta
+            if p.sollecito_inviato and not force:
+                continue
+
+            telefono = (allievo.telefono or '').strip()
+            if not telefono:
+                continue
+
+            nome_allievo = (allievo.nome or '').strip()
+            testo_msg = base_template\
+                .replace('<nome_allievo>', nome_allievo)\
+                .replace('{nome_allievo}', nome_allievo)\
+                .replace('<nome>', nome_allievo)\
+                .replace('{nome}', nome_allievo)\
+                .replace('{allievo}', nome_allievo)\
+                .replace('{corso}', str(corso.nome))\
+                .replace('{orario}', orario_str)\
+                .replace('{data}', data_str)\
+                .replace('{scuola}', scuola_str)\
+                .replace('{argomento}', argomento_str)
+
+            try:
+                res = send_whatsapp_message(
+                    to=telefono,
+                    message=testo_msg,
+                    is_group=False
+                )
+                is_ok = bool(res.get('success'))
+                err_msg = res.get('error', '')
+
+                if is_ok:
+                    p.sollecito_inviato = True
+                    p.sollecito_inviato_at = timezone.now()
+                    p.save(update_fields=['sollecito_inviato', 'sollecito_inviato_at'])
+
+                    tmpl, _ = MessageTemplate.objects.get_or_create(
+                        name='SOLLECITO_INDIVIDUALE',
+                        defaults={'body': base_template}
+                    )
+                    MessageLog.objects.create(
+                        lezione=lezione,
+                        template=tmpl,
+                        rendered_text=testo_msg,
+                        status='Inviato',
+                        error_message=f"Allievo: {allievo.nome} {allievo.cognome} ({telefono})"
+                    )
+
+                    allievi_sollecitati.append({
+                        'allievo_id': str(allievo.id),
+                        'allievo_nome': f"{allievo.nome} {allievo.cognome}",
+                        'telefono': telefono,
+                        'success': True
+                    })
+                    solleciti_inviati_totali += 1
+                else:
+                    allievi_sollecitati.append({
+                        'allievo_id': str(allievo.id),
+                        'allievo_nome': f"{allievo.nome} {allievo.cognome}",
+                        'telefono': telefono,
+                        'success': False,
+                        'error': err_msg
+                    })
+            except Exception as e:
+                allievi_sollecitati.append({
+                    'allievo_id': str(allievo.id),
+                    'allievo_nome': f"{allievo.nome} {allievo.cognome}",
+                    'telefono': telefono,
+                    'success': False,
+                    'error': str(e)
+                })
+
+        results.append({
+            'lezione_id': str(lezione.id),
+            'corso': str(corso),
+            'data': data_str,
+            'totale_allievi_senza_risposta': len(allievi_sollecitati),
+            'sollecitati_con_successo': sum(1 for a in allievi_sollecitati if a.get('success')),
+            'dettagli_allievi': allievi_sollecitati
+        })
+
+    return {
+        'success': True,
+        'solleciti_inviati_totali': solleciti_inviati_totali,
+        'lezioni_elaborate': len(results),
+        'dettagli': results
+    }
+
+
+_sollecito_daemon_started = False
+
+def start_sollecito_checker_daemon():
+    """
+    Avvia un demone in background per verificare ogni 10 minuti se ci sono lezioni
+    per cui sono trascorse almeno sollecito_ore_attesa ore dall'invio del sondaggio,
+    inviando i solleciti WhatsApp agli allievi che non hanno ancora risposto.
+    """
+    global _sollecito_daemon_started
+    if _sollecito_daemon_started:
+        return
+    _sollecito_daemon_started = True
+
+    def _loop():
+        time.sleep(20)  # Breve attesa iniziale
+        while True:
+            try:
+                controlla_e_invia_solleciti_mancata_risposta()
+            except Exception as e:
+                print(f"[Demone Solleciti Mancata Risposta] Errore: {e}")
+            time.sleep(600)  # Controlla ogni 10 minuti
+
+    t = threading.Thread(target=_loop, daemon=True, name="SollecitoMancataRispostaDaemon")
+    t.start()
+    print("[Demone Solleciti Mancata Risposta] Avviato con successo.")

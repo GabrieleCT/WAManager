@@ -278,7 +278,7 @@ class PresenzaSerializer(serializers.ModelSerializer):
             'allievo_nome', 'allievo_nome_solo', 'allievo_cognome',
             'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect',
             'allievo_partner_id', 'allievo_partner_nome',
-            'is_jolly', 'presente', 'fonte', 'timestamp'
+            'is_jolly', 'presente', 'fonte', 'sollecito_inviato', 'sollecito_inviato_at', 'timestamp'
         ]
 
 
@@ -381,7 +381,7 @@ class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
             'orario', 'giorni_settimana', 'testo',
             'is_poll', 'poll_opzione_1', 'poll_opzione_2',
             'ore_ascolto_risposte', 'is_active',
-            'sollecito_attivo', 'sollecito_orario', 'sollecito_testo',
+            'sollecito_attivo', 'sollecito_orario', 'sollecito_ore_attesa', 'sollecito_testo',
             'jolly_testo',
             'created_at', 'updated_at'
         ]
