@@ -158,13 +158,24 @@ async function connectToWhatsApp() {
                 continue;
             }
 
-            // 1. Estrazione del testo (gestisce conversation, extendedTextMessage, ephemeral, viewOnce)
+            // 1. Estrazione del testo (gestisce conversation, extendedTextMessage, immagini/video/documenti con didascalia, ephemeral, viewOnce)
             let innerMsg = msg.message;
             if (innerMsg.ephemeralMessage) innerMsg = innerMsg.ephemeralMessage.message;
             if (innerMsg.viewOnceMessage) innerMsg = innerMsg.viewOnceMessage.message;
+            if (innerMsg.viewOnceMessageV2) innerMsg = innerMsg.viewOnceMessageV2.message;
             if (innerMsg.documentWithCaptionMessage) innerMsg = innerMsg.documentWithCaptionMessage.message;
 
-            const text = innerMsg.conversation || innerMsg.extendedTextMessage?.text;
+            const text = (
+                innerMsg.conversation ||
+                innerMsg.extendedTextMessage?.text ||
+                innerMsg.imageMessage?.caption ||
+                innerMsg.videoMessage?.caption ||
+                innerMsg.documentMessage?.caption ||
+                innerMsg.templateButtonReplyMessage?.selectedDisplayText ||
+                innerMsg.buttonsResponseMessage?.selectedDisplayText ||
+                innerMsg.listResponseMessage?.title ||
+                ''
+            ).trim();
             if (text) {
                 let sender = msg.key.participant;
                 if (!sender && msg.key.fromMe && sock && sock.user) {

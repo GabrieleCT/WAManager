@@ -6,7 +6,8 @@ import '../services/pdf_report_service.dart';
 
 class PresenzeScreen extends StatefulWidget {
   final String? initialLezioneId;
-  const PresenzeScreen({super.key, this.initialLezioneId});
+  final bool embedded;
+  const PresenzeScreen({super.key, this.initialLezioneId, this.embedded = false});
 
   @override
   State<PresenzeScreen> createState() => _PresenzeScreenState();
@@ -24,7 +25,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
     Map<String, dynamic>? _matchStats;
 
   List<Scuola> _scuole = [];
-  String _sollecitoTemplate = 'Ciao <nome_allievo>, ci sei stasera al corso?';
+  String _sollecitoTemplate = 'Ciao {nickname}, ci sei stasera al corso?';
 
   @override
   void initState() {
@@ -184,17 +185,19 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       }
     } catch (_) {}
 
-    final nome = p.nomeSolo;
+    final nick = p.nickname;
     String baseText = _sollecitoTemplate.trim().isNotEmpty
         ? _sollecitoTemplate
-        : 'Ciao <nome_allievo>, ci sei stasera al corso?';
+        : 'Ciao {nickname}, ci sei stasera al corso?';
 
     final textReplaced = baseText
-        .replaceAll('<nome_allievo>', nome)
-        .replaceAll('{nome_allievo}', nome)
-        .replaceAll('{allievo}', nome)
-        .replaceAll('{nome}', nome)
-        .replaceAll('<nome>', nome);
+        .replaceAll('{nickname}', nick)
+        .replaceAll('<nickname>', nick)
+        .replaceAll('<nome_allievo>', nick)
+        .replaceAll('{nome_allievo}', nick)
+        .replaceAll('{allievo}', nick)
+        .replaceAll('{nome}', nick)
+        .replaceAll('<nome>', nick);
 
     final textCtrl = TextEditingController(text: textReplaced);
     bool sending = false;
@@ -942,19 +945,21 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
               child: const Icon(Icons.star),
             )
           : null,
-      appBar: AppBar(
-        title: const Text('Gestione Presenze'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Ricarica Presenze',
-            onPressed: () {
-              if (_selectedLezione != null) _loadPresenze(_selectedLezione!.id);
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Gestione Presenze'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Ricarica Presenze',
+                  onPressed: () {
+                    if (_selectedLezione != null) _loadPresenze(_selectedLezione!.id);
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
       body: Column(
         children: [
           // ── BARRA DI SELEZIONE LEZIONE (LEZIONI DEL GIORNO + PULSANTE LEZIONE QUALSIASI) ──
@@ -970,9 +975,20 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                 if (isMobile) ...[
                   lezioneSelectorWidget,
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: scegliAltraDataBtn,
+                  Row(
+                    children: [
+                      Expanded(child: scegliAltraDataBtn),
+                      if (widget.embedded) ...[
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.refresh, size: 20),
+                          tooltip: 'Ricarica Presenze',
+                          onPressed: () {
+                            if (_selectedLezione != null) _loadPresenze(_selectedLezione!.id);
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 ] else ...[
                   Row(
@@ -984,6 +1000,16 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                       ),
                       const SizedBox(width: 12),
                       scegliAltraDataBtn,
+                      if (widget.embedded) ...[
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.refresh, size: 20),
+                          tooltip: 'Ricarica Presenze',
+                          onPressed: () {
+                            if (_selectedLezione != null) _loadPresenze(_selectedLezione!.id);
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1326,70 +1352,72 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                 ),
                                 const SizedBox(width: 8),
 
-                                // Iconcine a destra: Spunta verde, X rossa, Punto interrogativo grigio, WhatsApp
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // 1. Spunta verde
-                                    _buildPresenzaButton(
-                                      isSelected: p.presente == true,
-                                      activeBgColor: Colors.green.shade600,
-                                      inactiveBgColor: Colors.green.shade50,
-                                      iconColor: p.presente == true ? Colors.white : Colors.green.shade700,
-                                      borderColor: p.presente == true ? Colors.green.shade700 : Colors.green.shade300,
-                                      icon: Icons.check,
-                                      tooltip: 'Presente',
-                                      onTap: () => _updatePresenzaValore(p, true),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    // 2. X rossa
-                                    _buildPresenzaButton(
-                                      isSelected: p.presente == false,
-                                      activeBgColor: Colors.red.shade600,
-                                      inactiveBgColor: Colors.red.shade50,
-                                      iconColor: p.presente == false ? Colors.white : Colors.red.shade700,
-                                      borderColor: p.presente == false ? Colors.red.shade700 : Colors.red.shade300,
-                                      icon: Icons.close,
-                                      tooltip: 'Assente',
-                                      onTap: () => _updatePresenzaValore(p, false),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    // 3. Punto interrogativo grigio (default)
-                                    _buildPresenzaButton(
-                                      isSelected: p.presente == null,
-                                      activeBgColor: Colors.grey.shade600,
-                                      inactiveBgColor: Colors.white,
-                                      iconColor: p.presente == null ? Colors.white : Colors.grey.shade700,
-                                      borderColor: p.presente == null ? Colors.grey.shade700 : Colors.grey.shade400,
-                                      icon: Icons.help_outline,
-                                      tooltip: 'Nessuna risposta',
-                                      onTap: () => _updatePresenzaValore(p, null),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    // 4. Invia sollecito WhatsApp (dopo il punto interrogativo)
-                                    _buildPresenzaButton(
-                                      isSelected: p.sollecitoInviato,
-                                      activeBgColor: Colors.orange.shade600,
-                                      inactiveBgColor: p.allievoTelefono.trim().isNotEmpty
-                                          ? (p.sollecitoInviato ? Colors.orange.shade50 : Colors.green.shade50)
-                                          : Colors.grey.shade100,
-                                      iconColor: p.allievoTelefono.trim().isNotEmpty
-                                          ? (p.sollecitoInviato ? Colors.orange.shade800 : Colors.green.shade700)
-                                          : Colors.grey.shade400,
-                                      borderColor: p.allievoTelefono.trim().isNotEmpty
-                                          ? (p.sollecitoInviato ? Colors.orange.shade300 : Colors.green.shade300)
-                                          : Colors.grey.shade300,
-                                      icon: p.sollecitoInviato ? Icons.mark_chat_read : Icons.chat,
-                                      tooltip: p.allievoTelefono.trim().isNotEmpty
-                                          ? (p.sollecitoInviato
-                                              ? 'Sollecito già inviato a ${p.allievoNome}'
-                                              : 'Invia sollecito WhatsApp a ${p.allievoNome}')
-                                          : 'Nessun numero di telefono per ${p.allievoNome}',
-                                      onTap: () => _inviaSollecitoRisposta(p),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                // Azioni: su mobile menu compatto con 3 puntini, su desktop pulsanti estesi
+                                 if (isMobile)
+                                   _buildMobilePresenzaMenu(p)
+                                 else
+                                   Row(
+                                     mainAxisSize: MainAxisSize.min,
+                                     children: [
+                                       // 1. Spunta verde
+                                       _buildPresenzaButton(
+                                         isSelected: p.presente == true,
+                                         activeBgColor: Colors.green.shade600,
+                                         inactiveBgColor: Colors.green.shade50,
+                                         iconColor: p.presente == true ? Colors.white : Colors.green.shade700,
+                                         borderColor: p.presente == true ? Colors.green.shade700 : Colors.green.shade300,
+                                         icon: Icons.check,
+                                         tooltip: 'Presente',
+                                         onTap: () => _updatePresenzaValore(p, true),
+                                       ),
+                                       const SizedBox(width: 6),
+                                       // 2. X rossa
+                                       _buildPresenzaButton(
+                                         isSelected: p.presente == false,
+                                         activeBgColor: Colors.red.shade600,
+                                         inactiveBgColor: Colors.red.shade50,
+                                         iconColor: p.presente == false ? Colors.white : Colors.red.shade700,
+                                         borderColor: p.presente == false ? Colors.red.shade700 : Colors.red.shade300,
+                                         icon: Icons.close,
+                                         tooltip: 'Assente',
+                                         onTap: () => _updatePresenzaValore(p, false),
+                                       ),
+                                       const SizedBox(width: 6),
+                                       // 3. Punto interrogativo grigio (default)
+                                       _buildPresenzaButton(
+                                         isSelected: p.presente == null,
+                                         activeBgColor: Colors.grey.shade600,
+                                         inactiveBgColor: Colors.white,
+                                         iconColor: p.presente == null ? Colors.white : Colors.grey.shade700,
+                                         borderColor: p.presente == null ? Colors.grey.shade700 : Colors.grey.shade400,
+                                         icon: Icons.help_outline,
+                                         tooltip: 'Nessuna risposta',
+                                         onTap: () => _updatePresenzaValore(p, null),
+                                       ),
+                                       const SizedBox(width: 6),
+                                       // 4. Invia sollecito WhatsApp (dopo il punto interrogativo)
+                                       _buildPresenzaButton(
+                                         isSelected: p.sollecitoInviato,
+                                         activeBgColor: Colors.orange.shade600,
+                                         inactiveBgColor: p.allievoTelefono.trim().isNotEmpty
+                                             ? (p.sollecitoInviato ? Colors.orange.shade50 : Colors.green.shade50)
+                                             : Colors.grey.shade100,
+                                         iconColor: p.allievoTelefono.trim().isNotEmpty
+                                             ? (p.sollecitoInviato ? Colors.orange.shade800 : Colors.green.shade700)
+                                             : Colors.grey.shade400,
+                                         borderColor: p.allievoTelefono.trim().isNotEmpty
+                                             ? (p.sollecitoInviato ? Colors.orange.shade300 : Colors.green.shade300)
+                                             : Colors.grey.shade300,
+                                         icon: p.sollecitoInviato ? Icons.mark_chat_read : Icons.chat,
+                                         tooltip: p.allievoTelefono.trim().isNotEmpty
+                                             ? (p.sollecitoInviato
+                                                 ? 'Sollecito già inviato a ${p.allievoNome}'
+                                                 : 'Invia sollecito WhatsApp a ${p.allievoNome}')
+                                             : 'Nessun numero di telefono per ${p.allievoNome}',
+                                         onTap: () => _inviaSollecitoRisposta(p),
+                                       ),
+                                     ],
+                                   )                          ],
                             ),
                           ),
                         );
@@ -1441,6 +1469,161 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       'presente': val,
       'fonte': 'manuale',
     });
+  }
+
+  Widget _buildMobilePresenzaMenu(Presenza p) {
+    IconData statusIcon;
+    Color statusColor;
+    Color statusBg;
+    if (p.presente == true) {
+      statusIcon = Icons.check;
+      statusColor = Colors.green.shade800;
+      statusBg = Colors.green.shade100;
+    } else if (p.presente == false) {
+      statusIcon = Icons.close;
+      statusColor = Colors.red.shade800;
+      statusBg = Colors.red.shade100;
+    } else {
+      statusIcon = Icons.help_outline;
+      statusColor = Colors.grey.shade700;
+      statusBg = Colors.grey.shade200;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Indicatore sintetico dello stato attuale
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: statusBg,
+            shape: BoxShape.circle,
+            border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+          ),
+          child: Icon(statusIcon, size: 14, color: statusColor),
+        ),
+        if (p.sollecitoInviato) ...[
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade100,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.mark_chat_read, size: 12, color: Colors.orange.shade900),
+          ),
+        ],
+        // Menu a 3 puntini
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, size: 22),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          tooltip: 'Opzioni presenza',
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (value) {
+            if (value == 'presente') {
+              _updatePresenzaValore(p, true);
+            } else if (value == 'assente') {
+              _updatePresenzaValore(p, false);
+            } else if (value == 'nessuna_risposta') {
+              _updatePresenzaValore(p, null);
+            } else if (value == 'sollecito') {
+              _inviaSollecitoRisposta(p);
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            PopupMenuItem<String>(
+              value: 'presente',
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Presente',
+                    style: TextStyle(
+                      fontWeight: p.presente == true ? FontWeight.bold : FontWeight.normal,
+                      color: p.presente == true ? Colors.green.shade800 : Colors.black87,
+                    ),
+                  ),
+                  if (p.presente == true) ...[
+                    const Spacer(),
+                    Icon(Icons.check, size: 16, color: Colors.green.shade700),
+                  ],
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'assente',
+              child: Row(
+                children: [
+                  Icon(Icons.cancel, color: Colors.red.shade700, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Assente',
+                    style: TextStyle(
+                      fontWeight: p.presente == false ? FontWeight.bold : FontWeight.normal,
+                      color: p.presente == false ? Colors.red.shade800 : Colors.black87,
+                    ),
+                  ),
+                  if (p.presente == false) ...[
+                    const Spacer(),
+                    Icon(Icons.check, size: 16, color: Colors.red.shade700),
+                  ],
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'nessuna_risposta',
+              child: Row(
+                children: [
+                  Icon(Icons.help_outline, color: Colors.grey.shade700, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Nessuna risposta',
+                    style: TextStyle(
+                      fontWeight: p.presente == null ? FontWeight.bold : FontWeight.normal,
+                      color: p.presente == null ? Colors.grey.shade800 : Colors.black87,
+                    ),
+                  ),
+                  if (p.presente == null) ...[
+                    const Spacer(),
+                    Icon(Icons.check, size: 16, color: Colors.grey.shade700),
+                  ],
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'sollecito',
+              enabled: p.allievoTelefono.trim().isNotEmpty,
+              child: Row(
+                children: [
+                  Icon(
+                    p.sollecitoInviato ? Icons.mark_chat_read : Icons.chat,
+                    color: p.allievoTelefono.trim().isNotEmpty
+                        ? (p.sollecitoInviato ? Colors.orange.shade800 : const Color(0xFF25D366))
+                        : Colors.grey,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      p.allievoTelefono.trim().isEmpty
+                          ? 'Nessun telefono registrato'
+                          : (p.sollecitoInviato ? 'Invia nuovo sollecito WA' : 'Invia sollecito WhatsApp'),
+                      style: TextStyle(
+                        color: p.allievoTelefono.trim().isNotEmpty ? Colors.black87 : Colors.grey,
+                        fontWeight: p.sollecitoInviato ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   Widget _buildPresenzaButton({

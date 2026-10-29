@@ -20,8 +20,21 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
   bool _sendingManual = false;
   bool _savingSollecito = false;
   bool _savingJolly = false;
+  bool _savingModuloTesseramento = false;
+  bool _savingRicevuta = false;
+  bool _savingIstruzioniPagamento = false;
+  final TextEditingController _testoIstruzioniPagamentoCtl = TextEditingController(
+    text: "Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺",
+  );
+  ConfigurazioneASD? _asdConfig;
   final TextEditingController _testoJollyCtl = TextEditingController(
     text: 'Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+  );
+  final TextEditingController _testoModuloTesseramentoCtl = TextEditingController(
+    text: "Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all'ASD TantoTango da compilare e firmare. A presto!",
+  );
+  final TextEditingController _testoRicevutaCtl = TextEditingController(
+    text: 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".',
   );
 
   // 1. Configurazione Demone
@@ -77,12 +90,18 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     _manualOpt2Ctl.dispose();
     _testoSollecitoCtl.dispose();
     _testoJollyCtl.dispose();
+    _testoModuloTesseramentoCtl.dispose();
+    _testoRicevutaCtl.dispose();
+    _testoIstruzioniPagamentoCtl.dispose();
     super.dispose();
   }
 
   Future<void> _loadAllData() async {
     setState(() => _loading = true);
     try {
+      try {
+        _asdConfig = await _api.getConfigurazioneASD();
+      } catch (_) {}
       final config = await _api.getDaemonConfig();
       final corsi = await _api.getCorsi();
 
@@ -124,9 +143,18 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
         }
         _testoSollecitoCtl.text = config.sollecitoTesto.isNotEmpty
             ? config.sollecitoTesto
-            : "Ciao <nome_allievo>, ci sei stasera al corso?";
+            : "Ciao {nickname}, ci sei stasera al corso?";
         if (config.jollyTesto.isNotEmpty) {
           _testoJollyCtl.text = config.jollyTesto;
+        }
+        if (config.moduloTesseramentoTesto.isNotEmpty) {
+          _testoModuloTesseramentoCtl.text = config.moduloTesseramentoTesto;
+        }
+        if (config.ricevutaTesto.isNotEmpty) {
+          _testoRicevutaCtl.text = config.ricevutaTesto;
+        }
+        if (config.istruzioniPagamentoTesto.isNotEmpty) {
+          _testoIstruzioniPagamentoCtl.text = config.istruzioniPagamentoTesto;
         }
 
         if (_testoManualeCtl.text.isEmpty) {
@@ -137,8 +165,11 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             "Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\n"
             "Chi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!";
         _testoManualeCtl.text = _testoDaemonCtl.text;
-        _testoSollecitoCtl.text = "Ciao <nome_allievo>, ci sei stasera al corso?";
+        _testoSollecitoCtl.text = "Ciao {nickname}, ci sei stasera al corso?";
         _testoJollyCtl.text = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
+        _testoModuloTesseramentoCtl.text = "Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all'ASD TantoTango da compilare e firmare. A presto!";
+        _testoRicevutaCtl.text = 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".';
+        _testoIstruzioniPagamentoCtl.text = "Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺";
       }
 
       _corsi = corsi;
@@ -541,8 +572,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     }
 
     return DefaultTabController(
-      initialIndex: widget.initialTab.clamp(0, 4),
-      length: 5,
+      initialIndex: widget.initialTab.clamp(0, 7),
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Messaggistica'),
@@ -566,6 +597,18 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                 text: 'Configurazione Messaggio Jolly',
               ),
               Tab(
+                icon: Icon(Icons.assignment_outlined),
+                text: 'Messaggio Modulo Tesseramento',
+              ),
+              Tab(
+                icon: Icon(Icons.receipt_long_outlined),
+                text: 'Messaggio Invio Ricevuta',
+              ),
+              Tab(
+                icon: Icon(Icons.account_balance_outlined),
+                text: 'Messaggio Istruzioni di Pagamento',
+              ),
+              Tab(
                 icon: Icon(Icons.qr_code_scanner),
                 text: 'WhatsApp Gateway',
               ),
@@ -585,11 +628,52 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
             _buildTabInvioManuale(),
             _buildTabSollecito(),
             _buildTabJolly(),
+            _buildTabModuloTesseramento(),
+            _buildTabRicevuta(),
+            _buildTabIstruzioniPagamento(),
             const WhatsAppScreen(embedded: true),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _salvaConfigurazioneIstruzioniPagamento() async {
+    setState(() => _savingIstruzioniPagamento = true);
+    try {
+      final res = await _api.saveDaemonConfig({
+        'istruzioni_pagamento_testo': _testoIstruzioniPagamentoCtl.text.trim(),
+      });
+      if (!mounted) return;
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurazione messaggio Istruzioni di Pagamento salvata con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Errore nel salvataggio della configurazione.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore di connessione: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _savingIstruzioniPagamento = false);
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -1481,7 +1565,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                       ),
                       const Divider(height: 28),
                       const Text(
-                        'Inserisci il messaggio predefinito. Come placeholder è disponibile il nome dell\'allievo o prospect (<nome_allievo>):',
+                        'Inserisci il messaggio predefinito. Come placeholder è disponibile il nickname o nome dell\'allievo ({nickname}):',
                         style: TextStyle(fontSize: 13, color: Colors.black87),
                       ),
                       const SizedBox(height: 12),
@@ -1489,7 +1573,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                         controller: _testoSollecitoCtl,
                         maxLines: 4,
                         decoration: InputDecoration(
-                          hintText: "Es. Ciao <nome_allievo>, ci sei stasera al corso?",
+                          hintText: "Es. Ciao {nickname}, ci sei stasera al corso?",
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           filled: true,
                           fillColor: Colors.grey.shade50,
@@ -1498,13 +1582,25 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                       ),
                       const SizedBox(height: 10),
 
-                      // Placeholder Tag cliccabile
+                      // Placeholder Tag cliccabili
                       Wrap(
                         spacing: 8,
                         runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          const Text('Placeholder nome allievo:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const Text('Tag rapidi:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nickname}'),
+                            tooltip: 'Inserisce il nickname dell\'allievo (o il nome se non specificato)',
+                            onPressed: () => _inserisciTagNelController(_testoSollecitoCtl, '{nickname}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('<nickname>'),
+                            tooltip: 'Inserisce il nickname dell\'allievo (o il nome se non specificato)',
+                            onPressed: () => _inserisciTagNelController(_testoSollecitoCtl, '<nickname>'),
+                          ),
                           ActionChip(
                             avatar: const Icon(Icons.add, size: 14),
                             label: const Text('<nome_allievo>'),
@@ -1518,7 +1614,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
-
                       // Anteprima Live Stile WhatsApp
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -1543,6 +1638,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                             const SizedBox(height: 8),
                             Text(
                               _testoSollecitoCtl.text
+                                  .replaceAll('{nickname}', 'Marco')
+                                  .replaceAll('<nickname>', 'Marco')
                                   .replaceAll('<nome_allievo>', 'Marco')
                                   .replaceAll('{nome_allievo}', 'Marco')
                                   .replaceAll('{allievo}', 'Marco')
@@ -1660,7 +1757,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Imposta il messaggio predefinito proposto quando si contatta un allievo Jolly dalla sezione Anagrafica -> Jolly.',
+                              'Imposta il messaggio predefinito proposto quando si contatta un allievo Jolly dalla sezione Presenze -> Jolly.',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey.shade800,
@@ -1768,6 +1865,730 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                           label: Text(_savingJolly ? 'Salvataggio...' : 'Salva Configurazione Jolly'),
                           onPressed: _savingJolly ? null : _salvaConfigurazioneJolly,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // SALVATAGGIO MODULO TESSERAMENTO & RICEVUTA
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> _salvaConfigurazioneModuloTesseramento() async {
+    setState(() => _savingModuloTesseramento = true);
+    try {
+      final res = await _api.saveDaemonConfig({
+        'modulo_tesseramento_testo': _testoModuloTesseramentoCtl.text.trim(),
+      });
+      if (!mounted) return;
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurazione messaggio Modulo Tesseramento salvata con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Errore durante il salvataggio della configurazione.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore salvataggio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingModuloTesseramento = false);
+    }
+  }
+
+  Future<void> _salvaConfigurazioneRicevuta() async {
+    setState(() => _savingRicevuta = true);
+    try {
+      final res = await _api.saveDaemonConfig({
+        'ricevuta_testo': _testoRicevutaCtl.text.trim(),
+      });
+      if (!mounted) return;
+      if (res != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configurazione messaggio Invio Ricevuta salvata con successo!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Errore durante il salvataggio della configurazione.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore salvataggio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingRicevuta = false);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TAB 5: MESSAGGIO MODULO TESSERAMENTO
+  // ─────────────────────────────────────────────────────────────
+  Widget _buildTabModuloTesseramento() {
+    final previewText = _testoModuloTesseramentoCtl.text
+        .replaceAll('{nickname}', 'Marco')
+        .replaceAll('<nickname>', 'Marco')
+        .replaceAll('{nome}', 'Marco')
+        .replaceAll('{cognome}', 'Marchesi')
+        .replaceAll('{nome_completo}', 'Marco Marchesi');
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 850),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Banner info
+              Card(
+                color: Colors.teal.shade50,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.teal.shade300),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.assignment_turned_in_outlined, color: Colors.teal.shade800, size: 28),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Template Messaggio Modulo Tesseramento',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.teal.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Imposta il messaggio WhatsApp predefinito inviato all\'allievo come testo di accompagnamento quando si invia il modulo di tesseramento in PDF.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade800,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Card Configurazione
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Testo del Messaggio Predefinito',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Personalizza il messaggio. I placeholder inseriti verranno automaticamente sostituiti con i dati dell\'allievo prima dell\'invio:',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _testoModuloTesseramentoCtl,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Es. Gentile {nickname}, in allegato ti inviamo il modulo...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.all(14),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Placeholder Tag cliccabili
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Tag disponibili:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nickname}'),
+                            tooltip: 'Inserisce il nickname dell\'allievo (o il nome se non presente)',
+                            onPressed: () => _inserisciTagNelController(_testoModuloTesseramentoCtl, '{nickname}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome}'),
+                            tooltip: 'Inserisce il nome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoModuloTesseramentoCtl, '{nome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{cognome}'),
+                            tooltip: 'Inserisce il cognome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoModuloTesseramentoCtl, '{cognome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome_completo}'),
+                            tooltip: 'Inserisce nome e cognome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoModuloTesseramentoCtl, '{nome_completo}'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Anteprima
+                      const Text(
+                        'Anteprima Messaggio WhatsApp (esempio con Marco Marchesi):',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCF8C6), // WhatsApp bubble green
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Text(
+                          previewText,
+                          style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Ripristina Predefinito'),
+                            onPressed: () {
+                              setState(() {
+                                _testoModuloTesseramentoCtl.text =
+                                    "Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all'ASD TantoTango da compilare e firmare. A presto!";
+                              });
+                            },
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal.shade800,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            icon: _savingModuloTesseramento
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.save),
+                            label: Text(_savingModuloTesseramento ? 'Salvataggio...' : 'Salva Configurazione Modulo'),
+                            onPressed: _savingModuloTesseramento ? null : _salvaConfigurazioneModuloTesseramento,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TAB 6: MESSAGGIO INVIO RICEVUTA
+  // ─────────────────────────────────────────────────────────────
+  Widget _buildTabRicevuta() {
+    final previewText = _testoRicevutaCtl.text
+        .replaceAll('{nickname}', 'Marco')
+        .replaceAll('<nickname>', 'Marco')
+        .replaceAll('{nome}', 'Marco')
+        .replaceAll('{cognome}', 'Marchesi')
+        .replaceAll('{nome_completo}', 'Marco Marchesi')
+        .replaceAll('{numero}', 'N. 12/2026')
+        .replaceAll('{data}', '29/10/2026')
+        .replaceAll('{importo}', '150.00')
+        .replaceAll('{causale}', 'Quota Corso Autunno')
+        .replaceAll('{intestatario}', 'Marco Marchesi');
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 850),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Banner info
+              Card(
+                color: Colors.indigo.shade50,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.indigo.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.receipt_long_outlined, color: Colors.indigo.shade800, size: 28),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Template Messaggio Invio Ricevuta',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.indigo.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Imposta il messaggio WhatsApp predefinito inviato come accompagnamento quando si inoltra una ricevuta di pagamento in PDF.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade800,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Card Configurazione
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Testo del Messaggio Predefinito',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Personalizza il messaggio. I placeholder inseriti verranno automaticamente sostituiti con i dati dell\'allievo e della ricevuta prima dell\'invio:',
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _testoRicevutaCtl,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Es. Gentile {nickname}, in allegato la ricevuta {numero}...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.all(14),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Placeholder Tag cliccabili
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Tag disponibili:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nickname}'),
+                            tooltip: 'Inserisce il nickname dell\'allievo (o intestatario)',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{nickname}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{numero}'),
+                            tooltip: 'Inserisce il numero ricevuta (es. N. 12/2026)',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{numero}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{data}'),
+                            tooltip: 'Inserisce la data della ricevuta',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{data}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{importo}'),
+                            tooltip: 'Inserisce l\'importo (es. 150.00)',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{importo}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{causale}'),
+                            tooltip: 'Inserisce la causale della ricevuta',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{causale}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome}'),
+                            tooltip: 'Inserisce il nome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{nome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{cognome}'),
+                            tooltip: 'Inserisce il cognome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{cognome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome_completo}'),
+                            tooltip: 'Inserisce nome e cognome / intestatario',
+                            onPressed: () => _inserisciTagNelController(_testoRicevutaCtl, '{nome_completo}'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Anteprima
+                      const Text(
+                        'Anteprima Messaggio WhatsApp (esempio con ricevuta N. 12/2026):',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCF8C6), // WhatsApp bubble green
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Text(
+                          previewText,
+                          style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Ripristina Predefinito'),
+                            onPressed: () {
+                              setState(() {
+                                _testoRicevutaCtl.text =
+                                    'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".';
+                              });
+                            },
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.indigo.shade800,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            icon: _savingRicevuta
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.save),
+                            label: Text(_savingRicevuta ? 'Salvataggio...' : 'Salva Configurazione Ricevuta'),
+                            onPressed: _savingRicevuta ? null : _salvaConfigurazioneRicevuta,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TAB 7: MESSAGGIO ISTRUZIONI DI PAGAMENTO
+  // ─────────────────────────────────────────────────────────────
+  Widget _buildTabIstruzioniPagamento() {
+    final asdIban = (_asdConfig?.iban != null && _asdConfig!.iban.trim().isNotEmpty)
+        ? _asdConfig!.iban.trim()
+        : '';
+    final asdNome = (_asdConfig?.nome != null && _asdConfig!.nome.trim().isNotEmpty)
+        ? _asdConfig!.nome.trim()
+        : 'ASD TantoTango';
+
+    final previewIban = asdIban.isNotEmpty ? asdIban : 'IT00X0000000000000000000000';
+
+    final previewText = _testoIstruzioniPagamentoCtl.text
+        .replaceAll('{iban}', previewIban)
+        .replaceAll('<iban>', previewIban)
+        .replaceAll('{nome_asd}', asdNome)
+        .replaceAll('<nome_asd>', asdNome)
+        .replaceAll('{nickname}', 'Marco')
+        .replaceAll('<nickname>', 'Marco')
+        .replaceAll('{nome}', 'Marco')
+        .replaceAll('{cognome}', 'Marchesi')
+        .replaceAll('{nome_completo}', 'Marco Marchesi');
+
+    return Scaffold(
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.account_balance_outlined, color: Colors.teal.shade700, size: 28),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Configurazione Messaggio Istruzioni di Pagamento',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Personalizza il messaggio WhatsApp inviato agli allievi con le coordinate bancarie (IBAN) e il nome dell\'ASD per il bonifico.',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      if (asdIban.isEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.amber.shade800, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Nota: L\'IBAN dell\'ASD non è ancora stato configurato. Vai nella sezione Anagrafica -> ASD per inserirlo: verrà sostituito automaticamente al tag {iban}.',
+                                  style: TextStyle(fontSize: 13, color: Colors.amber.shade900),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      Text(
+                        'Testo del messaggio WhatsApp:',
+                        style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade800),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _testoIstruzioniPagamentoCtl,
+                        maxLines: 8,
+                        minLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Inserisci il testo per le istruzioni di pagamento...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Tag chips
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Tag disponibili:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ActionChip(
+                            avatar: const Icon(Icons.account_balance, size: 14),
+                            label: const Text('{iban}'),
+                            tooltip: 'Inserisce l\'IBAN del conto corrente dell\'ASD',
+                            backgroundColor: Colors.teal.shade50,
+                            labelStyle: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold),
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{iban}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.business, size: 14),
+                            label: const Text('{nome_asd}'),
+                            tooltip: 'Inserisce il nome ufficiale dell\'ASD',
+                            backgroundColor: Colors.teal.shade50,
+                            labelStyle: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.bold),
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{nome_asd}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nickname}'),
+                            tooltip: 'Inserisce il nickname dell\'allievo (o Nome se assente)',
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{nickname}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome}'),
+                            tooltip: 'Inserisce il nome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{nome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{cognome}'),
+                            tooltip: 'Inserisce il cognome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{cognome}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{nome_completo}'),
+                            tooltip: 'Inserisce nome e cognome dell\'allievo',
+                            onPressed: () => _inserisciTagNelController(_testoIstruzioniPagamentoCtl, '{nome_completo}'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Anteprima
+                      const Text(
+                        'Anteprima Messaggio WhatsApp (esempio pratico):',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCF8C6), // WhatsApp bubble green
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Text(
+                          previewText,
+                          style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Ripristina Predefinito'),
+                            onPressed: () {
+                              setState(() {
+                                _testoIstruzioniPagamentoCtl.text =
+                                    "Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺";
+                              });
+                            },
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            icon: _savingIstruzioniPagamento
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.save),
+                            label: Text(_savingIstruzioniPagamento ? 'Salvataggio...' : 'Salva Configurazione Istruzioni Pagamento'),
+                            onPressed: _savingIstruzioniPagamento ? null : _salvaConfigurazioneIstruzioniPagamento,
+                          ),
+                        ],
                       ),
                     ],
                   ),

@@ -179,6 +179,7 @@ class Allievo {
   final String id;
   final String nome;
   final String cognome;
+  final String nickname;
   final String ruolo;
   final String ruoloDisplay;
   final String telefono;
@@ -211,6 +212,7 @@ class Allievo {
     required this.id,
     required this.nome,
     required this.cognome,
+    this.nickname = '',
     required this.ruolo,
     required this.ruoloDisplay,
     required this.telefono,
@@ -262,10 +264,15 @@ class Allievo {
         googleSyncError = gs['error']?.toString();
       }
     }
+    final nomeVal = (json['nome'] ?? '').toString();
+    final nickVal = json['nickname']?.toString().trim();
+    final nicknameVal = (nickVal != null && nickVal.isNotEmpty) ? nickVal : nomeVal;
+
     return Allievo(
       id: json['id'] ?? '',
       nome: json['nome'] ?? '',
       cognome: json['cognome'] ?? '',
+      nickname: nicknameVal,
       ruolo: json['ruolo'] ?? 'leader',
       ruoloDisplay: json['ruolo_display'] ?? json['ruolo'] ?? '',
       telefono: json['telefono'] ?? '',
@@ -299,6 +306,7 @@ class Allievo {
   Map<String, dynamic> toJson() => {
     'nome': nome,
     'cognome': cognome,
+    'nickname': nickname,
     'ruolo': ruolo,
     'telefono': telefono,
     'email': email,
@@ -337,7 +345,13 @@ class Jolly {
     required this.priorita,
   });
 
-  String get displayName => nickname.trim().isNotEmpty ? nickname.trim() : allievoNome;
+  String get displayName => allievoNome;
+
+  String get effectiveNickname {
+    if (nickname.trim().isNotEmpty) return nickname.trim();
+    if (allievoNome.trim().isNotEmpty) return allievoNome.trim().split(' ').first;
+    return 'Jolly';
+  }
 
   factory Jolly.fromJson(Map<String, dynamic> json) {
     return Jolly(
@@ -355,7 +369,6 @@ class Jolly {
 
   Map<String, dynamic> toJson() => {
     'allievo': allievoId,
-    'nickname': nickname,
     'priorita': priorita,
   };
 }
@@ -437,6 +450,7 @@ class Presenza {
   final String allievoNome;
   final String allievoNomeSolo;
   final String allievoCognome;
+  final String allievoNickname;
   final String allievoRuolo;
   final String allievoTelefono;
   final bool allievoIsProspect;
@@ -450,6 +464,11 @@ class Presenza {
     if (allievoNomeSolo.isNotEmpty) return allievoNomeSolo.trim();
     final parts = cleanNome.split(' ');
     return parts.isNotEmpty ? parts.first : '';
+  }
+
+  String get nickname {
+    if (allievoNickname.trim().isNotEmpty) return allievoNickname.trim();
+    return nomeSolo;
   }
 
   String get cognomeSolo {
@@ -477,6 +496,7 @@ class Presenza {
     required this.allievoNome,
     this.allievoNomeSolo = '',
     this.allievoCognome = '',
+    this.allievoNickname = '',
     required this.allievoRuolo,
     required this.allievoTelefono,
     this.allievoIsProspect = false,
@@ -497,6 +517,7 @@ class Presenza {
       allievoNome: json['allievo_nome'] ?? '',
       allievoNomeSolo: json['allievo_nome_solo'] ?? '',
       allievoCognome: json['allievo_cognome'] ?? '',
+      allievoNickname: json['allievo_nickname'] ?? '',
       allievoRuolo: json['allievo_ruolo'] ?? '',
       allievoTelefono: json['allievo_telefono'] ?? '',
       allievoIsProspect: json['allievo_is_prospect'] ?? false,
@@ -621,6 +642,9 @@ class SondaggioMattutinoConfig {
   final String sollecitoOrario;
   final String sollecitoTesto;
   final String jollyTesto;
+  final String moduloTesseramentoTesto;
+  final String ricevutaTesto;
+  final String istruzioniPagamentoTesto;
   final String createdAt;
   final String updatedAt;
 
@@ -642,6 +666,9 @@ class SondaggioMattutinoConfig {
     this.sollecitoOrario = '16:00',
     this.sollecitoTesto = '',
     this.jollyTesto = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+    this.moduloTesseramentoTesto = 'Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
+    this.ricevutaTesto = 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".',
+    this.istruzioniPagamentoTesto = 'Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺',
     this.createdAt = '',
     this.updatedAt = '',
   });
@@ -665,6 +692,9 @@ class SondaggioMattutinoConfig {
       sollecitoOrario: json['sollecito_orario'] ?? '16:00',
       sollecitoTesto: json['sollecito_testo'] ?? '',
       jollyTesto: json['jolly_testo'] ?? 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+      moduloTesseramentoTesto: json['modulo_tesseramento_testo'] ?? 'Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
+      ricevutaTesto: json['ricevuta_testo'] ?? 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".',
+      istruzioniPagamentoTesto: json['istruzioni_pagamento_testo'] ?? 'Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );
@@ -684,6 +714,10 @@ class SondaggioMattutinoConfig {
     'sollecito_ore_attesa': sollecitoOreAttesa,
     'sollecito_orario': sollecitoOrario,
     'sollecito_testo': sollecitoTesto,
+    'jolly_testo': jollyTesto,
+    'modulo_tesseramento_testo': moduloTesseramentoTesto,
+    'ricevuta_testo': ricevutaTesto,
+    'istruzioni_pagamento_testo': istruzioniPagamentoTesto,
   };
 }
 
@@ -745,6 +779,7 @@ class Ricevuta {
   final String? allievoId;
   final String? allievoNome;
   final String? allievoTelefono;
+  final String? allievoNickname;
   final String? pagamentoId;
   final String? movimentoCassaId;
   final bool inBilancio;
@@ -764,6 +799,7 @@ class Ricevuta {
     this.allievoId,
     this.allievoNome,
     this.allievoTelefono,
+    this.allievoNickname,
     this.pagamentoId,
     this.movimentoCassaId,
     this.inBilancio = false,
@@ -789,6 +825,7 @@ class Ricevuta {
       allievoId: json['allievo'],
       allievoNome: json['allievo_nome'],
       allievoTelefono: json['allievo_telefono'],
+      allievoNickname: json['allievo_nickname'],
       pagamentoId: json['pagamento'],
       movimentoCassaId: json['movimento_cassa']?.toString(),
       inBilancio: json['in_bilancio'] == true || json['movimento_cassa'] != null,
@@ -1378,6 +1415,7 @@ class ConfigurazioneASD {
   final String pec;
   final String sitoWeb;
   final String codiceAffiliazione;
+  final String iban;
   final String createdAt;
   final String updatedAt;
 
@@ -1393,6 +1431,7 @@ class ConfigurazioneASD {
     this.pec = '',
     this.sitoWeb = '',
     this.codiceAffiliazione = '',
+    this.iban = '',
     this.createdAt = '',
     this.updatedAt = '',
   });
@@ -1410,6 +1449,7 @@ class ConfigurazioneASD {
       pec: json['pec'] ?? '',
       sitoWeb: json['sito_web'] ?? '',
       codiceAffiliazione: json['codice_affiliazione'] ?? '',
+      iban: json['iban'] ?? '',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );
@@ -1426,6 +1466,7 @@ class ConfigurazioneASD {
     'pec': pec,
     'sito_web': sitoWeb,
     'codice_affiliazione': codiceAffiliazione,
+    'iban': iban,
   };
 
   ConfigurazioneASD copyWith({
@@ -1440,6 +1481,7 @@ class ConfigurazioneASD {
     String? pec,
     String? sitoWeb,
     String? codiceAffiliazione,
+    String? iban,
     String? createdAt,
     String? updatedAt,
   }) {
@@ -1455,6 +1497,7 @@ class ConfigurazioneASD {
       pec: pec ?? this.pec,
       sitoWeb: sitoWeb ?? this.sitoWeb,
       codiceAffiliazione: codiceAffiliazione ?? this.codiceAffiliazione,
+      iban: iban ?? this.iban,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

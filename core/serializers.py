@@ -159,6 +159,7 @@ class AllievoSerializer(serializers.ModelSerializer):
     partner_cognome = serializers.CharField(source='partner.cognome', read_only=True)
     corso_gruppo_whatsapp = serializers.CharField(source='corso.gruppo_whatsapp', read_only=True)
     corso_has_whatsapp = serializers.SerializerMethodField()
+    nickname = serializers.CharField(required=False, allow_blank=True, default='')
     telefono = serializers.CharField(required=False, allow_blank=True, default='')
     numero_tessera = serializers.CharField(required=False, allow_blank=True, default='')
     data_emissione_tessera = serializers.DateField(required=False, allow_null=True)
@@ -167,7 +168,7 @@ class AllievoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Allievo
         fields = [
-            'id', 'nome', 'cognome', 'ruolo', 'ruolo_display',
+            'id', 'nome', 'cognome', 'nickname', 'ruolo', 'ruolo_display',
             'telefono', 'corso', 'corso_descrizione', 'scuola_id', 'scuola_nome',
             'recensione', 'recensione_display', 'livello', 'livello_display',
             'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
@@ -180,6 +181,8 @@ class AllievoSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         if isinstance(data, dict):
             data = data.copy()
+            if 'nickname' in data and data['nickname'] is None:
+                data['nickname'] = ''
             if 'telefono' in data and data['telefono'] is None:
                 data['telefono'] = ''
             if data.get('data_emissione_tessera') == '':
@@ -204,7 +207,15 @@ class JollySerializer(serializers.ModelSerializer):
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_ruolo_display = serializers.CharField(source='allievo.get_ruolo_display', read_only=True)
     allievo_livello = serializers.CharField(source='allievo.livello', read_only=True)
-    nickname = serializers.CharField(required=False, allow_blank=True)
+    nickname = serializers.SerializerMethodField()
+
+    def get_nickname(self, obj):
+        if obj.allievo:
+            nick = (obj.allievo.nickname or '').strip()
+            if nick:
+                return nick
+            return (obj.allievo.nome or '').strip()
+        return ''
 
     class Meta:
         model = Jolly
@@ -249,6 +260,7 @@ class PresenzaSerializer(serializers.ModelSerializer):
     allievo_nome = serializers.SerializerMethodField()
     allievo_nome_solo = serializers.CharField(source='allievo.nome', read_only=True)
     allievo_cognome = serializers.CharField(source='allievo.cognome', read_only=True)
+    allievo_nickname = serializers.CharField(source='allievo.nickname', read_only=True)
     allievo_ruolo = serializers.CharField(source='allievo.ruolo', read_only=True)
     allievo_telefono = serializers.CharField(source='allievo.telefono', read_only=True)
     allievo_is_prospect = serializers.BooleanField(source='allievo.is_prospect', read_only=True)
@@ -275,7 +287,7 @@ class PresenzaSerializer(serializers.ModelSerializer):
         model = Presenza
         fields = [
             'id', 'lezione', 'lezione_data', 'allievo',
-            'allievo_nome', 'allievo_nome_solo', 'allievo_cognome',
+            'allievo_nome', 'allievo_nome_solo', 'allievo_cognome', 'allievo_nickname',
             'allievo_ruolo', 'allievo_telefono', 'allievo_is_prospect',
             'allievo_partner_id', 'allievo_partner_nome',
             'is_jolly', 'presente', 'fonte', 'sollecito_inviato', 'sollecito_inviato_at', 'timestamp'
@@ -382,7 +394,7 @@ class SondaggioMattutinoConfigSerializer(serializers.ModelSerializer):
             'is_poll', 'poll_opzione_1', 'poll_opzione_2',
             'ore_ascolto_risposte', 'is_active',
             'sollecito_attivo', 'sollecito_orario', 'sollecito_ore_attesa', 'sollecito_testo',
-            'jolly_testo',
+            'jolly_testo', 'modulo_tesseramento_testo', 'ricevuta_testo', 'istruzioni_pagamento_testo',
             'created_at', 'updated_at'
         ]
 
@@ -477,13 +489,14 @@ class RicevutaSerializer(serializers.ModelSerializer):
     in_bilancio = serializers.BooleanField(read_only=True)
     allievo_nome = serializers.SerializerMethodField()
     allievo_telefono = serializers.SerializerMethodField()
+    allievo_nickname = serializers.SerializerMethodField()
 
     class Meta:
         model = Ricevuta
         fields = [
             'id', 'numero', 'anno', 'data', 'intestatario',
             'causale', 'importo', 'note', 'allievo', 'allievo_nome',
-            'allievo_telefono', 'pagamento', 'movimento_cassa',
+            'allievo_telefono', 'allievo_nickname', 'pagamento', 'movimento_cassa',
             'in_bilancio', 'numero_display', 'created_at', 'updated_at'
         ]
         validators = []
@@ -496,6 +509,11 @@ class RicevutaSerializer(serializers.ModelSerializer):
     def get_allievo_telefono(self, obj):
         if obj.allievo and obj.allievo.telefono:
             return obj.allievo.telefono
+        return ''
+
+    def get_allievo_nickname(self, obj):
+        if obj.allievo:
+            return (obj.allievo.nickname or obj.allievo.nome or '').strip()
         return ''
 
     def validate(self, attrs):
@@ -628,7 +646,7 @@ class ConfigurazioneASDSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nome', 'codice_fiscale', 'partita_iva',
             'sede_legale', 'sede_operativa', 'telefono',
-            'email', 'pec', 'sito_web', 'codice_affiliazione',
+            'email', 'pec', 'sito_web', 'codice_affiliazione', 'iban',
             'created_at', 'updated_at'
         ]
 

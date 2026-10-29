@@ -623,7 +623,7 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
     ore_attesa = getattr(global_config, 'sollecito_ore_attesa', 3) or 3
     base_template = (global_config.sollecito_testo or '').strip()
     if not base_template:
-        base_template = "Ciao <nome_allievo>, ci sei stasera al corso?"
+        base_template = "Ciao {nickname}, ci sei stasera al corso?"
 
     if lezione_id:
         lezioni = Lezione.objects.filter(id=lezione_id).select_related('corso', 'corso__scuola')
@@ -685,13 +685,15 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
             if not telefono:
                 continue
 
-            nome_allievo = (allievo.nome or '').strip()
+            nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
             testo_msg = base_template\
-                .replace('<nome_allievo>', nome_allievo)\
-                .replace('{nome_allievo}', nome_allievo)\
-                .replace('<nome>', nome_allievo)\
-                .replace('{nome}', nome_allievo)\
-                .replace('{allievo}', nome_allievo)\
+                .replace('{nickname}', nick)\
+                .replace('<nickname>', nick)\
+                .replace('<nome_allievo>', nick)\
+                .replace('{nome_allievo}', nick)\
+                .replace('<nome>', nick)\
+                .replace('{nome}', nick)\
+                .replace('{allievo}', nick)\
                 .replace('{corso}', str(corso.nome))\
                 .replace('{orario}', orario_str)\
                 .replace('{data}', data_str)\

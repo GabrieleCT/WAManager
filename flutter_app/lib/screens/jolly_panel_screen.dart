@@ -60,14 +60,6 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
   void _showAddJollyDialog([Jolly? jolly]) {
     String? allievoId = jolly?.allievoId ?? (_allievi.isNotEmpty ? _allievi.first.id : null);
     int priorita = jolly?.priorita ?? 1;
-    final nicknameController = TextEditingController(text: jolly?.nickname ?? '');
-
-    if (jolly == null && nicknameController.text.isEmpty && allievoId != null) {
-      final a = _allievi.where((item) => item.id == allievoId).firstOrNull;
-      if (a != null) {
-        nicknameController.text = a.nome;
-      }
-    }
 
     showDialog(
       context: context,
@@ -84,22 +76,8 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
                 onChanged: (v) {
                   setDState(() {
                     allievoId = v;
-                    if (v != null) {
-                      final a = _allievi.where((item) => item.id == v).firstOrNull;
-                      if (a != null && (nicknameController.text.trim().isEmpty || jolly == null)) {
-                        nicknameController.text = a.nome;
-                      }
-                    }
                   });
                 },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nicknameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nickname',
-                  hintText: "Se vuoto, verrà valorizzato con il nome dell'allievo",
-                ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
@@ -115,15 +93,10 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (allievoId == null) return;
-                String nick = nicknameController.text.trim();
-                if (nick.isEmpty) {
-                  final a = _allievi.where((item) => item.id == allievoId).firstOrNull;
-                  if (a != null) nick = a.nome;
-                }
                 if (jolly == null) {
-                  await _api.createJolly(allievoId!, priorita, nickname: nick);
+                  await _api.createJolly(allievoId!, priorita);
                 } else {
-                  await _api.updateJolly(jolly.id, allievoId!, priorita, nickname: nick);
+                  await _api.updateJolly(jolly.id, allievoId!, priorita);
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
                 _loadData();
@@ -136,94 +109,253 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
     );
   }
 
-  void _showSendMessageDialog([Jolly? jolly]) {
+  Future<void> _showSendMessageDialog([Jolly? jolly]) async {
+    // Ricarica sempre la configurazione più recente del messaggio jolly
+    try {
+      final config = await _api.getDaemonConfig();
+      if (config != null && config.jollyTesto.trim().isNotEmpty) {
+        _defaultJollyMessage = config.jollyTesto.trim();
+      }
+    } catch (_) {}
+    if (!mounted) return;
+
     String? selectedJollyId = jolly?.id ?? (_jollyList.isNotEmpty ? _jollyList.first.id : null);
     String? selectedLezioneId = _lezioni.isNotEmpty ? _lezioni.first.id : null;
 
     final initialJolly = jolly ?? (_jollyList.isNotEmpty ? _jollyList.first : null);
-    String initialMsg = _defaultJollyMessage;
-    if (initialJolly != null) {
-      final nick = initialJolly.displayName;
-      initialMsg = initialMsg
+
+    String buildJollyMsg(Jolly? targetJolly) {
+      if (targetJolly == null) return _defaultJollyMessage;
+      String nick = targetJolly.effectiveNickname;
+      if (nick.isEmpty) {
+        final a = _allievi.where((al) => al.id == targetJolly.allievoId).firstOrNull;
+        if (a != null && a.nickname.trim().isNotEmpty) {
+          nick = a.nickname.trim();
+        } else if (a != null && a.nome.trim().isNotEmpty) {
+          nick = a.nome.trim();
+        } else {
+          nick = targetJolly.allievoNome.split(' ').first;
+        }
+      }
+      return _defaultJollyMessage
           .replaceAll('{nickname}', nick)
           .replaceAll('<nickname>', nick)
           .replaceAll('{allievo}', nick)
-          .replaceAll('{nome}', nick);
+          .replaceAll('{nome}', nick)
+          .replaceAll('<nome>', nick);
     }
-    final textController = TextEditingController(text: initialMsg);
-    bool sending = false;
-    Map<String, dynamic>? lastResult;
 
-    showDialog(
+    final textController = TextEditingController(text: buildJollyMsg(initialJolly));
+    bool sending = false;
+    String? localError;
+
+    await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) => AlertDialog(
-          title: Text(jolly != null ? 'Invia Messaggio a ${jolly.displayName}' : 'Invia Messaggio Jolly'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        builder: (ctx, setDState) {
+          final currentJolly = _jollyList.where((j) => j.id == selectedJollyId).firstOrNull ?? initialJolly;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
               children: [
-                DropdownButtonFormField<String>(
-                  value: selectedJollyId,
-                  decoration: const InputDecoration(labelText: 'Jolly'),
-                  items: _jollyList.map((j) => DropdownMenuItem(value: j.id, child: Text(j.displayName))).toList(),
-                  onChanged: (v) {
-                    setDState(() {
-                      selectedJollyId = v;
-                      final selectedJolly = _jollyList.where((j) => j.id == v).firstOrNull;
-                      if (selectedJolly != null) {
-                        final nick = selectedJolly.displayName;
-                        textController.text = _defaultJollyMessage
-                            .replaceAll('{nickname}', nick)
-                            .replaceAll('<nickname>', nick)
-                            .replaceAll('{allievo}', nick)
-                            .replaceAll('{nome}', nick);
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: selectedLezioneId,
-                  decoration: const InputDecoration(labelText: 'Lezione (Sede - Lezione - Orario)'),
-                  items: _lezioni.map((l) => DropdownMenuItem(value: l.id, child: Text('${l.scuolaNome ?? ""} - ${l.corsoDescrizione} - ${l.data}'))).toList(),
-                  onChanged: (v) => setDState(() => selectedLezioneId = v),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: textController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Messaggio', border: OutlineInputBorder()),
-                ),
-                if (lastResult != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text('Inviato: ${lastResult!['totale_contattati']} contatti'),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF25D366).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
                   ),
+                  child: const Icon(Icons.chat, color: Color(0xFF25D366), size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        currentJolly != null ? 'Invia Messaggio a ${currentJolly.allievoNome}' : 'Invia Messaggio Jolly',
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                      if (currentJolly != null)
+                        Text(
+                          'Nickname: ${currentJolly.effectiveNickname} • Ruolo: ${currentJolly.allievoRuoloDisplay}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi')),
-            ElevatedButton(
-              onPressed: sending ? null : () async {
-                if (selectedJollyId == null || selectedLezioneId == null || textController.text.trim().isEmpty) return;
-                setDState(() => sending = true);
-                final res = await _api.sendJollyMessage(
-                  testo: textController.text.trim(),
-                  lezioneIds: [selectedLezioneId!],
-                  jollyIds: [selectedJollyId!],
-                  numJolly: null,
-                );
-                setDState(() {
-                  sending = false;
-                  lastResult = res;
-                });
-              },
-              child: sending ? const CircularProgressIndicator() : const Text('Invia Messaggio'),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (localError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                localError!,
+                                style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    DropdownButtonFormField<String>(
+                      value: selectedJollyId,
+                      decoration: InputDecoration(
+                        labelText: 'Seleziona Jolly',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.star, color: Colors.amber),
+                      ),
+                      items: _jollyList.map((j) => DropdownMenuItem(
+                        value: j.id,
+                        child: Text('${j.allievoNome} (${j.effectiveNickname})'),
+                      )).toList(),
+                      onChanged: (v) {
+                        setDState(() {
+                          selectedJollyId = v;
+                          final selectedJolly = _jollyList.where((j) => j.id == v).firstOrNull;
+                          if (selectedJolly != null) {
+                            textController.text = buildJollyMsg(selectedJolly);
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedLezioneId,
+                      decoration: InputDecoration(
+                        labelText: 'Lezione di riferimento',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.event, color: Colors.blue),
+                      ),
+                      items: _lezioni.map((l) => DropdownMenuItem(
+                        value: l.id,
+                        child: Text(
+                          '${l.scuolaNome ?? ""} - ${l.corsoDescrizione} (${l.data})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )).toList(),
+                      onChanged: (v) => setDState(() => selectedLezioneId = v),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Messaggio WhatsApp:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        InkWell(
+                          onTap: () {
+                            setDState(() {
+                              textController.text = buildJollyMsg(currentJolly);
+                            });
+                          },
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.restore, size: 14, color: Colors.blue),
+                              SizedBox(width: 4),
+                              Text('Ripristina predefinito', style: TextStyle(fontSize: 12, color: Colors.blue)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: textController,
+                      maxLines: 4,
+                      minLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Inserisci il messaggio per il jolly...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.pop(ctx),
+                child: const Text('Annulla'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: sending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send, size: 18),
+                label: Text(sending ? 'Invio in corso...' : 'Invia via WhatsApp'),
+                onPressed: sending
+                    ? null
+                    : () async {
+                        if (selectedJollyId == null) {
+                          setDState(() => localError = 'Seleziona un Jolly.');
+                          return;
+                        }
+                        if (textController.text.trim().isEmpty) {
+                          setDState(() => localError = 'Il testo del messaggio non può essere vuoto.');
+                          return;
+                        }
+                        setDState(() {
+                          sending = true;
+                          localError = null;
+                        });
+                        final res = await _api.sendJollyMessage(
+                          testo: textController.text.trim(),
+                          lezioneIds: selectedLezioneId != null ? [selectedLezioneId!] : [],
+                          jollyIds: [selectedJollyId!],
+                          numJolly: null,
+                        );
+
+                        if (!ctx.mounted) return;
+                        if (!mounted) return;
+
+                        if (res['success'] == true && (res['inviati_con_successo'] ?? 0) > 0) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Messaggio WhatsApp inviato con successo a ${currentJolly?.allievoNome ?? "Jolly"}!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } else {
+                          setDState(() {
+                            sending = false;
+                            localError = res['error'] ?? 'Errore durante l\'invio del messaggio.';
+                          });
+                        }
+                      },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -279,9 +411,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
             size: 26,
           ),
           title: Text(
-            j.nickname.isNotEmpty && j.nickname != j.allievoNome
-                ? '${j.nickname} (${j.allievoNome})'
-                : j.displayName,
+            j.allievoNome,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           trailing: Row(
@@ -324,9 +454,7 @@ class _JollyPanelScreenState extends State<JollyPanelScreen> {
         title: Row(
           children: [
             Text(
-              j.nickname.isNotEmpty && j.nickname != j.allievoNome
-                  ? '${j.nickname} (${j.allievoNome})'
-                  : j.displayName,
+              j.allievoNome,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),

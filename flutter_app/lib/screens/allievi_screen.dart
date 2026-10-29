@@ -442,6 +442,11 @@ class _AllieviScreenState extends State<AllieviScreen> {
   void _showAddEditDialog([Allievo? allievo]) {
     final nomeController = TextEditingController(text: allievo?.nome ?? '');
     final cognomeController = TextEditingController(text: allievo?.cognome ?? '');
+    final nicknameController = TextEditingController(
+      text: allievo != null
+          ? (allievo.nickname.isNotEmpty ? allievo.nickname : allievo.nome)
+          : '',
+    );
     final telefonoController = TextEditingController(text: allievo?.telefono ?? '');
     final tesseraController = TextEditingController(text: allievo?.numeroTessera ?? '');
     DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
@@ -473,286 +478,479 @@ class _AllieviScreenState extends State<AllieviScreen> {
           }
 
           return AlertDialog(
-            title: Text(allievo == null ? 'Nuovo Allievo' : 'Modifica Allievo'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nomeController,
-                    decoration: const InputDecoration(labelText: 'Nome *'),
-                  ),
-                  TextField(
-                    controller: cognomeController,
-                    decoration: const InputDecoration(labelText: 'Cognome *'),
-                  ),
-                  TextField(
-                    controller: telefonoController,
-                    decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: ruolo,
-                    decoration: const InputDecoration(labelText: 'Ruolo'),
-                    items: const [
-                      DropdownMenuItem(value: 'leader', child: Text('Leader')),
-                      DropdownMenuItem(value: 'follower', child: Text('Follower')),
-                      DropdownMenuItem(value: 'both', child: Text('Entrambi (Both)')),
-                    ],
-                    onChanged: (v) => setDlgState(() => ruolo = v!),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: livello,
-                    decoration: const InputDecoration(labelText: 'Livello'),
-                    items: const [
-                      DropdownMenuItem(value: 'principiante', child: Text('Principiante')),
-                      DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
-                      DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
-                    ],
-                    onChanged: (v) => setDlgState(() {
-                      livello = v!;
-                      final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
-                      selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: recensione,
-                    decoration: const InputDecoration(labelText: 'Recensione rilasciata'),
-                    items: const [
-                      DropdownMenuItem(value: 'si', child: Text('Sì')),
-                      DropdownMenuItem(value: 'no', child: Text('No')),
-                    ],
-                    onChanged: (v) => setDlgState(() => recensione = v!),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    value: selectedScuolaId,
-                    decoration: const InputDecoration(labelText: 'Scuola'),
-                    items: _scuole.map((s) => DropdownMenuItem(
-                      value: s.id,
-                      child: Text(s.nome),
-                    )).toList(),
-                    onChanged: (v) => setDlgState(() {
-                      selectedScuolaId = v;
-                      final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
-                      selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    value: selectedCorsoId,
-                    decoration: const InputDecoration(labelText: 'Corso (associato al livello)'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('-- Nessun corso --')),
-                      ...corsiFiltrati.map((c) => DropdownMenuItem(
-                            value: c.id,
-                            child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'),
-                          )),
-                    ],
-                    onChanged: (v) => setDlgState(() => selectedCorsoId = v),
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: tesseraController,
-                    decoration: const InputDecoration(
-                      labelText: 'Numero Tessera',
-                      hintText: 'Es. 12345 / 2025-ABC',
-                      prefixIcon: Icon(Icons.badge_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
-                    title: Text(
-                      dataEmissione == null
-                          ? 'Nessuna data di emissione'
-                          : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
-                        fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(
+                  allievo == null ? Icons.person_add_alt_1 : Icons.edit_note,
+                  color: Theme.of(context).primaryColor,
+                  size: 26,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  allievo == null ? 'Nuovo Allievo' : 'Modifica Allievo',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: isMobile ? double.maxFinite : 540,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 14),
+                    // SEZIONE 1: ANAGRAFICA
+                    if (!isMobile) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: nomeController,
+                              decoration: const InputDecoration(
+                                labelText: 'Nome *',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: cognomeController,
+                              decoration: const InputDecoration(
+                                labelText: 'Cognome *',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    trailing: Wrap(
-                      spacing: 4,
+                      const SizedBox(height: 18),
+                      if (allievo != null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: nicknameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nick Name',
+                                  hintText: 'Default uguale al nome',
+                                  prefixIcon: Icon(Icons.person_pin_outlined),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: telefonoController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Telefono',
+                                  hintText: 'Es. +39 333...',
+                                  prefixIcon: Icon(Icons.phone_outlined),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        TextField(
+                          controller: telefonoController,
+                          decoration: const InputDecoration(
+                            labelText: 'Telefono (opzionale, es. +39333...)',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      TextField(
+                        controller: nomeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nome *',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: cognomeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Cognome *',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                      ),
+                      if (allievo != null) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: nicknameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nick Name',
+                            hintText: 'Default uguale al nome',
+                            prefixIcon: Icon(Icons.person_pin_outlined),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: telefonoController,
+                        decoration: const InputDecoration(
+                          labelText: 'Telefono (opzionale, es. +39333...)',
+                          prefixIcon: Icon(Icons.phone_outlined),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    const Row(
                       children: [
-                        if (dataEmissione != null)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                            tooltip: 'Rimuovi data emissione',
-                            onPressed: () => setDlgState(() => dataEmissione = null),
-                          ),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.edit_calendar, size: 16),
-                          label: const Text('Data', style: TextStyle(fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () async {
-                            final picked = await showDatePicker(
-                              context: ctx,
-                              initialDate: dataEmissione ?? DateTime.now(),
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) {
-                              setDlgState(() => dataEmissione = picked);
-                            }
-                          },
+                        Icon(Icons.school_outlined, size: 18, color: Colors.indigo),
+                        SizedBox(width: 8),
+                        Text(
+                          'Corso e Livello',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo),
                         ),
                       ],
                     ),
-                  ),
-                  if (allievo != null && allievo.partnerId != null) ...[
                     const SizedBox(height: 12),
-                    const Divider(),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Informazioni Coppia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.pink)),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.pink.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.pink.shade200),
-                      ),
-                      child: Row(
+
+                    if (!isMobile) ...[
+                      Row(
                         children: [
-                          const Icon(Icons.favorite, color: Colors.pink, size: 22),
-                          const SizedBox(width: 10),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('In coppia con:', style: TextStyle(fontSize: 11, color: Colors.pink, fontWeight: FontWeight.w600)),
-                                Text(
-                                  allievo.partnerNomeCompleto.isNotEmpty ? allievo.partnerNomeCompleto : 'Partner assegnato',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
-                                ),
+                            child: DropdownButtonFormField<String>(
+                              value: ruolo,
+                              decoration: const InputDecoration(labelText: 'Ruolo'),
+                              items: const [
+                                DropdownMenuItem(value: 'leader', child: Text('Leader')),
+                                DropdownMenuItem(value: 'follower', child: Text('Follower')),
+                                DropdownMenuItem(value: 'both', child: Text('Entrambi (Both)')),
                               ],
+                              onChanged: (v) => setDlgState(() => ruolo = v!),
                             ),
                           ),
-                          TextButton.icon(
-                            icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
-                            label: const Text('Scollega', style: TextStyle(color: Colors.red)),
-                            onPressed: () async {
-                              await _api.setPartner(allievo.id, null);
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              _loadAllievi();
-                            },
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: livello,
+                              decoration: const InputDecoration(labelText: 'Livello'),
+                              items: const [
+                                DropdownMenuItem(value: 'principiante', child: Text('Principiante')),
+                                DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
+                                DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
+                              ],
+                              onChanged: (v) => setDlgState(() {
+                                livello = v!;
+                                final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
+                                selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
+                              }),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                  if (allievo != null) ...[
+                    ] else ...[
+                      DropdownButtonFormField<String>(
+                        value: ruolo,
+                        decoration: const InputDecoration(labelText: 'Ruolo'),
+                        items: const [
+                          DropdownMenuItem(value: 'leader', child: Text('Leader')),
+                          DropdownMenuItem(value: 'follower', child: Text('Follower')),
+                          DropdownMenuItem(value: 'both', child: Text('Entrambi (Both)')),
+                        ],
+                        onChanged: (v) => setDlgState(() => ruolo = v!),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: livello,
+                        decoration: const InputDecoration(labelText: 'Livello'),
+                        items: const [
+                          DropdownMenuItem(value: 'principiante', child: Text('Principiante')),
+                          DropdownMenuItem(value: 'intermedio', child: Text('Intermedio')),
+                          DropdownMenuItem(value: 'avanzato', child: Text('Avanzato')),
+                        ],
+                        onChanged: (v) => setDlgState(() {
+                          livello = v!;
+                          final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
+                          selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
+                        }),
+                      ),
+                    ],
+
                     const SizedBox(height: 16),
+                    DropdownButtonFormField<String?>(
+                      value: selectedScuolaId,
+                      decoration: const InputDecoration(labelText: 'Scuola'),
+                      items: _scuole.map((s) => DropdownMenuItem(
+                        value: s.id,
+                        child: Text(s.nome),
+                      )).toList(),
+                      onChanged: (v) => setDlgState(() {
+                        selectedScuolaId = v;
+                        final matching = _corsi.where((c) => c.scuolaId == selectedScuolaId && c.livello == livello).toList();
+                        selectedCorsoId = matching.isNotEmpty ? matching.first.id : null;
+                      }),
+                    ),
+                    const SizedBox(height: 18),
+                    DropdownButtonFormField<String?>(
+                      value: selectedCorsoId,
+                      decoration: const InputDecoration(labelText: 'Corso (associato al livello)'),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('-- Nessun corso --')),
+                        ...corsiFiltrati.map((c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'),
+                            )),
+                      ],
+                      onChanged: (v) => setDlgState(() => selectedCorsoId = v),
+                    ),
+                    const SizedBox(height: 18),
+                    DropdownButtonFormField<String>(
+                      value: recensione,
+                      decoration: const InputDecoration(labelText: 'Recensione rilasciata'),
+                      items: const [
+                        DropdownMenuItem(value: 'si', child: Text('Sì')),
+                        DropdownMenuItem(value: 'no', child: Text('No')),
+                      ],
+                      onChanged: (v) => setDlgState(() => recensione = v!),
+                    ),
+
+                    const SizedBox(height: 20),
                     const Divider(),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'WhatsApp & Modulo Tesseramento',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.teal),
+                    const SizedBox(height: 8),
+                    const Row(
+                      children: [
+                        Icon(Icons.badge_outlined, size: 18, color: Colors.blueGrey),
+                        SizedBox(width: 8),
+                        Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: tesseraController,
+                      decoration: const InputDecoration(
+                        labelText: 'Numero Tessera',
+                        hintText: 'Es. 12345 / 2025-ABC',
+                        prefixIcon: Icon(Icons.badge_outlined),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'WhatsApp Scuola: ${allievo.inGruppoScuolaWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: allievo.inGruppoScuolaWhatsapp ? Colors.green.shade900 : Colors.grey.shade800,
-                                  ),
-                                ),
-                              ),
-                              if (!allievo.inGruppoScuolaWhatsapp)
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  icon: const Icon(Icons.group_add, size: 14),
-                                  label: const Text('+ Scuola', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  onPressed: () => _confirmAndAddToWhatsappScuola(allievo),
-                                ),
-                            ],
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                        title: Text(
+                          dataEmissione == null
+                              ? 'Nessuna data di emissione'
+                              : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
+                            fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
                           ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'WhatsApp Corso: ${allievo.inGruppoCorsoWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: allievo.inGruppoCorsoWhatsapp ? Colors.teal.shade900 : Colors.grey.shade800,
-                                  ),
-                                ),
+                        ),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: [
+                            if (dataEmissione != null)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                                tooltip: 'Rimuovi data emissione',
+                                onPressed: () => setDlgState(() => dataEmissione = null),
                               ),
-                              if (!allievo.inGruppoCorsoWhatsapp &&
-                                  (allievo.corsoId != null && (allievo.corsoHasWhatsapp || (allievo.corsoGruppoWhatsapp != null && allievo.corsoGruppoWhatsapp!.isNotEmpty))))
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.teal.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    visualDensity: VisualDensity.compact,
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.edit_calendar, size: 16),
+                              label: const Text('Data', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () async {
+                                final picked = await showDatePicker(
+                                  context: ctx,
+                                  initialDate: dataEmissione ?? DateTime.now(),
+                                  firstDate: DateTime(2000),
+                                  lastDate: DateTime(2100),
+                                );
+                                if (picked != null) {
+                                  setDlgState(() => dataEmissione = picked);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (allievo != null && allievo.partnerId != null) ...[
+                      const SizedBox(height: 20),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const Row(
+                        children: [
+                          Icon(Icons.favorite, size: 18, color: Colors.pink),
+                          SizedBox(width: 8),
+                          Text('Informazioni Coppia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.pink)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.pink.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.pink.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.favorite, color: Colors.pink, size: 22),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('In coppia con:', style: TextStyle(fontSize: 11, color: Colors.pink, fontWeight: FontWeight.w600)),
+                                  Text(
+                                    allievo.partnerNomeCompleto.isNotEmpty ? allievo.partnerNomeCompleto : 'Partner assegnato',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
                                   ),
-                                  icon: const Icon(Icons.group_add, size: 14),
-                                  label: const Text('+ Corso', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  onPressed: () => _confirmAndAddToWhatsappCorso(allievo),
-                                ),
-                            ],
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.link_off, color: Colors.red, size: 18),
+                              label: const Text('Scollega', style: TextStyle(color: Colors.red)),
+                              onPressed: () async {
+                                await _api.setPartner(allievo.id, null);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                _loadAllievi();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (allievo != null) ...[
+                      const SizedBox(height: 20),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const Row(
+                        children: [
+                          Icon(Icons.chat, size: 18, color: Colors.teal),
+                          SizedBox(width: 8),
+                          Text(
+                            'WhatsApp & Modulo Tesseramento',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.teal),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF128C7E),
-                          side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
                         ),
-                        icon: const Icon(Icons.chat, size: 18, color: Color(0xFF25D366)),
-                        label: const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        onPressed: () => _mostraInviaModuloTesseramentoDialog(allievo),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'WhatsApp Scuola: ${allievo.inGruppoScuolaWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: allievo.inGruppoScuolaWhatsapp ? Colors.green.shade900 : Colors.grey.shade800,
+                                    ),
+                                  ),
+                                ),
+                                if (!allievo.inGruppoScuolaWhatsapp)
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    icon: const Icon(Icons.group_add, size: 14),
+                                    label: const Text('+ Scuola', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    onPressed: () => _confirmAndAddToWhatsappScuola(allievo),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'WhatsApp Corso: ${allievo.inGruppoCorsoWhatsapp ? "Presente (Sì)" : "Non presente (No)"}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: allievo.inGruppoCorsoWhatsapp ? Colors.teal.shade900 : Colors.grey.shade800,
+                                    ),
+                                  ),
+                                ),
+                                if (!allievo.inGruppoCorsoWhatsapp &&
+                                    (allievo.corsoId != null && (allievo.corsoHasWhatsapp || (allievo.corsoGruppoWhatsapp != null && allievo.corsoGruppoWhatsapp!.isNotEmpty))))
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.teal.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    icon: const Icon(Icons.group_add, size: 14),
+                                    label: const Text('+ Corso', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    onPressed: () => _confirmAndAddToWhatsappCorso(allievo),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF128C7E),
+                            side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.chat, size: 18, color: Color(0xFF25D366)),
+                          label: const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          onPressed: () => _mostraInviaModuloTesseramentoDialog(allievo),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.teal.shade800,
+                            side: BorderSide(color: Colors.teal.shade400, width: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.account_balance, size: 18, color: Colors.teal),
+                          label: const Text('Invia Istruzioni di Pagamento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          onPressed: () => _mostraInviaIstruzioniPagamentoDialog(allievo),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
             actions: [
@@ -772,9 +970,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                  final nomeTrimmed = nomeController.text.trim();
+                  final nickTrimmed = nicknameController.text.trim();
+                  final effectiveNickname = nickTrimmed.isNotEmpty ? nickTrimmed : nomeTrimmed;
                   final data = {
-                    'nome': nomeController.text.trim(),
+                    'nome': nomeTrimmed,
                     'cognome': cognomeController.text.trim(),
+                    if (allievo != null) 'nickname': effectiveNickname,
                     'telefono': telefonoController.text.trim(),
                     'ruolo': ruolo,
                     'livello': livello,
@@ -831,11 +1033,199 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
   }
 
+  Future<void> _mostraInviaIstruzioniPagamentoDialog(Allievo a) async {
+    final phoneController = TextEditingController(text: a.telefono);
+    final nick = a.nickname.trim().isNotEmpty ? a.nickname.trim() : a.nome.trim();
+    String defaultMsg = 'Ciao $nick, per effettuare il pagamento della quota a favore di TantoTango, puoi effettuare un bonifico.';
+    try {
+      final cfg = await _api.getDaemonConfig();
+      final asd = await _api.getConfigurazioneASD();
+      final iban = asd?.iban.trim() ?? '';
+      final nomeAsd = (asd?.nome != null && asd!.nome.trim().isNotEmpty) ? asd.nome.trim() : 'TantoTango';
+      if (cfg != null && cfg.istruzioniPagamentoTesto.isNotEmpty) {
+        defaultMsg = cfg.istruzioniPagamentoTesto
+            .replaceAll('{iban}', iban)
+            .replaceAll('<iban>', iban)
+            .replaceAll('{nome_asd}', nomeAsd)
+            .replaceAll('<nome_asd>', nomeAsd)
+            .replaceAll('{nickname}', nick)
+            .replaceAll('<nickname>', nick)
+            .replaceAll('{nome}', a.nome)
+            .replaceAll('{cognome}', a.cognome)
+            .replaceAll('{nome_completo}', a.nomeCompleto);
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final messageController = TextEditingController(text: defaultMsg);
+    bool sending = false;
+    String? localError;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.account_balance, color: Colors.teal, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Invia Istruzioni di Pagamento', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(a.nomeCompleto, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (localError != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            localError!,
+                            style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Numero di Telefono WhatsApp *',
+                    hintText: 'es. 393401234567 o 3401234567',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    helperText: a.telefono.isNotEmpty
+                        ? 'Numero registrato per l\'allievo'
+                        : 'Inserisci il numero con prefisso internazionale (es. 39...)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: messageController,
+                  maxLines: 7,
+                  minLines: 4,
+                  enabled: !sending,
+                  decoration: InputDecoration(
+                    labelText: 'Messaggio WhatsApp con IBAN',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.pop(ctx),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send, size: 18),
+              label: Text(sending ? 'Invio in corso...' : 'Invia via WhatsApp'),
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final phone = phoneController.text.trim();
+                      if (phone.isEmpty) {
+                        setDlgState(() => localError = 'Inserisci un numero di telefono valido.');
+                        return;
+                      }
+
+                      setDlgState(() {
+                        sending = true;
+                        localError = null;
+                      });
+
+                      final res = await _api.sendIstruzioniPagamentoWhatsApp(
+                        allievoId: a.id,
+                        telefono: phone,
+                        messaggio: messageController.text.trim(),
+                      );
+
+                      if (!ctx.mounted) return;
+                      if (!mounted) return;
+
+                      if (res['success'] == true) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res['message'] ?? 'Istruzioni inviate con successo!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        setDlgState(() {
+                          sending = false;
+                          localError = res['error'] ?? 'Errore durante l\'invio delle istruzioni.';
+                        });
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _mostraInviaModuloTesseramentoDialog(Allievo a) async {
     final phoneController = TextEditingController(text: a.telefono);
-    final messageController = TextEditingController(
-      text: 'Gentile ${a.nomeCompleto}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
-    );
+    final nick = a.nickname.trim().isNotEmpty ? a.nickname.trim() : a.nome.trim();
+    String defaultMsg = 'Gentile $nick, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!';
+    try {
+      final cfg = await _api.getDaemonConfig();
+      if (cfg != null && cfg.moduloTesseramentoTesto.isNotEmpty) {
+        defaultMsg = cfg.moduloTesseramentoTesto
+            .replaceAll('{nickname}', nick)
+            .replaceAll('<nickname>', nick)
+            .replaceAll('{nome}', a.nome)
+            .replaceAll('{cognome}', a.cognome)
+            .replaceAll('{nome_completo}', a.nomeCompleto);
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final messageController = TextEditingController(text: defaultMsg);
     bool sending = false;
     bool loadingPreview = false;
     String? localError;
@@ -1376,6 +1766,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
               icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
               label: const Text('Modulo Tesseramento', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               onPressed: () => _mostraInviaModuloTesseramentoDialog(a),
+            ),
+            IconButton(
+              icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
+              tooltip: 'Invia Istruzioni di Pagamento (IBAN)',
+              onPressed: () => _mostraInviaIstruzioniPagamentoDialog(a),
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
             ),
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.blue, size: 20),

@@ -471,11 +471,37 @@ class _GoogleContactsScreenState extends State<GoogleContactsScreen> {
   // ─── 1. Status Banner ──────────────────────────────────────────────
   Widget _buildStatusBanner() {
     final isConnected = _config?.isConnected ?? false;
+    final hasError = _config?.lastTestStatus == 'error';
+
+    final Color cardBg = !isConnected
+        ? Colors.orange.shade50
+        : (hasError ? Colors.amber.shade50 : Colors.green.shade50);
+    final Color iconBg = !isConnected
+        ? Colors.orange.shade100
+        : (hasError ? Colors.amber.shade100 : Colors.green.shade100);
+    final Color iconColor = !isConnected
+        ? Colors.orange.shade800
+        : (hasError ? Colors.amber.shade900 : Colors.green.shade800);
+    final IconData icon = !isConnected
+        ? Icons.info_outline
+        : (hasError ? Icons.warning_amber_rounded : Icons.check_circle_rounded);
+    final String title = !isConnected
+        ? 'Google Contacts Non Collegato'
+        : (hasError ? 'Google Contacts: Sessione Scaduta' : 'Google Contacts Collegato');
+    final Color titleColor = !isConnected
+        ? Colors.orange.shade900
+        : (hasError ? Colors.amber.shade900 : Colors.green.shade900);
+    final String badgeText = !isConnected
+        ? 'DISCONNESSO'
+        : (hasError ? 'SESSIONE SCADUTA' : 'ATTIVO');
+    final Color badgeBg = !isConnected
+        ? Colors.orange.shade700
+        : (hasError ? Colors.amber.shade800 : Colors.green.shade700);
 
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: isConnected ? Colors.green.shade50 : Colors.orange.shade50,
+      color: cardBg,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -484,14 +510,10 @@ class _GoogleContactsScreenState extends State<GoogleContactsScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isConnected ? Colors.green.shade100 : Colors.orange.shade100,
+                color: iconBg,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                isConnected ? Icons.check_circle_rounded : Icons.info_outline,
-                color: isConnected ? Colors.green.shade800 : Colors.orange.shade800,
-                size: 32,
-              ),
+              child: Icon(icon, color: iconColor, size: 32),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -501,22 +523,22 @@ class _GoogleContactsScreenState extends State<GoogleContactsScreen> {
                   Row(
                     children: [
                       Text(
-                        isConnected ? 'Google Contacts Collegato' : 'Google Contacts Non Collegato',
+                        title,
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: isConnected ? Colors.green.shade900 : Colors.orange.shade900,
+                          color: titleColor,
                         ),
                       ),
                       const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isConnected ? Colors.green.shade700 : Colors.orange.shade700,
+                          color: badgeBg,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          isConnected ? 'ATTIVO' : 'DISCONNESSO',
+                          badgeText,
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -529,10 +551,22 @@ class _GoogleContactsScreenState extends State<GoogleContactsScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                     if (_config?.lastTestMessage.isNotEmpty ?? false) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _config!.lastTestMessage,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: hasError ? Colors.amber.shade100.withValues(alpha: 0.5) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: hasError ? Border.all(color: Colors.amber.shade300) : null,
+                        ),
+                        child: Text(
+                          _config!.lastTestMessage,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: hasError ? FontWeight.w500 : FontWeight.normal,
+                            color: hasError ? Colors.amber.shade900 : Colors.grey.shade700,
+                          ),
+                        ),
                       ),
                     ],
                   ] else ...[
@@ -548,19 +582,33 @@ class _GoogleContactsScreenState extends State<GoogleContactsScreen> {
               const SizedBox(width: 12),
               Column(
                 children: [
-                  OutlinedButton.icon(
-                    icon: _testingConnection
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.bolt, size: 16),
-                    label: const Text('Verifica'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.green.shade800,
-                      side: BorderSide(color: Colors.green.shade300),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  if (hasError) ...[
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.sync, size: 16),
+                      label: const Text('Ricollega Account'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade800,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _startOAuthFlow,
                     ),
-                    onPressed: _testingConnection ? null : _testConnection,
-                  ),
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 6),
+                  ] else ...[
+                    OutlinedButton.icon(
+                      icon: _testingConnection
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.bolt, size: 16),
+                      label: const Text('Verifica'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green.shade800,
+                        side: BorderSide(color: Colors.green.shade300),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: _testingConnection ? null : _testConnection,
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   TextButton.icon(
                     icon: const Icon(Icons.link_off, size: 16, color: Colors.red),
                     label: const Text('Disconnetti', style: TextStyle(color: Colors.red, fontSize: 12)),

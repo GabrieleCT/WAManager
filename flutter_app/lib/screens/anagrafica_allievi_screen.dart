@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'allievi_screen.dart';
 import 'prospects_screen.dart';
 import 'coppie_screen.dart';
-import 'jolly_panel_screen.dart';
 import 'sincronizzazione_contatti_screen.dart';
 
 class AnagraficaAllieviScreen extends StatelessWidget {
@@ -12,7 +11,7 @@ class AnagraficaAllieviScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 800;
-    final int tabCount = isDesktop ? 5 : 4;
+    final int tabCount = isDesktop ? 4 : 3;
     final int clampedInitialTab = initialTab.clamp(0, tabCount - 1);
 
     return DefaultTabController(
@@ -38,10 +37,6 @@ class AnagraficaAllieviScreen extends StatelessWidget {
                 icon: Icon(Icons.favorite),
                 text: 'Coppie',
               ),
-              const Tab(
-                icon: Icon(Icons.star),
-                text: 'Jolly',
-              ),
               if (isDesktop)
                 const Tab(
                   icon: Icon(Icons.sync_alt),
@@ -55,7 +50,6 @@ class AnagraficaAllieviScreen extends StatelessWidget {
             const AllieviScreen(embedded: true),
             const ProspectsScreen(embedded: true),
             const CoppieScreen(embedded: true),
-            const JollyPanelScreen(embedded: true),
             if (isDesktop) const SincronizzazioneContattiScreen(embedded: true),
           ],
         ),

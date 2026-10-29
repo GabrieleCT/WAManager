@@ -118,6 +118,12 @@ class Allievo(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nome = models.CharField(max_length=100)
     cognome = models.CharField(max_length=100)
+    nickname = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text="Nickname dell'allievo (default uguale al nome se non specificato)"
+    )
     ruolo = models.CharField(max_length=10, choices=Role.choices, default=Role.LEADER)
     telefono = models.CharField(max_length=20, blank=True, default='')
     corso = models.ForeignKey(
@@ -204,6 +210,14 @@ class Allievo(models.Model):
         return f"{prefix}{self.nome} {self.cognome}"
 
     def save(self, *args, **kwargs):
+        if not self.nickname or not self.nickname.strip():
+            if self.nome:
+                self.nickname = self.nome.strip()
+            else:
+                self.nickname = ''
+        else:
+            self.nickname = self.nickname.strip()
+
         vecchio_corso_id = None
         if self.pk:
             old_inst = Allievo.objects.filter(pk=self.pk).values('corso_id', 'livello').first()
@@ -280,25 +294,15 @@ def allievo_pre_delete_cleanup(sender, instance, **kwargs):
 class Jolly(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     allievo = models.ForeignKey(Allievo, on_delete=models.CASCADE, related_name='jolly_entries')
-    nickname = models.CharField(max_length=100, blank=True, default='', help_text="Nickname del jolly")
     priorita = models.PositiveIntegerField(default=1, help_text="1 = priorità più alta")
 
     class Meta:
         verbose_name_plural = 'Jolly'
         ordering = ['priorita']
 
-    def save(self, *args, **kwargs):
-        if not self.nickname or not self.nickname.strip():
-            if self.allievo and self.allievo.nome:
-                self.nickname = self.allievo.nome.strip()
-            else:
-                self.nickname = ""
-        else:
-            self.nickname = self.nickname.strip()
-        super().save(*args, **kwargs)
-
     def __str__(self):
-        return f"Jolly: {self.nickname or self.allievo} (priorità {self.priorita})"
+        nick = self.allievo.nickname if self.allievo and getattr(self.allievo, 'nickname', None) else (self.allievo.nome if self.allievo else '')
+        return f"Jolly: {nick or self.allievo} (priorità {self.priorita})"
 
 
 # ─── 1.6 Lezione ────────────────────────────────────────────────
@@ -543,12 +547,24 @@ class SondaggioMattutinoConfig(models.Model):
         help_text="Ore di attesa dall'invio del sondaggio prima di inviare il sollecito a chi non ha ancora risposto"
     )
     sollecito_testo = models.TextField(
-        default="Ciao <nome_allievo>, ci sei stasera al corso?",
+        default="Ciao {nickname}, ci sei stasera al corso?",
         help_text="Testo del messaggio di sollecito risposta inviato all'allievo"
     )
     jolly_testo = models.TextField(
-        default="Ciao! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺",
+        default="Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺",
         help_text="Testo predefinito per il messaggio inviato ai Jolly"
+    )
+    modulo_tesseramento_testo = models.TextField(
+        default="Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all'ASD TantoTango da compilare e firmare. A presto!",
+        help_text="Testo predefinito per l'invio del modulo di tesseramento WhatsApp"
+    )
+    ricevuta_testo = models.TextField(
+        default="Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per \"{causale}\".",
+        help_text="Testo predefinito per l'invio della ricevuta WhatsApp"
+    )
+    istruzioni_pagamento_testo = models.TextField(
+        default="Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺",
+        help_text="Testo predefinito per le istruzioni di pagamento inviate via WhatsApp"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -936,6 +952,7 @@ class ConfigurazioneASD(models.Model):
     pec = models.EmailField(blank=True, default='', help_text="Indirizzo Posta Elettronica Certificata (PEC)")
     sito_web = models.CharField(max_length=255, blank=True, default='', help_text="Sito web istituzionale")
     codice_affiliazione = models.CharField(max_length=100, blank=True, default='', help_text="Codice affiliazione EPS / CONI / Registro Nazionale")
+    iban = models.CharField(max_length=35, blank=True, default='', help_text="IBAN del conto corrente dell'ASD")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

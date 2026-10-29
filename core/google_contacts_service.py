@@ -63,6 +63,12 @@ def get_valid_contacts_access_token():
             else:
                 err_msg = resp.text
                 logger.error(f"Errore rinnovo token Google Contacts: {err_msg}")
+                if 'invalid_grant' in err_msg or 'expired or revoked' in err_msg:
+                    friendly_err = "Token Google scaduto o revocato. Ricollega l'account Google nelle impostazioni."
+                    config.last_test_status = 'error'
+                    config.last_test_message = friendly_err
+                    config.save(update_fields=['last_test_status', 'last_test_message'])
+                    return None, friendly_err
                 return None, f"Errore rinnovo token Google: {err_msg}"
         except Exception as e:
             logger.error(f"Eccezione rinnovo token Google Contacts: {str(e)}")

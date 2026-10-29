@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
 import 'presenze_screen.dart';
+import 'gestione_presenze_screen.dart';
 import 'messaggistica_screen.dart';
 import 'lezioni_screen.dart';
 import 'anagrafica_allievi_screen.dart';
@@ -64,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
       label: 'Presenze',
       icon: Icons.how_to_reg_outlined,
       selectedIcon: Icons.how_to_reg,
-      widget: PresenzeScreen(),
+      widget: const GestionePresenzeScreen(),
       availableOnMobile: true,
     ),
     _NavItem(

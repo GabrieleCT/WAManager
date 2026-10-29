@@ -857,9 +857,26 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   Future<void> _inviaWhatsApp(Ricevuta r) async {
     final defaultPhone = r.allievoTelefono ?? '';
     final phoneController = TextEditingController(text: defaultPhone);
-    final messageController = TextEditingController(
-      text: 'Gentile ${r.intestatario}, in allegato la ricevuta ${r.numeroDisplay} del ${r.data} di € ${r.importo.toStringAsFixed(2)} per "${r.causale}".',
-    );
+    final nick = (r.allievoNickname != null && r.allievoNickname!.trim().isNotEmpty)
+        ? r.allievoNickname!.trim()
+        : r.intestatario.trim();
+    String defaultMsg = 'Gentile $nick, in allegato la ricevuta ${r.numeroDisplay} del ${r.data} di € ${r.importo.toStringAsFixed(2)} per "${r.causale}".';
+    try {
+      final cfg = await _api.getDaemonConfig();
+      if (cfg != null && cfg.ricevutaTesto.isNotEmpty) {
+        defaultMsg = cfg.ricevutaTesto
+            .replaceAll('{nickname}', nick)
+            .replaceAll('<nickname>', nick)
+            .replaceAll('{numero}', r.numeroDisplay)
+            .replaceAll('{data}', r.data)
+            .replaceAll('{importo}', r.importo.toStringAsFixed(2))
+            .replaceAll('{causale}', r.causale)
+            .replaceAll('{intestatario}', r.intestatario)
+            .replaceAll('{nome_completo}', r.intestatario);
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final messageController = TextEditingController(text: defaultMsg);
     bool sending = false;
     String? localError;
 

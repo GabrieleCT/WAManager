@@ -217,7 +217,7 @@ class AllievoViewSet(viewsets.ModelViewSet):
         'recensione': ['exact'],
         'is_active': ['exact']
     }
-    search_fields = ['nome', 'cognome', 'telefono', 'note', 'numero_tessera']
+    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
 
     def create(self, request, *args, **kwargs):
@@ -790,13 +790,18 @@ class AllievoViewSet(viewsets.ModelViewSet):
             )
 
         testo = request.data.get('testo', '').strip()
+        nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
         if not testo:
             cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
-            tmpl = cfg.sollecito_testo if (cfg and cfg.sollecito_testo) else "Ciao <nome_allievo>, ci sei stasera al corso?"
-            testo = tmpl.replace('<nome_allievo>', allievo.nome)\
-                        .replace('{allievo}', allievo.nome)\
-                        .replace('{nome}', allievo.nome)\
-                        .replace('<nome>', allievo.nome)
+            tmpl = cfg.sollecito_testo if (cfg and cfg.sollecito_testo) else "Ciao {nickname}, ci sei stasera al corso?"
+            testo = tmpl
+        testo = testo.replace('{nickname}', nick)\
+                     .replace('<nickname>', nick)\
+                     .replace('<nome_allievo>', nick)\
+                     .replace('{nome_allievo}', nick)\
+                     .replace('{allievo}', nick)\
+                     .replace('{nome}', nick)\
+                     .replace('<nome>', nick)
 
         res = send_whatsapp_message(
             to=telefono,
@@ -845,11 +850,18 @@ class AllievoViewSet(viewsets.ModelViewSet):
             )
 
         messaggio = request.data.get('messaggio')
-        if not messaggio:
-            messaggio = (
-                f"Gentile {allievo.nome} {allievo.cognome}, ti inviamo in allegato il modulo per la richiesta o il rinnovo "
-                f"del tesseramento all'ASD TantoTango da compilare e firmare. A presto!"
+        if not messaggio or not str(messaggio).strip():
+            cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+            tmpl = cfg.modulo_tesseramento_testo if (cfg and cfg.modulo_tesseramento_testo and cfg.modulo_tesseramento_testo.strip()) else (
+                "Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo "
+                "del tesseramento all'ASD TantoTango da compilare e firmare. A presto!"
             )
+            nick = (allievo.nickname or allievo.nome or '').strip()
+            messaggio = tmpl.replace('{nickname}', nick)\
+                            .replace('<nickname>', nick)\
+                            .replace('{nome}', allievo.nome or '')\
+                            .replace('{cognome}', allievo.cognome or '')\
+                            .replace('{nome_completo}', f"{allievo.nome} {allievo.cognome}".strip())
 
         try:
             pdf_bytes = genera_pdf_modulo_tesseramento(allievo=allievo)
@@ -883,6 +895,61 @@ class AllievoViewSet(viewsets.ModelViewSet):
 
 
 
+
+
+    @action(detail=True, methods=['post'], url_path='send-istruzioni-pagamento')
+    def send_istruzioni_pagamento(self, request, pk=None):
+        """
+        Invia il messaggio con le istruzioni di pagamento via WhatsApp all'allievo specificato.
+        Input:
+          - telefono: str (opzionale, default: allievo.telefono)
+          - messaggio: str (opzionale)
+        """
+        allievo = self.get_object()
+        telefono = request.data.get('telefono') or allievo.telefono
+        if not telefono:
+            return Response(
+                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono associato."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        messaggio = request.data.get('messaggio')
+        if not messaggio or not str(messaggio).strip():
+            cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+            asd = ConfigurazioneASD.objects.first()
+            iban = (asd.iban if asd and asd.iban else '').strip()
+            nome_asd = (asd.nome if asd and asd.nome else 'TantoTango').strip()
+            tmpl = cfg.istruzioni_pagamento_testo if (cfg and cfg.istruzioni_pagamento_testo and cfg.istruzioni_pagamento_testo.strip()) else (
+                "Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺"
+            )
+            nick = (allievo.nickname or allievo.nome or '').strip()
+            messaggio = tmpl.replace('{iban}', iban)\
+                            .replace('{nome_asd}', nome_asd)\
+                            .replace('{nickname}', nick)\
+                            .replace('<nickname>', nick)\
+                            .replace('{nome}', allievo.nome or '')\
+                            .replace('{cognome}', allievo.cognome or '')\
+                            .replace('{nome_completo}', f"{allievo.nome} {allievo.cognome}".strip())
+
+        try:
+            from .wa_client import send_whatsapp_message
+            res = send_whatsapp_message(
+                to=telefono,
+                message=messaggio,
+                is_group=False
+            )
+            if res.get('success'):
+                return Response({
+                    'success': True,
+                    'message': f"Istruzioni di pagamento inviate con successo via WhatsApp a {telefono}!"
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'error': res.get('error', 'Errore gateway WhatsApp')
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({'success': False, 'error': f"Errore invio WhatsApp: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class JollyViewSet(viewsets.ModelViewSet):
@@ -1197,7 +1264,7 @@ def send_jolly_message(request):
     success_count = 0
     for jolly in jolly_list:
         allievo = jolly.allievo
-        nick = (jolly.nickname or '').strip() or (allievo.nome or '').strip()
+        nick = (allievo.nickname or '').strip() or (allievo.nome or '').strip()
         msg_personalizzato = (
             messaggio_finale
             .replace('{nickname}', nick)
@@ -1369,6 +1436,12 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
                 config.sollecito_testo = data['sollecito_testo']
             if 'jolly_testo' in data:
                 config.jolly_testo = data['jolly_testo']
+            if 'modulo_tesseramento_testo' in data:
+                config.modulo_tesseramento_testo = data['modulo_tesseramento_testo']
+            if 'ricevuta_testo' in data:
+                config.ricevuta_testo = data['ricevuta_testo']
+            if 'istruzioni_pagamento_testo' in data:
+                config.istruzioni_pagamento_testo = data['istruzioni_pagamento_testo']
 
             config.save()
             sync_daemon_schedule(config.orario)
@@ -1755,8 +1828,21 @@ class RicevutaViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         messaggio = request.data.get('messaggio')
-        if not messaggio:
-            messaggio = f"Gentile {ricevuta.intestatario}, ti inviamo in allegato la ricevuta {ricevuta.numero_display} di € {ricevuta.importo:.2f} per '{ricevuta.causale}'."
+        if not messaggio or not str(messaggio).strip():
+            cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+            tmpl = cfg.ricevuta_testo if (cfg and cfg.ricevuta_testo and cfg.ricevuta_testo.strip()) else (
+                "Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per \"{causale}\"."
+            )
+            nick = (ricevuta.allievo.nickname or ricevuta.allievo.nome if ricevuta.allievo else ricevuta.intestatario or '').strip()
+            data_str = ricevuta.data.strftime('%d/%m/%Y') if ricevuta.data else ''
+            messaggio = tmpl.replace('{nickname}', nick)\
+                            .replace('<nickname>', nick)\
+                            .replace('{numero}', ricevuta.numero_display)\
+                            .replace('{data}', data_str)\
+                            .replace('{importo}', f"{ricevuta.importo:.2f}")\
+                            .replace('{causale}', ricevuta.causale or '')\
+                            .replace('{intestatario}', ricevuta.intestatario or '')\
+                            .replace('{nome_completo}', ricevuta.intestatario or '')
 
         try:
             pdf_bytes = genera_pdf_ricevuta_da_template(
@@ -2855,7 +2941,10 @@ class GoogleContactsConfigViewSet(viewsets.ViewSet):
                 else:
                     err_msg = resp.text
                     config.last_test_status = 'error'
-                    config.last_test_message = f"Errore rinnovo token: {err_msg}"
+                    if 'invalid_grant' in err_msg or 'expired or revoked' in err_msg:
+                        config.last_test_message = "Token Google scaduto o revocato (in modalità 'Test' i token Google scadono dopo 7 giorni). Clicca su 'Ricollega' per riattivare la connessione."
+                    else:
+                        config.last_test_message = f"Errore rinnovo token: {err_msg}"
                     config.save()
                     return Response({'success': False, 'status': 'error', 'message': config.last_test_message})
             except Exception as e:

@@ -47,16 +47,16 @@ class ArgomentoAdmin(admin.ModelAdmin):
 
 @admin.register(Allievo)
 class AllievoAdmin(admin.ModelAdmin):
-    list_display = ('cognome', 'nome', 'ruolo', 'livello', 'telefono', 'corso', 'recensione', 'is_active', 'is_prospect')
+    list_display = ('cognome', 'nome', 'nickname', 'ruolo', 'livello', 'telefono', 'corso', 'recensione', 'is_active', 'is_prospect')
     list_filter = ('ruolo', 'livello', 'is_active', 'is_prospect', 'recensione', 'corso__scuola', 'corso')
-    search_fields = ('nome', 'cognome', 'telefono')
+    search_fields = ('nome', 'cognome', 'nickname', 'telefono')
 
 
 @admin.register(Jolly)
 class JollyAdmin(admin.ModelAdmin):
     list_display = ('allievo', 'priorita')
     list_filter = ('priorita',)
-    search_fields = ('allievo__nome', 'allievo__cognome')
+    search_fields = ('allievo__nome', 'allievo__cognome', 'allievo__nickname')
 
 
 @admin.register(Lezione)
@@ -134,8 +134,8 @@ class GoogleContactsConfigAdmin(admin.ModelAdmin):
 
 @admin.register(ConfigurazioneASD)
 class ConfigurazioneASDAdmin(admin.ModelAdmin):
-    list_display = ('nome', 'codice_fiscale', 'sede_legale', 'sede_operativa', 'telefono', 'email', 'updated_at')
-    search_fields = ('nome', 'codice_fiscale', 'partita_iva', 'sede_legale', 'sede_operativa')
+    list_display = ('nome', 'codice_fiscale', 'iban', 'sede_legale', 'sede_operativa', 'telefono', 'email', 'updated_at')
+    search_fields = ('nome', 'codice_fiscale', 'partita_iva', 'iban', 'sede_legale', 'sede_operativa')
 
 
 @admin.register(MembroDirettivo)

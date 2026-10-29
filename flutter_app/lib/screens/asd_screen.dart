@@ -33,6 +33,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
   final _pecController = TextEditingController();
   final _sitoWebController = TextEditingController();
   final _codiceAffiliazioneController = TextEditingController();
+  final _ibanController = TextEditingController();
 
   // Cache buster per le immagini delle firme aggiornate
   int _imageKeyTimestamp = DateTime.now().millisecondsSinceEpoch;
@@ -57,6 +58,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
     _pecController.dispose();
     _sitoWebController.dispose();
     _codiceAffiliazioneController.dispose();
+    _ibanController.dispose();
     super.dispose();
   }
 
@@ -84,6 +86,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
             _pecController.text = asd.pec;
             _sitoWebController.text = asd.sitoWeb;
             _codiceAffiliazioneController.text = asd.codiceAffiliazione;
+            _ibanController.text = asd.iban;
           }
           _loading = false;
         });
@@ -114,6 +117,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
       'pec': _pecController.text.trim(),
       'sito_web': _sitoWebController.text.trim(),
       'codice_affiliazione': _codiceAffiliazioneController.text.trim(),
+      'iban': _ibanController.text.trim().toUpperCase(),
     };
 
     final res = await _api.saveConfigurazioneASD(payload);
@@ -768,6 +772,19 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // IBAN Conto Corrente
+                      TextFormField(
+                        controller: _ibanController,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'IBAN Conto Corrente ASD',
+                          hintText: 'Es. IT60X0542811101000000123456',
+                          prefixIcon: Icon(Icons.account_balance),
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                       const SizedBox(height: 24),
 

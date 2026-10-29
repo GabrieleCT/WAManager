@@ -706,10 +706,13 @@ class _CorsiScreenState extends State<CorsiScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: nomeController, decoration: const InputDecoration(labelText: 'Nome *')),
-                  TextField(controller: cognomeController, decoration: const InputDecoration(labelText: 'Cognome *')),
-                  TextField(controller: telefonoController, decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)')),
                   const SizedBox(height: 12),
+                  TextField(controller: nomeController, decoration: const InputDecoration(labelText: 'Nome *')),
+                  const SizedBox(height: 16),
+                  TextField(controller: cognomeController, decoration: const InputDecoration(labelText: 'Cognome *')),
+                  const SizedBox(height: 16),
+                  TextField(controller: telefonoController, decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)')),
+                  const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: ruolo,
                     decoration: const InputDecoration(labelText: 'Ruolo *'),

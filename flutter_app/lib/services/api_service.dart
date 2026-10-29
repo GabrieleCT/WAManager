@@ -435,11 +435,8 @@ class ApiService {
     return [];
   }
 
-  Future<Jolly?> createJolly(String allievoId, int priorita, {String? nickname}) async {
+  Future<Jolly?> createJolly(String allievoId, int priorita) async {
     final Map<String, dynamic> data = {'allievo': allievoId, 'priorita': priorita};
-    if (nickname != null) {
-      data['nickname'] = nickname.trim();
-    }
     final res = await http.post(
       Uri.parse('$baseUrl/api/jolly/'),
       headers: _headers,
@@ -451,11 +448,8 @@ class ApiService {
     return null;
   }
 
-  Future<Jolly?> updateJolly(String id, String allievoId, int priorita, {String? nickname}) async {
+  Future<Jolly?> updateJolly(String id, String allievoId, int priorita) async {
     final Map<String, dynamic> data = {'allievo': allievoId, 'priorita': priorita};
-    if (nickname != null) {
-      data['nickname'] = nickname.trim();
-    }
     final res = await http.put(
       Uri.parse('$baseUrl/api/jolly/$id/'),
       headers: _headers,
@@ -1494,6 +1488,25 @@ class ApiService {
     }
     debugPrint('Errore getModuloTesseramentoPdf: ${res.statusCode} -> ${res.body}');
     return null;
+  }
+
+  Future<Map<String, dynamic>> sendIstruzioniPagamentoWhatsApp({
+    required String allievoId,
+    required String telefono,
+    String? messaggio,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/allievi/$allievoId/send-istruzioni-pagamento/'),
+      headers: _headers,
+      body: jsonEncode({
+        'telefono': telefono,
+        if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
+      }),
+    );
+    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
 
   Future<Map<String, dynamic>> sendModuloTesseramentoWhatsApp({
