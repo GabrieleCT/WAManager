@@ -61,7 +61,7 @@ class JollyAdmin(admin.ModelAdmin):
 
 @admin.register(Lezione)
 class LezioneAdmin(admin.ModelAdmin):
-    list_display = ('corso', 'data', 'argomento')
+    list_display = ('corso', 'titolo', 'data', 'argomento')
     list_filter = ('corso__scuola', 'corso', 'data', 'argomento')
     date_hierarchy = 'data'
 

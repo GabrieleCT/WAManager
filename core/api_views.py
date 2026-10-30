@@ -15,7 +15,7 @@ from django.http import HttpResponse, FileResponse, Http404
 from .pdf_template_service import genera_pdf_ricevuta_da_template, genera_pdf_modulo_tesseramento
 
 from .models import (
-    Scuola, Corso, Argomento, Allievo, Jolly, Lezione,
+    Scuola, Corso, Argomento, Allievo, Jolly, Lezione, rinumera_lezioni_corso,
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
     ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
@@ -1037,6 +1037,27 @@ class LezioneViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        instance.refresh_from_db()
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        instance.refresh_from_db()
+
+    @action(detail=False, methods=['post'], url_path='rinumera')
+    def rinumera(self, request):
+        """
+        Rinumera le lezioni per uno specifico corso (se fornito) o per tutti i corsi.
+        """
+        corso_id = request.data.get('corso') or request.query_params.get('corso')
+        if corso_id:
+            rinumera_lezioni_corso(corso_id)
+        else:
+            for c in Corso.objects.all():
+                rinumera_lezioni_corso(c.id)
+        return Response({'message': 'Rinumerazione lezioni completata con successo.'})
+
     @action(detail=False, methods=['post'], url_path='crea-trimestre')
     def crea_trimestre(self, request):
         """
@@ -1061,13 +1082,18 @@ class LezioneViewSet(viewsets.ModelViewSet):
 
         created = []
         for item in lezioni_data:
-            lez = Lezione.objects.create(
+            lez = Lezione(
                 corso=corso,
                 data=item['data'],
                 titolo=item.get('titolo', ''),
                 argomento_id=item.get('argomento')
             )
+            lez._skip_renumber = True
+            lez.save()
             created.append(lez)
+
+        rinumera_lezioni_corso(corso.id)
+        created = list(Lezione.objects.filter(id__in=[l.id for l in created]).order_by('data'))
 
         return Response(self.get_serializer(created, many=True).data, status=status.HTTP_201_CREATED)
 

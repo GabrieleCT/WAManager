@@ -1125,6 +1125,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final today = DateTime(now.year, now.month, now.day);
 
     String activeTrimestreName = 'Trimestre';
+    String? activeTrimestreCode;
 
     if (lezioni.isNotEmpty) {
       final sortedLezioni = List<Lezione>.from(lezioni)..sort((a, b) => a.data.compareTo(b.data));
@@ -1132,9 +1133,20 @@ class _CorsiScreenState extends State<CorsiScreen> {
       for (final l in sortedLezioni) {
         String trim = 'Trimestre in corso';
         if (l.titolo.isNotEmpty) {
-          final m = RegExp(r'(\d+°\s*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
+          final m = RegExp(r'(\d+[\s°ª\xb0]*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
           if (m != null) {
-            trim = m.group(1)!;
+            final numMatch = RegExp(r'\d+').firstMatch(m.group(1)!);
+            if (numMatch != null) {
+              trim = '${numMatch.group(0)}° Trimestre';
+            }
+          } else if (l.titolo.toLowerCase().contains('primo trimestre')) {
+            trim = '1° Trimestre';
+          } else if (l.titolo.toLowerCase().contains('secondo trimestre')) {
+            trim = '2° Trimestre';
+          } else if (l.titolo.toLowerCase().contains('terzo trimestre')) {
+            trim = '3° Trimestre';
+          } else if (l.titolo.toLowerCase().contains('quarto trimestre')) {
+            trim = '4° Trimestre';
           } else if (l.titolo.toLowerCase().contains('trimestre')) {
             trim = l.titolo;
           }
@@ -1143,25 +1155,47 @@ class _CorsiScreenState extends State<CorsiScreen> {
       }
 
       String? activeKey;
+      String? lastConcludedKey;
       for (final entry in byTrimestre.entries) {
-        final hasUpcoming = entry.value.any((l) {
-          final d = DateTime.tryParse(l.data);
-          return d != null && !d.isBefore(today);
-        });
-        if (hasUpcoming) {
+        final lastLesson = entry.value.isNotEmpty ? entry.value.last : null;
+        final lastDate = lastLesson != null ? DateTime.tryParse(lastLesson.data) : null;
+        // Un trimestre è concluso se la data dell'ultima lezione è superata (nel passato rispetto a oggi)
+        final isConcluded = lastDate != null && today.isAfter(lastDate);
+
+        if (isConcluded) {
+          lastConcludedKey = entry.key;
+        } else {
           activeKey = entry.key;
           break;
         }
       }
-      activeKey ??= byTrimestre.keys.last;
-      activeTrimestreName = activeKey;
 
-
+      if (activeKey != null) {
+        activeTrimestreName = activeKey;
+      } else if (lastConcludedKey != null) {
+        // Il trimestre precedente è concluso: gli allievi risultano non paganti per il prossimo trimestre
+        if (lastConcludedKey.contains('1')) {
+          activeTrimestreName = '2° Trimestre';
+        } else if (lastConcludedKey.contains('2')) {
+          activeTrimestreName = '3° Trimestre';
+        } else {
+          activeTrimestreName = '3° Trimestre';
+        }
+      } else {
+        activeTrimestreName = '1° Trimestre';
+      }
+    } else {
+      if (today.month >= 9 && today.month <= 12) {
+        activeTrimestreName = '1° Trimestre';
+      } else if (today.month >= 1 && today.month <= 3) {
+        activeTrimestreName = '2° Trimestre';
+      } else if (today.month >= 4 && today.month <= 6) {
+        activeTrimestreName = '3° Trimestre';
+      } else {
+        activeTrimestreName = '1° Trimestre';
+      }
     }
 
-    final pagamentiCorso = _pagamentiMap[c.id] ?? [];
-
-    String? activeTrimestreCode;
     if (activeTrimestreName.contains('1')) {
       activeTrimestreCode = 'T1';
     } else if (activeTrimestreName.contains('2')) {
@@ -1170,13 +1204,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
       activeTrimestreCode = 'T3';
     }
 
+    final pagamentiCorso = _pagamentiMap[c.id] ?? [];
+
     bool allievoHaPagato(Allievo a) {
       final aPagamenti = pagamentiCorso.where((p) => p.allievoId == a.id).toList();
       if (aPagamenti.isEmpty) return false;
       if (activeTrimestreCode != null) {
         return aPagamenti.any((p) => p.trimestre == activeTrimestreCode);
       }
-      return true;
+      return false;
     }
 
     final numPagati = effettivi.where(allievoHaPagato).length;
@@ -1352,7 +1388,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
               const Icon(Icons.school, size: 18, color: Colors.blueGrey),
               const SizedBox(width: 6),
               Text(
-                'Allievi Iscritti Effettivi (${effettivi.length}) - Pagati: $numPagati / ${effettivi.length}:',
+                'Allievi Iscritti Effettivi (${effettivi.length}) - Pagati: $numPagati / ${effettivi.length} ($activeTrimestreName):',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87),
               ),
             ],

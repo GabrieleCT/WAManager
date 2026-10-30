@@ -88,7 +88,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
     final lezioniCorso = _lezioni.where((l) => l.corsoId == corsoId).toList();
     
     String trimestre = '';
-    if (dataLezione.month >= 10 && dataLezione.month <= 12) {
+    if (dataLezione.month >= 9 && dataLezione.month <= 12) {
       trimestre = '1° Trimestre';
     } else if (dataLezione.month >= 1 && dataLezione.month <= 3) {
       trimestre = '2° Trimestre';
@@ -100,12 +100,15 @@ class _LezioniScreenState extends State<LezioniScreen> {
 
     final lezioniTrimestre = lezioniCorso.where((l) => _extractTrimestre(l) == trimestre).toList();
     
-    List<DateTime> date = lezioniTrimestre.map((l) => DateTime.tryParse(l.data) ?? DateTime.now()).toList();
-    date.add(dataLezione);
-    date.sort();
+    final dateList = lezioniTrimestre.map((l) => l.data).toSet().toList();
+    final newDateStr = DateFormat('yyyy-MM-dd').format(dataLezione);
+    if (!dateList.contains(newDateStr)) {
+      dateList.add(newDateStr);
+    }
+    dateList.sort();
 
-    int index = date.indexOf(dataLezione) + 1;
-    int total = date.length;
+    int index = dateList.indexOf(newDateStr) + 1;
+    int total = dateList.length;
     
     return '$index/$total - $trimestre';
   }
@@ -276,6 +279,9 @@ class _LezioniScreenState extends State<LezioniScreen> {
                     );
                     if (picked != null) {
                       setDlgState(() => selectedDate = picked);
+                      if (titoloCtl.text.toLowerCase().contains('trimestre') || titoloCtl.text.contains('/')) {
+                        titoloCtl.text = _calcolaTitoloNuovaLezione(l.corsoId, picked);
+                      }
                     }
                   },
                   borderRadius: BorderRadius.circular(8),
@@ -996,8 +1002,15 @@ class _LezioniScreenState extends State<LezioniScreen> {
 
   String _extractTrimestre(Lezione l) {
     if (l.titolo.isNotEmpty) {
-      final match = RegExp(r'(\d+°\s*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
-      if (match != null) return match.group(1)!;
+      final match = RegExp(r'(\d+[\s°ª°]*Trimestre)', caseSensitive: false).firstMatch(l.titolo);
+      if (match != null) {
+        final numMatch = RegExp(r'\d+').firstMatch(match.group(1)!);
+        if (numMatch != null) return '${numMatch.group(0)}° Trimestre';
+      }
+      if (l.titolo.toLowerCase().contains('primo trimestre')) return '1° Trimestre';
+      if (l.titolo.toLowerCase().contains('secondo trimestre')) return '2° Trimestre';
+      if (l.titolo.toLowerCase().contains('terzo trimestre')) return '3° Trimestre';
+      if (l.titolo.toLowerCase().contains('quarto trimestre')) return '4° Trimestre';
       if (l.titolo.toLowerCase().contains('trimestre')) {
         final parts = l.titolo.split('-');
         if (parts.length > 1) return parts.last.trim();
@@ -1006,7 +1019,7 @@ class _LezioniScreenState extends State<LezioniScreen> {
     }
     final date = DateTime.tryParse(l.data);
     if (date != null) {
-      if (date.month >= 10 && date.month <= 12) return '1° Trimestre';
+      if (date.month >= 9 && date.month <= 12) return '1° Trimestre';
       if (date.month >= 1 && date.month <= 3) return '2° Trimestre';
       if (date.month >= 4 && date.month <= 6) return '3° Trimestre';
       return '4° Trimestre';
@@ -1271,212 +1284,284 @@ class _LezioniScreenState extends State<LezioniScreen> {
                                             else
                                               ...sortedTrimestriKeys.map((trimestreKey) {
                                                 final lezioniTrimestre = trimestriMap[trimestreKey]!;
+                                                final now = DateTime.now();
+                                                final today = DateTime(now.year, now.month, now.day);
+                                                final ultimaLezione = lezioniTrimestre.isNotEmpty ? lezioniTrimestre.last : null;
+                                                final dataUltima = ultimaLezione != null ? DateTime.tryParse(ultimaLezione.data) : null;
+                                                final isConcluso = dataUltima != null && today.isAfter(dataUltima);
 
                                                 return Container(
                                                   margin: const EdgeInsets.fromLTRB(8, 4, 8, 10),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.white,
+                                                    color: isConcluso ? Colors.grey.shade50 : Colors.white,
                                                     borderRadius: BorderRadius.circular(8),
-                                                    border: Border.all(color: Colors.deepPurple.shade100),
+                                                    border: Border.all(
+                                                      color: isConcluso ? Colors.grey.shade300 : Colors.deepPurple.shade100,
+                                                    ),
                                                   ),
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                                    children: [
-                                                      // HEADER TRIMESTRE
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.deepPurple.shade50,
-                                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                                                        ),
-                                                        child: Row(
-                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                          children: [
-                                                            Row(
-                                                              children: [
-                                                                const Icon(Icons.calendar_month, size: 18, color: Colors.deepPurple),
-                                                                const SizedBox(width: 8),
-                                                                Text(
-                                                                  trimestreKey,
-                                                                  style: TextStyle(
-                                                                    fontWeight: FontWeight.bold,
-                                                                    fontSize: 14,
-                                                                    color: Colors.deepPurple.shade900,
-                                                                  ),
-                                                                ),
-                                                                const SizedBox(width: 8),
-                                                                Container(
-                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                                  decoration: BoxDecoration(
-                                                                    color: Colors.white,
-                                                                    borderRadius: BorderRadius.circular(12),
-                                                                    border: Border.all(color: Colors.deepPurple.shade200),
-                                                                  ),
-                                                                  child: Text(
-                                                                    '${lezioniTrimestre.length} Lezioni',
+                                                  child: Theme(
+                                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                                    child: ExpansionTile(
+                                                      key: PageStorageKey('trim_${corso.id}_$trimestreKey'),
+                                                      initiallyExpanded: !isConcluso,
+                                                      tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                      collapsedBackgroundColor: isConcluso ? Colors.grey.shade100 : Colors.deepPurple.shade50,
+                                                      backgroundColor: isConcluso ? Colors.grey.shade100 : Colors.deepPurple.shade50,
+                                                      shape: const RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+                                                      ),
+                                                      collapsedShape: RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      leading: Icon(
+                                                        isConcluso ? Icons.event_available : Icons.calendar_month,
+                                                        size: 18,
+                                                        color: isConcluso ? Colors.grey.shade600 : Colors.deepPurple,
+                                                      ),
+                                                      title: Wrap(
+                                                        spacing: 8,
+                                                        runSpacing: 4,
+                                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                                        children: [
+                                                          Text(
+                                                            trimestreKey,
+                                                            style: TextStyle(
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 14,
+                                                              color: isConcluso ? Colors.grey.shade800 : Colors.deepPurple.shade900,
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                            decoration: BoxDecoration(
+                                                              color: isConcluso ? Colors.grey.shade200 : Colors.white,
+                                                              borderRadius: BorderRadius.circular(12),
+                                                              border: Border.all(
+                                                                color: isConcluso ? Colors.grey.shade400 : Colors.deepPurple.shade200,
+                                                              ),
+                                                            ),
+                                                            child: Text(
+                                                              '${lezioniTrimestre.length} Lezioni',
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                fontWeight: FontWeight.bold,
+                                                                color: isConcluso ? Colors.grey.shade700 : Colors.deepPurple.shade800,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          if (isConcluso)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.grey.shade300,
+                                                                borderRadius: BorderRadius.circular(12),
+                                                                border: Border.all(color: Colors.grey.shade400),
+                                                              ),
+                                                              child: Row(
+                                                                mainAxisSize: MainAxisSize.min,
+                                                                children: [
+                                                                  Icon(Icons.check_circle_outline, size: 12, color: Colors.grey.shade700),
+                                                                  const SizedBox(width: 4),
+                                                                  Text(
+                                                                    'Concluso',
                                                                     style: TextStyle(
                                                                       fontSize: 11,
                                                                       fontWeight: FontWeight.bold,
-                                                                      color: Colors.deepPurple.shade800,
+                                                                      color: Colors.grey.shade800,
                                                                     ),
                                                                   ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                            TextButton.icon(
-                                                              style: TextButton.styleFrom(
-                                                                foregroundColor: Colors.red.shade700,
-                                                                visualDensity: VisualDensity.compact,
-                                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                              ),
-                                                              icon: const Icon(Icons.delete_sweep, size: 16),
-                                                              label: const Text(
-                                                                'Elimina Trimestre',
-                                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                                              ),
-                                                              onPressed: () => _deleteTrimestre(
-                                                                '${scuola.nome} - ${corso.livelloDisplay}',
-                                                                trimestreKey,
-                                                                lezioniTrimestre,
+                                                                ],
                                                               ),
                                                             ),
-                                                          ],
-                                                        ),
+                                                        ],
                                                       ),
-
-                                                      // LISTA LEZIONI DEL TRIMESTRE (ORDINATE PER DATA CRESCENTE)
-                                                      ListView.separated(
-                                                        shrinkWrap: true,
-                                                        physics: const NeverScrollableScrollPhysics(),
-                                                        itemCount: lezioniTrimestre.length,
-                                                        separatorBuilder: (_, __) => const Divider(height: 1),
-                                                        itemBuilder: (ctx, lIdx) {
-                                                          final l = lezioniTrimestre[lIdx];
-                                                          final dataFormatted = _formatDataItaliano(l.data);
-
-                                                          return ListTile(
-                                                            dense: true,
-                                                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                                                            leading: Container(
+                                                      trailing: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          TextButton.icon(
+                                                            style: TextButton.styleFrom(
+                                                              foregroundColor: Colors.red.shade700,
+                                                              visualDensity: VisualDensity.compact,
                                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                              decoration: BoxDecoration(
-                                                                color: Colors.deepPurple.shade50,
-                                                                borderRadius: BorderRadius.circular(6),
-                                                                border: Border.all(color: Colors.deepPurple.shade200),
-                                                              ),
-                                                              child: Text(
-                                                                l.titolo.isNotEmpty
-                                                                    ? l.titolo.split(' - ').first
-                                                                    : '${lIdx + 1}/${lezioniTrimestre.length}',
-                                                                style: TextStyle(
-                                                                  fontSize: 11,
-                                                                  fontWeight: FontWeight.bold,
-                                                                  color: Colors.deepPurple.shade900,
-                                                                ),
-                                                              ),
                                                             ),
-                                                            title: Row(
-                                                              children: [
-                                                                Text(
-                                                                  dataFormatted,
-                                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                                            icon: const Icon(Icons.delete_sweep, size: 16),
+                                                            label: const Text(
+                                                              'Elimina Trimestre',
+                                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                                            ),
+                                                            onPressed: () => _deleteTrimestre(
+                                                              '${scuola.nome} - ${corso.livelloDisplay}',
+                                                              trimestreKey,
+                                                              lezioniTrimestre,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 4),
+                                                          Icon(
+                                                            Icons.expand_more,
+                                                            color: isConcluso ? Colors.grey.shade600 : Colors.deepPurple,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      children: [
+                                                        Container(
+                                                          color: isConcluso ? Colors.grey.shade50 : Colors.white,
+                                                          child: ListView.separated(
+                                                            shrinkWrap: true,
+                                                            physics: const NeverScrollableScrollPhysics(),
+                                                            itemCount: lezioniTrimestre.length,
+                                                            separatorBuilder: (_, __) => Divider(
+                                                              height: 1,
+                                                              color: isConcluso ? Colors.grey.shade300 : Colors.grey.shade200,
+                                                            ),
+                                                            itemBuilder: (ctx, lIdx) {
+                                                              final l = lezioniTrimestre[lIdx];
+                                                              final dataFormatted = _formatDataItaliano(l.data);
+
+                                                              return ListTile(
+                                                                dense: true,
+                                                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                                                leading: Container(
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                                  decoration: BoxDecoration(
+                                                                    color: isConcluso ? Colors.grey.shade200 : Colors.deepPurple.shade50,
+                                                                    borderRadius: BorderRadius.circular(6),
+                                                                    border: Border.all(
+                                                                      color: isConcluso ? Colors.grey.shade400 : Colors.deepPurple.shade200,
+                                                                    ),
+                                                                  ),
+                                                                  child: Text(
+                                                                    l.titolo.isNotEmpty
+                                                                        ? l.titolo.split(' - ').first
+                                                                        : '${lIdx + 1}/${lezioniTrimestre.length}',
+                                                                    style: TextStyle(
+                                                                      fontSize: 11,
+                                                                      fontWeight: FontWeight.bold,
+                                                                      color: isConcluso ? Colors.grey.shade800 : Colors.deepPurple.shade900,
+                                                                    ),
+                                                                  ),
                                                                 ),
-                                                                if (l.titolo.isNotEmpty) ...[
-                                                                  const SizedBox(width: 8),
-                                                                  Flexible(
-                                                                    child: Text(
-                                                                      l.titolo,
+                                                                title: Row(
+                                                                  children: [
+                                                                    Text(
+                                                                      dataFormatted,
                                                                       style: TextStyle(
-                                                                        fontSize: 12,
-                                                                        color: Colors.deepPurple.shade700,
-                                                                        fontWeight: FontWeight.w500,
+                                                                        fontWeight: FontWeight.bold,
+                                                                        fontSize: 13,
+                                                                        color: isConcluso ? Colors.grey.shade800 : Colors.black87,
                                                                       ),
-                                                                      overflow: TextOverflow.ellipsis,
                                                                     ),
-                                                                  ),
-                                                                ],
-                                                              ],
-                                                            ),
-                                                            subtitle: Padding(
-                                                              padding: const EdgeInsets.only(top: 3),
-                                                              child: Wrap(
-                                                                spacing: 8,
-                                                                runSpacing: 4,
-                                                                crossAxisAlignment: WrapCrossAlignment.center,
-                                                                children: [
-                                                                  if (l.argomentoTitolo != null && l.argomentoTitolo!.isNotEmpty)
-                                                                    Container(
-                                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                                      decoration: BoxDecoration(
-                                                                        color: Colors.deepPurple.shade50,
-                                                                        borderRadius: BorderRadius.circular(4),
-                                                                        border: Border.all(color: Colors.deepPurple.shade200),
-                                                                      ),
-                                                                      child: Row(
-                                                                        mainAxisSize: MainAxisSize.min,
-                                                                        children: [
-                                                                          const Icon(Icons.menu_book, size: 12, color: Colors.deepPurple),
-                                                                          const SizedBox(width: 4),
-                                                                          Text(
-                                                                            l.argomentoTitolo!,
-                                                                            style: const TextStyle(color: Colors.deepPurple, fontSize: 11, fontWeight: FontWeight.bold),
+                                                                    if (l.titolo.isNotEmpty) ...[
+                                                                      const SizedBox(width: 8),
+                                                                      Flexible(
+                                                                        child: Text(
+                                                                          l.titolo,
+                                                                          style: TextStyle(
+                                                                            fontSize: 12,
+                                                                            color: isConcluso ? Colors.grey.shade600 : Colors.deepPurple.shade700,
+                                                                            fontWeight: FontWeight.w500,
                                                                           ),
-                                                                        ],
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                        ),
                                                                       ),
-                                                                    )
-                                                                  else
-                                                                    Container(
-                                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                                      decoration: BoxDecoration(
-                                                                        color: Colors.grey.shade100,
-                                                                        borderRadius: BorderRadius.circular(4),
-                                                                        border: Border.all(color: Colors.grey.shade300),
-                                                                      ),
-                                                                      child: const Text(
-                                                                        '📖 Nessun argomento',
-                                                                        style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic),
-                                                                      ),
-                                                                    ),
-                                                                  Text(
-                                                                    '👥  /  presenti',
-                                                                    style: TextStyle(color: Colors.grey.shade800, fontSize: 11),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ),
-                                                            trailing: Row(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              children: [
-                                                                IconButton(
-                                                                  icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
-                                                                  tooltip: 'Modifica Lezione (Data / Argomento)',
-                                                                  onPressed: () => _showEditLezioneDialog(l),
+                                                                    ],
+                                                                  ],
                                                                 ),
-                                                                IconButton(
-                                                                  icon: const Icon(Icons.how_to_reg, color: Colors.deepPurple, size: 20),
-                                                                  tooltip: 'Gestisci Presenze',
-                                                                  onPressed: () {
-                                                                    Navigator.of(context)
-                                                                        .push(
-                                                                          MaterialPageRoute(
-                                                                            builder: (_) => PresenzeScreen(initialLezioneId: l.id),
+                                                                subtitle: Padding(
+                                                                  padding: const EdgeInsets.only(top: 3),
+                                                                  child: Wrap(
+                                                                    spacing: 8,
+                                                                    runSpacing: 4,
+                                                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                                                    children: [
+                                                                      if (l.argomentoTitolo != null && l.argomentoTitolo!.isNotEmpty)
+                                                                        Container(
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                          decoration: BoxDecoration(
+                                                                            color: isConcluso ? Colors.grey.shade200 : Colors.deepPurple.shade50,
+                                                                            borderRadius: BorderRadius.circular(4),
+                                                                            border: Border.all(
+                                                                              color: isConcluso ? Colors.grey.shade300 : Colors.deepPurple.shade200,
+                                                                            ),
+                                                                          ),
+                                                                          child: Row(
+                                                                            mainAxisSize: MainAxisSize.min,
+                                                                            children: [
+                                                                              Icon(
+                                                                                Icons.menu_book,
+                                                                                size: 12,
+                                                                                color: isConcluso ? Colors.grey.shade600 : Colors.deepPurple,
+                                                                              ),
+                                                                              const SizedBox(width: 4),
+                                                                              Text(
+                                                                                l.argomentoTitolo!,
+                                                                                style: TextStyle(
+                                                                                  color: isConcluso ? Colors.grey.shade700 : Colors.deepPurple,
+                                                                                  fontSize: 11,
+                                                                                  fontWeight: FontWeight.bold,
+                                                                                ),
+                                                                              ),
+                                                                            ],
                                                                           ),
                                                                         )
-                                                                        .then((_) => _loadAll());
-                                                                  },
+                                                                      else
+                                                                        Container(
+                                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                          decoration: BoxDecoration(
+                                                                            color: Colors.grey.shade100,
+                                                                            borderRadius: BorderRadius.circular(4),
+                                                                            border: Border.all(color: Colors.grey.shade300),
+                                                                          ),
+                                                                          child: const Text(
+                                                                            '📖 Nessun argomento',
+                                                                            style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic),
+                                                                          ),
+                                                                        ),
+                                                                      Text(
+                                                                        '👥  /  presenti',
+                                                                        style: TextStyle(color: Colors.grey.shade800, fontSize: 11),
+                                                                      ),
+                                                                    ],
+                                                                  ),
                                                                 ),
-                                                                IconButton(
-                                                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                                                  tooltip: 'Elimina Lezione',
-                                                                  onPressed: () => _deleteLezione(l),
+                                                                trailing: Row(
+                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  children: [
+                                                                    IconButton(
+                                                                      icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
+                                                                      tooltip: 'Modifica Lezione (Data / Argomento)',
+                                                                      onPressed: () => _showEditLezioneDialog(l),
+                                                                    ),
+                                                                    IconButton(
+                                                                      icon: Icon(
+                                                                        Icons.how_to_reg,
+                                                                        color: isConcluso ? Colors.grey.shade600 : Colors.deepPurple,
+                                                                        size: 20,
+                                                                      ),
+                                                                      tooltip: 'Gestisci Presenze',
+                                                                      onPressed: () {
+                                                                        Navigator.of(context)
+                                                                            .push(
+                                                                              MaterialPageRoute(
+                                                                                builder: (_) => PresenzeScreen(initialLezioneId: l.id),
+                                                                              ),
+                                                                            )
+                                                                            .then((_) => _loadAll());
+                                                                      },
+                                                                    ),
+                                                                    IconButton(
+                                                                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                                                      tooltip: 'Elimina Lezione',
+                                                                      onPressed: () => _deleteLezione(l),
+                                                                    ),
+                                                                  ],
                                                                 ),
-                                                              ],
-                                                            ),
-                                                            onTap: () => _showEditLezioneDialog(l),
-                                                          );
-                                                        },
-                                                      ),
-                                                    ],
+                                                                onTap: () => _showEditLezioneDialog(l),
+                                                              );
+                                                            },
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
                                                   ),
                                                 );
                                               }),

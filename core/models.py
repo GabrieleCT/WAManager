@@ -1,6 +1,7 @@
 import uuid
+import re
 from django.db import models
-from django.db.models.signals import pre_delete
+from django.db.models.signals import pre_delete, pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -333,6 +334,93 @@ class Lezione(models.Model):
     def __str__(self):
         arg_str = f" - {self.argomento.titolo}" if self.argomento else ""
         return f"{self.corso} - {self.data.strftime('%d/%m/%Y')}{arg_str}"
+
+
+def rinumera_lezioni_corso(corso_id):
+    """
+    Rinumera automaticamente tutte le lezioni di un corso raggruppate per trimestre/gruppo,
+    ordinandole cronologicamente per data (e id come fallback).
+    Il formato del titolo assegnato è: '{indice}/{totale} - {trimestre}'
+    """
+    if not corso_id:
+        return
+
+    cid = str(getattr(corso_id, 'id', corso_id))
+    lezioni = list(Lezione.objects.filter(corso_id=cid).order_by('data', 'id'))
+    if not lezioni:
+        return
+
+    def _get_trimestre_gruppo(lez):
+        if lez.titolo:
+            titolo_lower = lez.titolo.lower()
+            m = re.search(r'(\d+)\s*[°ª°]?\s*trimestre', lez.titolo, re.IGNORECASE)
+            if m:
+                return f"{m.group(1)}° Trimestre"
+            if 'primo trimestre' in titolo_lower:
+                return '1° Trimestre'
+            if 'secondo trimestre' in titolo_lower:
+                return '2° Trimestre'
+            if 'terzo trimestre' in titolo_lower:
+                return '3° Trimestre'
+            if 'quarto trimestre' in titolo_lower:
+                return '4° Trimestre'
+            if ' - ' in lez.titolo:
+                return lez.titolo.split(' - ')[-1].strip()
+
+        m_num = lez.data.month
+        if m_num in (9, 10, 11, 12):
+            return '1° Trimestre'
+        elif m_num in (1, 2, 3):
+            return '2° Trimestre'
+        elif m_num in (4, 5, 6):
+            return '3° Trimestre'
+        else:
+            return '4° Trimestre'
+
+    groups = {}
+    for l in lezioni:
+        trim = _get_trimestre_gruppo(l)
+        groups.setdefault(trim, []).append(l)
+
+    to_update = []
+    for trim, lista_lezioni in groups.items():
+        total = len(lista_lezioni)
+        for idx, lez in enumerate(lista_lezioni, start=1):
+            nuovo_titolo = f"{idx}/{total} - {trim}"
+            if lez.titolo != nuovo_titolo:
+                lez.titolo = nuovo_titolo
+                to_update.append(lez)
+
+    if to_update:
+        Lezione.objects.bulk_update(to_update, ['titolo'])
+
+
+@receiver(pre_save, sender=Lezione)
+def lezione_pre_save_track_corso(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            old = Lezione.objects.filter(pk=instance.pk).values('corso_id').first()
+            if old and str(old['corso_id']) != str(instance.corso_id):
+                instance._old_corso_id = old['corso_id']
+        except Exception:
+            pass
+
+
+@receiver(post_save, sender=Lezione)
+def lezione_post_save_renumber(sender, instance, **kwargs):
+    if getattr(instance, '_skip_renumber', False):
+        return
+    old_cid = getattr(instance, '_old_corso_id', None)
+    if old_cid:
+        rinumera_lezioni_corso(old_cid)
+    rinumera_lezioni_corso(instance.corso_id)
+
+
+@receiver(post_delete, sender=Lezione)
+def lezione_post_delete_renumber(sender, instance, **kwargs):
+    if getattr(instance, '_skip_renumber', False):
+        return
+    rinumera_lezioni_corso(instance.corso_id)
 
 
 # ─── 1.7 Presenza ───────────────────────────────────────────────
