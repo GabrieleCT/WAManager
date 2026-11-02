@@ -93,7 +93,44 @@ def call_gemini_with_fallback(prompt, api_key, max_attempts=3, backoff_seconds=2
     return False, last_err or "ERRORE: Impossibile completare la chiamata a Gemini.", "", max_attempts, summary_errors
 
 
-def parse_and_apply_presenze(allievo, prossima_lezione, risposta_ai, mittente_label, corso):
+def build_gemini_presence_prompt(corso_label, mittente_label, lezione_label, text):
+    """
+    Costruisce un prompt ottimizzato con regole esplicite ed esempi per la classificazione presenze con Gemini.
+    """
+    return f'''Analizza il seguente messaggio inviato nel gruppo WhatsApp della scuola di tango per il {corso_label} da {mittente_label} in merito alla lezione {lezione_label}.
+Messaggio: "{text}"
+
+Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o parole aggiuntive:
+- PRESENTE_SINGOLO
+- ASSENTE_SINGOLO
+- PRESENTE_COPPIA
+- ASSENTE_COPPIA
+- IGNOTA
+
+Regole di classificazione ed esempi:
+1. PRESENTE_COPPIA:
+   - Se il mittente parla al plurale o conferma la presenza per la coppia / partner.
+   - Esempi: "Presenti", "presenti!", "Ci siamo", "Noi ci siamo", "Veniamo", "Arriviamo", "Presenti entrambi", "Ci siamo entrambi", "Presenti tutti e due".
+   - ATTENZIONE CRITICA: La parola "Presenti" (al plurale) indica SEMPRE PRESENTE_COPPIA. Solo "Presente" (al singolare) indica PRESENTE_SINGOLO.
+
+2. PRESENTE_SINGOLO:
+   - Se il mittente conferma la propria presenza da solo/a, anche con risposte brevi, informali, in inglese o con ringraziamenti/saluti.
+   - Esempi: "Presente", "Ci sono", "Vengo", "Arrivo", "Io ci sono", "Presente 💃", "Sì", "Si", "Yes", "Yess", "Yess!", "Yes, Grazie!", "Presente grazie!", "Ok grazie", "Ok ci sono", "Confermo", "Presente io".
+   - ATTENZIONE CRITICA: Messaggi affermativi come "Yes", "Yess", "Yes grazie", "Sì grazie", "Ok ci sono" scritti nell'appello presenze indicano SEMPRE conferma di presenza (PRESENTE_SINGOLO) e NON devono essere etichettati come IGNOTA.
+
+3. ASSENTE_COPPIA:
+   - Se comunica l'assenza al plurale o per entrambi i membri della coppia.
+   - Esempi: "Non ci siamo", "Assenti", "Saltiamo stasera", "Stasera non riusciamo", "Non possiamo venire".
+
+4. ASSENTE_SINGOLO:
+   - Se comunica la propria assenza da solo/a.
+   - Esempi: "Non ci sono", "Assente", "Non riesco a venire", "Stasera salto", "Oggi non posso".
+
+5. IGNOTA:
+   - SOLO se il messaggio non esprime alcuna intenzione di presenza o assenza (es. "A che ora inizia?", "Qualcuno ha visto le mie scarpe?", "Auguri!", "Ci vediamo sabato alla milonga").'''
+
+
+def parse_and_apply_presenze(allievo, prossima_lezione, risposta_ai, mittente_label, corso, original_text=None):
     """
     Interpreta l'esito dal testo restituito da Gemini e aggiorna il record Presenza.
     Ritorna:
@@ -106,6 +143,21 @@ def parse_and_apply_presenze(allievo, prossima_lezione, risposta_ai, mittente_la
     elif "ASSENTE_SINGOLO" in r_upper: esito = "ASSENTE_SINGOLO"
     elif "ERRORE" in r_upper or "HTTP " in r_upper: esito = "ERRORE"
     else: esito = "IGNOTA"
+
+    # Regole euristiche di sicurezza sul testo originale del messaggio
+    if original_text:
+        import re
+        txt_clean = re.sub(r'[^\w\s]', ' ', original_text.lower()).strip()
+        words = [w for w in txt_clean.split() if w]
+        # 1. Se contiene "presenti" al plurale (senza negazioni), è SEMPRE PRESENTE_COPPIA
+        if 'presenti' in words and not any(neg in words for neg in ('non', 'assenti', 'salto', 'saltiamo')):
+            if esito in ('PRESENTE_SINGOLO', 'IGNOTA'):
+                esito = 'PRESENTE_COPPIA'
+        # 2. Conferme affermative singolari (es. "yes", "yess", "si", "presente")
+        affirmative_tokens = {'yes', 'yess', 'yep', 'yeah', 'si', 'sì', 'presente', 'ci sono', 'confermo'}
+        if any(w in affirmative_tokens for w in words) and not any(neg in words for neg in ('non', 'mai', 'assente', 'salto')):
+            if esito == 'IGNOTA':
+                esito = 'PRESENTE_SINGOLO' 
 
     azione_presenze = ""
     partner_coinvolto = None
@@ -170,15 +222,7 @@ def retry_gemini_log(log_id):
         lezione = log_entry.lezione
         lezione_label = f"del {lezione.data.strftime('%d/%m/%Y')} ore {lezione.corso.orario.strftime('%H:%M')}" if (lezione and lezione.corso and lezione.corso.orario) else ""
         mittente_label = log_entry.mittente or (f"{log_entry.allievo.nome} {log_entry.allievo.cognome}" if log_entry.allievo else "Allievo")
-        prompt = f'''Analizza il seguente messaggio inviato nel gruppo WhatsApp del {corso_label} da {mittente_label} per la lezione {lezione_label}.
-Messaggio: "{log_entry.testo_originale}"
-
-Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o spazi aggiuntivi:
-- PRESENTE_SINGOLO (se ha confermato la sua presenza da solo/a)
-- ASSENTE_SINGOLO (se ha comunicato che non ci sarà, solo per sé)
-- PRESENTE_COPPIA (se ha parlato al plurale, es. "ci siamo", "veniamo", confermando per sé e per il partner)
-- ASSENTE_COPPIA (se ha parlato al plurale, es. "non ci siamo", "saltiamo", confermando l'assenza per entrambi)
-- IGNOTA (se non è un messaggio di conferma presenza/assenza o è una domanda/saluto/battuta)'''
+        prompt = build_gemini_presence_prompt(corso_label, mittente_label, lezione_label, log_entry.testo_originale)
         log_entry.chiamata_ai = prompt
 
     success, risposta_ai, model_used, attempts, err_summary = call_gemini_with_fallback(
@@ -198,7 +242,8 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
         prossima_lezione=lezione,
         risposta_ai=risposta_ai,
         mittente_label=mittente_label,
-        corso=corso
+        corso=corso,
+        original_text=log_entry.testo_originale
     )
 
     log_entry.risposta_ai = f"{risposta_ai} (motore: {model_used}, tentativo: {attempts})" if success else risposta_ai

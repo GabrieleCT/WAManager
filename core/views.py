@@ -14,7 +14,7 @@ from .models import (
     Allievo, Corso, Scuola, Argomento, Lezione, Presenza, Match, MessageTemplate,
     MessageLog, RecurringSchedule, Role, Level, Recensione, GeminiLog
 )
-from .gemini_service import call_gemini_with_fallback, parse_and_apply_presenze, start_background_retry
+from .gemini_service import call_gemini_with_fallback, parse_and_apply_presenze, start_background_retry, build_gemini_presence_prompt
 
 import re
 import time
@@ -579,15 +579,7 @@ def whatsapp_message_webhook(request):
         corso_label = str(corso)
         lezione_label = f"del {prossima_lezione.data.strftime('%d/%m/%Y')} ore {prossima_lezione.corso.orario.strftime('%H:%M')}" if (prossima_lezione and prossima_lezione.corso and prossima_lezione.corso.orario) else ("imminente" if prossima_lezione else "")
 
-        prompt = f'''Analizza il seguente messaggio inviato nel gruppo WhatsApp del {corso_label} da {mittente_label} per la lezione {lezione_label}.
-Messaggio: "{text}"
-
-Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di queste 5 stringhe esatte, senza spiegazioni, punteggiatura o spazi aggiuntivi:
-- PRESENTE_SINGOLO (se ha confermato la sua presenza da solo/a)
-- ASSENTE_SINGOLO (se ha comunicato che non ci sarà, solo per sé)
-- PRESENTE_COPPIA (se ha parlato al plurale, es. "ci siamo", "veniamo", confermando per sé e per il partner)
-- ASSENTE_COPPIA (se ha parlato al plurale, es. "non ci siamo", "saltiamo", confermando l'assenza per entrambi)
-- IGNOTA (se non è un messaggio di conferma presenza/assenza o è una domanda/saluto/battuta)'''
+        prompt = build_gemini_presence_prompt(corso_label, mittente_label, lezione_label, text)
 
         if not api_key:
             risposta_ai = "ERRORE: API Key di Gemini non configurata. Impostala nella sezione Impostazioni -> Gemini AI."
@@ -612,7 +604,8 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
                     prossima_lezione=prossima_lezione,
                     risposta_ai=risposta_ai,
                     mittente_label=mittente_label,
-                    corso=corso
+                    corso=corso,
+                    original_text=text
                 )
             )
 
