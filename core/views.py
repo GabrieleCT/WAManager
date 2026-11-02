@@ -16,6 +16,50 @@ from .models import (
 )
 from .gemini_service import call_gemini_with_fallback, parse_and_apply_presenze, start_background_retry
 
+import re
+import time
+
+
+def normalize_phone_number(raw_phone):
+    """
+    Normalizza numeri telefonici italiani rimuovendo formattazione,
+    prefissi internazionali (0039, +39, 39) sia per numeri a 9 cifre (es. 335470519)
+    che a 10 cifre (es. 3471234567).
+    """
+    if not raw_phone:
+        return ''
+    digits = re.sub(r'\D', '', str(raw_phone))
+    if digits.startswith('0039') and len(digits) >= 13:
+        digits = digits[4:]
+    elif digits.startswith('39') and len(digits) in (11, 12):
+        digits = digits[2:]
+    return digits
+
+
+def is_phone_match(phone_a, phone_b):
+    norm_a = normalize_phone_number(phone_a)
+    norm_b = normalize_phone_number(phone_b)
+    if not norm_a or not norm_b:
+        return False
+    if norm_a == norm_b:
+        return True
+    if len(norm_a) >= 8 and len(norm_b) >= 8:
+        if norm_a.endswith(norm_b) or norm_b.endswith(norm_a):
+            return True
+    return False
+
+
+def _db_retry(fn, max_retries=5, delay=0.4):
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+
+
 
 # ─── RSVP Pubblico (per lezione) ────────────────────────────────
 
@@ -279,14 +323,10 @@ def poll_vote_webhook(request):
         if not voter_id:
             return JsonResponse({'success': False, 'message': 'Voter mancante.'})
 
-        phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
-        last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
-
         allievo = None
-        if last_10:
+        if voter_id:
             for a in Allievo.objects.filter(is_active=True):
-                a_digits = ''.join(filter(str.isdigit, a.telefono))
-                if a_digits and a_digits.endswith(last_10):
+                if is_phone_match(voter_id, a.telefono):
                     allievo = a
                     break
 
@@ -511,23 +551,16 @@ def whatsapp_message_webhook(request):
                     'message': f"Oggi ({today_giorno}) non rientra nei giorni di monitoraggio abilitati ({custom_days})."
                 })
 
-        # 2. Cerca l'allievo associato al mittente
-        phone_digits = ''.join(filter(str.isdigit, str(voter_id)))
-        last_10 = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
-
+        # 2. Cerca l'allievo associato al mittente (supporta numeri a 9 e 10 cifre con/senza prefisso 39)
         allievo = None
-        if last_10:
-            # Cerca prima tra gli allievi iscritti a questo corso
+        if voter_id:
             for a in corso.allievi.filter(is_active=True):
-                a_digits = ''.join(filter(str.isdigit, a.telefono or ''))
-                if a_digits and a_digits.endswith(last_10):
+                if is_phone_match(voter_id, a.telefono):
                     allievo = a
                     break
-            # Se non trovato nel corso specifico, cerca tra tutti gli allievi attivi
             if not allievo:
                 for a in Allievo.objects.filter(is_active=True):
-                    a_digits = ''.join(filter(str.isdigit, a.telefono or ''))
-                    if a_digits and a_digits.endswith(last_10):
+                    if is_phone_match(voter_id, a.telefono):
                         allievo = a
                         break
 
@@ -573,28 +606,32 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
             else:
                 risposta_ai = raw_risposta or err_summary or "ERRORE: Impossibile completare la chiamata a Gemini."
 
-            esito, azione_presenze, partner_coinvolto = parse_and_apply_presenze(
-                allievo=allievo,
-                prossima_lezione=prossima_lezione,
-                risposta_ai=risposta_ai,
-                mittente_label=mittente_label,
-                corso=corso
+            esito, azione_presenze, partner_coinvolto = _db_retry(
+                lambda: parse_and_apply_presenze(
+                    allievo=allievo,
+                    prossima_lezione=prossima_lezione,
+                    risposta_ai=risposta_ai,
+                    mittente_label=mittente_label,
+                    corso=corso
+                )
             )
 
-        # 7. Registra SEMPRE il log completo in GeminiLog
+        # 7. Registra SEMPRE il log completo in GeminiLog con retry su blocco SQLite
         mittente_str = f"{allievo.nome} {allievo.cognome}" if allievo else (f"{push_name} ({voter_id})".strip() if push_name else str(voter_id))
-        log_entry = GeminiLog.objects.create(
-            allievo=allievo,
-            corso=corso,
-            gruppo_whatsapp=group_id or '',
-            mittente=mittente_str,
-            lezione=prossima_lezione,
-            testo_originale=text,
-            chiamata_ai=prompt,
-            risposta_ai=risposta_ai,
-            esito_interpretato=esito,
-            azione_presenze=azione_presenze,
-            partner_coinvolto=partner_coinvolto
+        log_entry = _db_retry(
+            lambda: GeminiLog.objects.create(
+                allievo=allievo,
+                corso=corso,
+                gruppo_whatsapp=group_id or '',
+                mittente=mittente_str,
+                lezione=prossima_lezione,
+                testo_originale=text,
+                chiamata_ai=prompt,
+                risposta_ai=risposta_ai,
+                esito_interpretato=esito,
+                azione_presenze=azione_presenze,
+                partner_coinvolto=partner_coinvolto
+            )
         )
 
         # Avvia retry asincrono in background dopo 2 minuti (fino a 3 tentativi) se errore transitorio (es. 503, 429)

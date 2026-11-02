@@ -34,6 +34,22 @@ function logToFile(msg) {
     console.log(msg);
 }
 
+async function sendWebhookWithRetry(url, payload, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const resp = await axios.post(url, payload, { timeout: 30000 });
+            logToFile(`Webhook response: ${JSON.stringify(resp.data)}`);
+            return resp;
+        } catch (err) {
+            logToFile(`Errore risposta webhook (tentativo ${attempt}/${maxRetries}): ${err.message}`);
+            if (attempt < maxRetries) {
+                await new Promise(res => setTimeout(res, 1000 * attempt));
+            }
+        }
+    }
+}
+
+
 process.on('uncaughtException', (err) => {
     logToFile('[UNCAUGHT EXCEPTION] ' + (err ? (err.message + '\n' + err.stack) : 'Unknown error'));
 });
@@ -205,7 +221,7 @@ async function connectToWhatsApp() {
                     }
                 }
 
-                // Invia il messaggio al webhook di Django
+                // Invia il messaggio al webhook di Django con retry automatico
                 const payload = {
                     messageId: msg.key.id,
                     voter: realSenderJid,
@@ -213,13 +229,7 @@ async function connectToWhatsApp() {
                     text: text,
                     action: 'text_message'
                 };
-                try {
-                    axios.post((DJANGO_BASE_URL + '/api/webhook/whatsapp-message/'), payload)
-                        .then(r => logToFile(`Webhook response: ${JSON.stringify(r.data)}`))
-                        .catch(err => logToFile(`Errore risposta webhook: ${err.message}`));
-                } catch (err) {
-                    logToFile(`Errore invio webhook: ${err.message}`);
-                }
+                sendWebhookWithRetry(DJANGO_BASE_URL + '/api/webhook/whatsapp-message/', payload);
             }
 
             // 2. Gestione degli aggiornamenti ai SONDAGGI (Voti)
@@ -339,12 +349,7 @@ async function connectToWhatsApp() {
                             action: 'vote_update'
                         };
 
-                        try {
-                            const response = await axios.post(DJANGO_WEBHOOK_URL, payload);
-                            logToFile(`Webhook inviato per il voto di ${realSenderJid}. Risposta Django: ${JSON.stringify(response.data)}`);
-                        } catch (webhookErr) {
-                            logToFile(`Errore invio Webhook per ${realSenderJid}: ${webhookErr.message}`);
-                        }
+                        await sendWebhookWithRetry(DJANGO_WEBHOOK_URL, payload);
                     } else {
                         logToFile(`Messaggio sondaggio originale non trovato in memoria per ID: ${pollMsgId}. Impossibile decifrare il voto.`);
                     }

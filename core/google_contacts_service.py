@@ -9,17 +9,15 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_phone(phone_str):
-    """Normalizza il numero di telefono estraendo solo le cifre significative."""
+    """Normalizza il numero di telefono estraendo solo le cifre significative (supporta 9 e 10 cifre)."""
     if not phone_str:
         return ''
     digits = re.sub(r'\D', '', str(phone_str))
-    # Se ha prefisso italiano 39 con 12 cifre, togli 39
-    if digits.startswith('39') and len(digits) >= 12:
-        digits = digits[2:]
-    # Se ha zeri iniziali es. 0039
-    elif digits.startswith('0039') and len(digits) >= 14:
+    if digits.startswith('0039') and len(digits) >= 13:
         digits = digits[4:]
-    return digits[-10:] if len(digits) >= 10 else digits
+    elif digits.startswith('39') and len(digits) in (11, 12):
+        digits = digits[2:]
+    return digits
 
 
 def get_valid_contacts_access_token():

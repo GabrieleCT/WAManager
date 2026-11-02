@@ -84,8 +84,25 @@ WSGI_APPLICATION = 'wamanager.wsgi.application'
 DATABASE_URL = os.environ.get('DATABASE_URL', f'sqlite:///{BASE_DIR / "db.sqlite3"}')
 
 DATABASES = {
-    'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    'default': dj_database_url.parse(DATABASE_URL, conn_max_age=0 if 'sqlite' in DATABASE_URL else 600)
 }
+
+if 'sqlite' in DATABASES['default'].get('ENGINE', ''):
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 30,
+    }
+
+from django.db.backends.signals import connection_created
+def _configure_sqlite_wal(sender, connection, **kwargs):
+    if connection.vendor == 'sqlite':
+        try:
+            cursor = connection.cursor()
+            cursor.execute('PRAGMA journal_mode=WAL;')
+            cursor.execute('PRAGMA busy_timeout=30000;')
+            cursor.execute('PRAGMA synchronous=NORMAL;')
+        except Exception:
+            pass
+connection_created.connect(_configure_sqlite_wal)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
