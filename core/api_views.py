@@ -1375,11 +1375,15 @@ def sync_daemon_schedule(orario_str):
 
 def sync_sollecito_schedule(sollecito_orario_str, attivo=True):
     """
-    Sincronizza o aggiorna l'orario del task pianificato per il sollecito pomeridiano in Django-Q.
+    Sincronizza o aggiorna l'orario del task pianificato per il sollecito di mancata risposta in Django-Q.
     """
     try:
         from django_q.models import Schedule
-        sched = Schedule.objects.filter(func='core.tasks.invia_sollecito_giornaliero').first()
+        sched = Schedule.objects.filter(func='core.tasks.controlla_e_invia_solleciti_mancata_risposta').first()
+        old_sched = Schedule.objects.filter(func='core.tasks.invia_sollecito_giornaliero').first()
+        if old_sched:
+            old_sched.delete()
+
         if not attivo:
             if sched:
                 sched.delete()
@@ -1399,8 +1403,8 @@ def sync_sollecito_schedule(sollecito_orario_str, attivo=True):
             sched.save()
         else:
             Schedule.objects.create(
-                name='Sollecito Presenze Giornaliero',
-                func='core.tasks.invia_sollecito_giornaliero',
+                name='Sollecito Presenze Mancata Risposta',
+                func='core.tasks.controlla_e_invia_solleciti_mancata_risposta',
                 schedule_type=Schedule.DAILY,
                 next_run=target_time
             )

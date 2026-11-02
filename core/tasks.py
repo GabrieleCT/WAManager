@@ -605,11 +605,12 @@ def invia_sollecito_giornaliero():
 
 def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None, force=False):
     """
-    Controlla se dopo l'intervallo specificato (sollecito_ore_attesa, default 3 ore) dall'invio del sondaggio
-    ci sono allievi che NON hanno ancora registrato una risposta (né PRESENTE né ASSENTE).
+    Controlla se all'orario fissato (sollecito_orario, default 16:00) ci sono allievi che NON hanno
+    ancora registrato una risposta (né PRESENTE né ASSENTE).
     Invia a ciascuno di essi il messaggio individuale di sollecito configurato in 'Configurazione Messaggio di Sollecito'.
     Evita invii duplicati registrando lo stato sollecito_inviato su Presenza e in MessageLog.
     """
+    import datetime as dt_mod
     now = timezone.localtime(timezone.now())
     today = now.date()
 
@@ -620,7 +621,26 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
     if not global_config.sollecito_attivo and not force:
         return {'success': False, 'message': 'Invio automatico solleciti disattivato nelle impostazioni.'}
 
-    ore_attesa = getattr(global_config, 'sollecito_ore_attesa', 3) or 3
+    # Verifica orario fissato per l'invio del sollecito
+    sollecito_orario_str = getattr(global_config, 'sollecito_orario', '16:00') or '16:00'
+    try:
+        parts = sollecito_orario_str.split(':')
+        target_hour = int(parts[0])
+        target_min = int(parts[1]) if len(parts) > 1 else 0
+        sollecito_time = dt_mod.time(target_hour, target_min)
+    except Exception:
+        sollecito_time = dt_mod.time(16, 0)
+
+    # Se non forzato, il sollecito parte solo se l'ora corrente ha raggiunto o superato l'orario fissato
+    if not force:
+        if now.time() < sollecito_time:
+            return {
+                'success': True,
+                'message': f"Orario sollecito ({sollecito_time.strftime('%H:%M')}) non ancora raggiunto (ora corrente: {now.strftime('%H:%M')}).",
+                'solleciti_inviati_totali': 0,
+                'dettagli': []
+            }
+
     base_template = (global_config.sollecito_testo or '').strip()
     if not base_template:
         base_template = "Ciao {nickname}, ci sei stasera al corso?"
@@ -650,13 +670,6 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
         # Se non è stato inviato alcun sondaggio e non è forzato, non inviare solleciti
         if not poll_log and not force:
             continue
-
-        # Verifica se sono trascorse almeno ore_attesa ore
-        if poll_log and not force:
-            poll_time = timezone.localtime(poll_log.timestamp)
-            ore_trascorse = (now - poll_time).total_seconds() / 3600.0
-            if ore_trascorse < ore_attesa:
-                continue
 
         allievi = Allievo.objects.filter(corso=corso, is_active=True).order_by('cognome', 'nome')
         allievi_sollecitati = []
@@ -787,7 +800,7 @@ def start_sollecito_checker_daemon():
                 controlla_e_invia_solleciti_mancata_risposta()
             except Exception as e:
                 print(f"[Demone Solleciti Mancata Risposta] Errore: {e}")
-            time.sleep(600)  # Controlla ogni 10 minuti
+            time.sleep(60)   # Controlla ogni minuto
 
     t = threading.Thread(target=_loop, daemon=True, name="SollecitoMancataRispostaDaemon")
     t.start()

@@ -59,7 +59,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
 
   // 3. Configurazione Sollecito
   bool _sollecitoAttivo = false;
-  int _sollecitoOreAttesa = 3;
   TimeOfDay _sollecitoTime = const TimeOfDay(hour: 16, minute: 0);
   final TextEditingController _testoSollecitoCtl = TextEditingController();
   bool _invioSollecitoManualeInCorso = false;
@@ -134,7 +133,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
 
         // Parsing sollecito
         _sollecitoAttivo = config.sollecitoAttivo;
-        _sollecitoOreAttesa = config.sollecitoOreAttesa;
         final solParts = config.sollecitoOrario.split(':');
         if (solParts.length >= 2) {
           final sh = int.tryParse(solParts[0]) ?? 16;
@@ -320,7 +318,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     final data = {
       'sollecito_testo': _testoSollecitoCtl.text.trim(),
       'sollecito_attivo': _sollecitoAttivo,
-      'sollecito_ore_attesa': _sollecitoOreAttesa,
+      'sollecito_orario': _formatTimeOfDay(_sollecitoTime),
     };
 
     final res = await _api.saveDaemonConfig(data);
@@ -1447,7 +1445,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                         ),
                         subtitle: const Text(
                           'Invia automaticamente un messaggio individuale su WhatsApp a tutti gli allievi del corso '
-                          'che non hanno risposto al sondaggio entro l\'intervallo di ore stabilito.',
+                          'che non hanno risposto al sondaggio all\'orario stabilito.',
                           style: TextStyle(fontSize: 13),
                         ),
                         value: _sollecitoAttivo,
@@ -1456,7 +1454,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Configurazione Intervallo Ore Mancata Risposta
+                      // Configurazione Orario Invio Sollecito Mancata Risposta
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -1469,58 +1467,45 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.timer_outlined, color: Colors.blueGrey.shade700, size: 20),
+                                Icon(Icons.access_time_outlined, color: Colors.blueGrey.shade700, size: 20),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Intervallo mancata risposta:',
+                                  'Orario di invio sollecito:',
                                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                 ),
                                 const Spacer(),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey.shade400),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    side: BorderSide(color: Colors.grey.shade400),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.remove, size: 18),
-                                        tooltip: 'Diminuisci ore',
-                                        onPressed: _sollecitoOreAttesa > 1
-                                            ? () => setState(() => _sollecitoOreAttesa--)
-                                            : null,
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                                        child: Text(
-                                          '$_sollecitoOreAttesa ore',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.add, size: 18),
-                                        tooltip: 'Aumenta ore',
-                                        onPressed: _sollecitoOreAttesa < 24
-                                            ? () => setState(() => _sollecitoOreAttesa++)
-                                            : null,
-                                      ),
-                                    ],
+                                  icon: Icon(Icons.schedule, size: 18, color: Colors.amber.shade900),
+                                  label: Text(
+                                    _formatTimeOfDay(_sollecitoTime),
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
                                   ),
+                                  onPressed: () async {
+                                    final picked = await showTimePicker(
+                                      context: context,
+                                      initialTime: _sollecitoTime,
+                                    );
+                                    if (picked != null) {
+                                      setState(() => _sollecitoTime = picked);
+                                    }
+                                  },
                                 ),
                               ],
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Il sistema attenderà $_sollecitoOreAttesa ore dall\'invio del sondaggio mattutino o manuale. '
-                              'Trascorso questo tempo, chi non ha confermato né presenza né assenza riceverà il messaggio sotto riportato.',
+                              'All\'orario stabilito (${_formatTimeOfDay(_sollecitoTime)}), il sistema individuerà gli allievi della lezione odierna che non hanno ancora risposto (né presenza né assenza) e invierà loro il messaggio individuale.',
                               style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
 
                       // Bottone esegui ora
                       Align(
