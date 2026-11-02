@@ -279,11 +279,19 @@ class _GeminiScreenState extends State<GeminiScreen> {
     }).toList();
   }
 
+  String _getLogFormattedDateTime(Map<String, dynamic> log) {
+    final display = log['timestamp_display']?.toString();
+    if (display != null && display.isNotEmpty && display != '-') {
+      return display;
+    }
+    return _formatDateTime(log['timestamp']?.toString());
+  }
+
   String _formatDateTime(String? isoString) {
     if (isoString == null || isoString.isEmpty) return '-';
     try {
-      final dt = DateTime.parse(isoString).toLocal();
-      return DateFormat('dd/MM/yyyy HH:mm:ss').format(dt);
+      final dt = DateTime.parse(isoString);
+      return DateFormat('dd/MM/yyyy HH:mm:ss').format(dt.isUtc ? dt.toLocal() : dt);
     } catch (_) {
       return isoString;
     }
@@ -758,7 +766,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
                                               : (log['gruppo_whatsapp']?.toString() ?? '-');
 
                                           final presenze = _getPresenzeSegnate(log);
-                                          final dataOra = _formatDateTime(log['timestamp']);
+                                          final dataOra = _getLogFormattedDateTime(log);
 
                                           return DataRow(
                                             cells: [
@@ -1413,7 +1421,7 @@ class _GeminiScreenState extends State<GeminiScreen> {
         ? log['corso_nome'].toString()
         : (log['gruppo_whatsapp']?.toString() ?? '-');
 
-    final dataOra = _formatDateTime(log['timestamp']);
+    final dataOra = _getLogFormattedDateTime(log);
     final testo = log['testo_originale']?.toString() ?? '';
     final prompt = log['chiamata_ai']?.toString() ?? '';
     final risposta = log['risposta_ai']?.toString() ?? '';

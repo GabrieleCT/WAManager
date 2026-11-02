@@ -404,15 +404,23 @@ class GeminiLogSerializer(serializers.ModelSerializer):
     corso_nome = serializers.SerializerMethodField()
     partner_nome = serializers.SerializerMethodField()
     presenze_segnate = serializers.SerializerMethodField()
+    timestamp_display = serializers.SerializerMethodField()
 
     class Meta:
         model = GeminiLog
         fields = [
-            'id', 'timestamp', 'allievo', 'allievo_nome', 'corso', 'corso_nome',
+            'id', 'timestamp', 'timestamp_display', 'allievo', 'allievo_nome', 'corso', 'corso_nome',
             'gruppo_whatsapp', 'mittente', 'lezione', 'lezione_descrizione',
             'testo_originale', 'chiamata_ai', 'risposta_ai', 'esito_interpretato',
             'azione_presenze', 'partner_coinvolto', 'partner_nome', 'presenze_segnate'
         ]
+
+    def get_timestamp_display(self, obj):
+        if not obj.timestamp:
+            return '-'
+        from django.utils import timezone
+        local_dt = timezone.localtime(obj.timestamp)
+        return local_dt.strftime('%d/%m/%Y %H:%M:%S')
 
     def get_allievo_nome(self, obj):
         if obj.allievo:
