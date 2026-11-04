@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 
 from .models import (
     Allievo, Corso, Scuola, Argomento, Lezione, Presenza, Match, MessageTemplate,
@@ -437,6 +438,49 @@ def delete_participant(request):
     return JsonResponse({'success': False}, status=405)
 
 
+def resolve_lid_to_phone(lid_str):
+    """
+    Risolve un JID @lid di WhatsApp nel rispettivo numero di telefono (@s.whatsapp.net)
+    usando la cache persistente condivisa wa-gateway/lid_cache.json.
+    """
+    if not lid_str or '@lid' not in str(lid_str):
+        return None
+    import os, json
+    clean_lid = str(lid_str).strip()
+    cache_paths = [
+        os.path.join(settings.BASE_DIR, 'wa-gateway', 'lid_cache.json'),
+        os.path.join(settings.BASE_DIR, 'lid_cache.json'),
+    ]
+    for cp in cache_paths:
+        if os.path.exists(cp):
+            try:
+                with open(cp, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    val = data.get(clean_lid)
+                    if val:
+                        return val
+            except Exception:
+                pass
+    return None
+
+
+def save_lid_phone_mapping(lid_str, phone_str):
+    if not lid_str or not phone_str or '@lid' not in str(lid_str):
+        return
+    import os, json
+    cache_path = os.path.join(settings.BASE_DIR, 'wa-gateway', 'lid_cache.json')
+    try:
+        data = {}
+        if os.path.exists(cache_path):
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        data[str(lid_str).strip()] = str(phone_str).strip()
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
 @csrf_exempt
 def whatsapp_message_webhook(request):
     if request.method != 'POST':
@@ -551,18 +595,58 @@ def whatsapp_message_webhook(request):
                     'message': f"Oggi ({today_giorno}) non rientra nei giorni di monitoraggio abilitati ({custom_days})."
                 })
 
-        # 2. Cerca l'allievo associato al mittente (supporta numeri a 9 e 10 cifre con/senza prefisso 39)
+        # Pulizia ed estrazione cifre da voter_id (sempre definita per evitare NameError)
+        clean_voter = str(voter_id or '').split('@')[0].replace('+', '').strip()
+        phone_digits = ''.join(filter(str.isdigit, clean_voter))
+
+        # 2. Cerca l'allievo associato al mittente (supporta numeri a 9 e 10 cifre con/senza prefisso 39 e risoluzione LID)
+        voter_to_match = voter_id
+        if voter_id and '@lid' in str(voter_id):
+            resolved = resolve_lid_to_phone(voter_id)
+            if resolved:
+                voter_to_match = resolved
+                clean_voter = str(resolved).split('@')[0].replace('+', '').strip()
+                phone_digits = ''.join(filter(str.isdigit, clean_voter))
+
         allievo = None
-        if voter_id:
+        if voter_to_match:
             for a in corso.allievi.filter(is_active=True):
-                if is_phone_match(voter_id, a.telefono):
+                if is_phone_match(voter_to_match, a.telefono):
                     allievo = a
                     break
             if not allievo:
                 for a in Allievo.objects.filter(is_active=True):
-                    if is_phone_match(voter_id, a.telefono):
+                    if is_phone_match(voter_to_match, a.telefono):
                         allievo = a
                         break
+
+        # Fallback 1: match per push_name sul corso
+        if not allievo and push_name:
+            p_clean = push_name.strip().lower()
+            for a in corso.allievi.filter(is_active=True):
+                candidates = [a.nome.lower(), f"{a.nome} {a.cognome}".lower()]
+                if a.nickname:
+                    candidates.append(a.nickname.lower())
+                if p_clean in candidates:
+                    allievo = a
+                    if voter_id and '@lid' in str(voter_id) and a.telefono:
+                        save_lid_phone_mapping(voter_id, a.telefono)
+                    break
+
+        # Fallback 2: match tramite menzioni nel testo (es. Loredana menziona il partner "@<lid>")
+        if not allievo and text and '@' in text:
+            import re
+            mentions = re.findall(r'@(\d+)', text)
+            for m in mentions:
+                m_lid = f"{m}@lid"
+                m_phone = resolve_lid_to_phone(m_lid)
+                if m_phone:
+                    for a in corso.allievi.filter(is_active=True):
+                        if is_phone_match(m_phone, a.telefono) and a.partner:
+                            allievo = a.partner
+                            if voter_id and '@lid' in str(voter_id) and allievo.telefono:
+                                save_lid_phone_mapping(voter_id, allievo.telefono)
+                            break
 
         # 3. Cerca la lezione imminente o piu recente del corso
         now = timezone.now()

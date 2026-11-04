@@ -8,6 +8,61 @@ const fs = require('fs');
 const path = require('path');
 const LOG_FILE = path.join(__dirname, 'gateway.log');
 const POLLS_FILE = path.join(__dirname, 'baileys_polls.json');
+const LID_CACHE_FILE = path.join(__dirname, 'lid_cache.json');
+let lidToPhoneMap = new Map();
+if (fs.existsSync(LID_CACHE_FILE)) {
+    try {
+        const raw = JSON.parse(fs.readFileSync(LID_CACHE_FILE, 'utf8'));
+        for (const [k, v] of Object.entries(raw)) {
+            lidToPhoneMap.set(k, v);
+        }
+        logToFile(`Caricati ${lidToPhoneMap.size} mapping LID da lid_cache.json`);
+    } catch (e) {
+        logToFile("Errore caricamento lid_cache.json: " + e.message);
+    }
+}
+
+function saveLidCache() {
+    try {
+        const obj = {};
+        for (const [k, v] of lidToPhoneMap.entries()) {
+            obj[k] = v;
+        }
+        fs.writeFileSync(LID_CACHE_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        logToFile("Errore salvataggio lid_cache.json: " + e.message);
+    }
+}
+
+// Cache in memoria dei metadati dei gruppi per 10 minuti per evitare 'rate-overlimit'
+const groupMetaCache = new Map();
+async function getCachedGroupMetadata(groupId) {
+    const now = Date.now();
+    const cached = groupMetaCache.get(groupId);
+    if (cached && (now - cached.timestamp < 10 * 60 * 1000)) {
+        return cached.meta;
+    }
+    if (!sock) return null;
+    const meta = await sock.groupMetadata(groupId);
+    if (meta) {
+        groupMetaCache.set(groupId, { meta, timestamp: now });
+        if (Array.isArray(meta.participants)) {
+            let updated = false;
+            for (const p of meta.participants) {
+                const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
+                const lid = p.lid || (p.id && p.id.includes('@lid') ? p.id : null);
+                if (lid && actualNumber && !lidToPhoneMap.has(lid)) {
+                    lidToPhoneMap.set(lid, actualNumber);
+                    updated = true;
+                }
+            }
+            if (updated) {
+                saveLidCache();
+            }
+        }
+    }
+    return meta;
+}
 const AUTH_DIR = path.join(__dirname, 'baileys_auth_info');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -203,21 +258,30 @@ async function connectToWhatsApp() {
 
                 logToFile(`[CORSO WA] Messaggio intercettato nel gruppo corso ${remoteJid}: "${text}" da ${sender}`);
 
-                // Risoluzione LID se necessario
+                // Risoluzione LID se necessario (da cache o metadati)
                 let realSenderJid = sender;
-                if (realSenderJid && realSenderJid.includes('@lid') && remoteJid.includes('@g.us')) {
-                    try {
-                        const groupMeta = await sock.groupMetadata(remoteJid);
-                        const p = groupMeta.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
-                        if (p) {
-                            const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
-                            if (actualNumber) {
-                                realSenderJid = actualNumber;
-                                logToFile(`[TEXT LID] LID ${sender} risolto in numero reale: ${realSenderJid}`);
+                if (realSenderJid && realSenderJid.includes('@lid')) {
+                    if (lidToPhoneMap.has(realSenderJid)) {
+                        realSenderJid = lidToPhoneMap.get(realSenderJid);
+                        logToFile(`[TEXT LID] LID ${sender} risolto da CACHE in numero reale: ${realSenderJid}`);
+                    } else if (remoteJid.includes('@g.us')) {
+                        try {
+                            const groupMeta = await getCachedGroupMetadata(remoteJid);
+                            if (groupMeta && Array.isArray(groupMeta.participants)) {
+                                const p = groupMeta.participants.find(part => part.id === realSenderJid || (part.lid && part.lid === realSenderJid));
+                                if (p) {
+                                    const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
+                                    if (actualNumber) {
+                                        realSenderJid = actualNumber;
+                                        lidToPhoneMap.set(sender, realSenderJid);
+                                        saveLidCache();
+                                        logToFile(`[TEXT LID] LID ${sender} risolto via metadati in numero reale: ${realSenderJid}`);
+                                    }
+                                }
                             }
+                        } catch (err) {
+                            logToFile(`[TEXT LID] Errore metadati gruppo: ${err.message}`);
                         }
-                    } catch (err) {
-                        logToFile(`[TEXT LID] Errore metadati gruppo: ${err.message}`);
                     }
                 }
 
@@ -227,6 +291,7 @@ async function connectToWhatsApp() {
                     voter: realSenderJid,
                     groupId: remoteJid,
                     text: text,
+                    pushName: msg.pushName || '',
                     action: 'text_message'
                 };
                 sendWebhookWithRetry(DJANGO_BASE_URL + '/api/webhook/whatsapp-message/', payload);
@@ -312,32 +377,31 @@ async function connectToWhatsApp() {
                         }
 
                         // Risoluzione LID -> Numero di telefono (JID)
-                        // In WhatsApp Communities, i voti arrivano con un @lid anonimo.
-                        // Fortunatamente, i metadati del gruppo contengono la mappatura lid -> id!
                         const voterJid = msg.key.participant || msg.key.remoteJid;
                         let realSenderJid = voterJid;
-                        try {
-                            if (msg.key.remoteJid.endsWith('@g.us')) {
-                                const groupMeta = await sock.groupMetadata(msg.key.remoteJid);
-                                logToFile(`Participants count: ${groupMeta.participants.length}. Sample: ${JSON.stringify(groupMeta.participants[0])}`); const p = groupMeta.participants.find(p => p.id === voterJid || p.lid === voterJid);
-                                if (p) {
-                                    logToFile(`DEBUG STRUTTURA PARTECIPANTE GRUPPO: ${JSON.stringify(p)}`);
-                                    
-                                    // Se c'è la proprietà phoneNumber o id senza @lid, usiamo quello!
-                                    const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
-                                    
-                                    if (actualNumber) {
-                                        realSenderJid = actualNumber;
-                                        logToFile(`LID Risolto in Numero Reale! ${voterJid} -> ${realSenderJid}`);
-                                    } else {
-                                        logToFile(`Attenzione: Il gruppo riporta il participant senza un numero reale: ${JSON.stringify(p)}`);
+                        if (realSenderJid && realSenderJid.includes('@lid')) {
+                            if (lidToPhoneMap.has(realSenderJid)) {
+                                realSenderJid = lidToPhoneMap.get(realSenderJid);
+                                logToFile(`[POLL LID] LID ${voterJid} risolto da CACHE in numero reale: ${realSenderJid}`);
+                            } else if (msg.key.remoteJid.endsWith('@g.us')) {
+                                try {
+                                    const groupMeta = await getCachedGroupMetadata(msg.key.remoteJid);
+                                    if (groupMeta && Array.isArray(groupMeta.participants)) {
+                                        const p = groupMeta.participants.find(p => p.id === voterJid || p.lid === voterJid);
+                                        if (p) {
+                                            const actualNumber = p.phoneNumber ? p.phoneNumber : (p.id && !p.id.includes('@lid') ? p.id : null);
+                                            if (actualNumber) {
+                                                realSenderJid = actualNumber;
+                                                lidToPhoneMap.set(voterJid, realSenderJid);
+                                                saveLidCache();
+                                                logToFile(`[POLL LID] LID ${voterJid} risolto via metadati in numero reale: ${realSenderJid}`);
+                                            }
+                                        }
                                     }
-                                } else {
-                                    logToFile(`Attenzione: Utente ${voterJid} non trovato nei metadati del gruppo.`);
+                                } catch (err) {
+                                    logToFile(`Errore recupero metadati gruppo per risolvere LID: ${err.message}`);
                                 }
                             }
-                        } catch (err) {
-                            logToFile(`Errore recupero metadati gruppo per risolvere LID: ${err.message}`);
                         }
 
                         logToFile(`Voto sondaggio rilevato! Utente Reale: ${realSenderJid}, Scelte: ${JSON.stringify(selectedOptions)}`);
