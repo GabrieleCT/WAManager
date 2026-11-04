@@ -660,16 +660,12 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
         if not corso:
             continue
 
-        # Cerca l'ultimo sondaggio inviato per questa lezione
+        # Cerca l'ultimo sondaggio inviato per questa lezione (opzionale informativo)
         poll_log = MessageLog.objects.filter(
             lezione=lezione,
             template__name__in=['SONDAGGIO_MATTUTINO', 'SONDAGGIO_MANUALE'],
             status='Inviato'
         ).order_by('-timestamp').first()
-
-        # Se non è stato inviato alcun sondaggio e non è forzato, non inviare solleciti
-        if not poll_log and not force:
-            continue
 
         allievi = Allievo.objects.filter(corso=corso, is_active=True).order_by('cognome', 'nome')
         allievi_sollecitati = []
