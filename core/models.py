@@ -173,11 +173,38 @@ class Allievo(models.Model):
         blank=True,
         help_text="Data di emissione della tessera"
     )
+    tesserato_altra_asd = models.BooleanField(
+        default=False,
+        help_text="Se True, l'allievo è tesserato presso un'altra ASD"
+    )
     email = models.EmailField(
         max_length=254,
         blank=True,
         default='',
         help_text="Indirizzo email dell'allievo/prospect"
+    )
+    data_nascita = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Data di nascita dell'allievo"
+    )
+    comune_nascita = models.CharField(
+        max_length=150,
+        blank=True,
+        default='',
+        help_text="Comune di nascita dell'allievo"
+    )
+    provincia_nascita = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        help_text="Provincia di nascita dell'allievo (es. MI)"
+    )
+    codice_fiscale = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        help_text="Codice fiscale dell'allievo"
     )
     google_contact_id = models.CharField(
         max_length=255,
@@ -190,6 +217,8 @@ class Allievo(models.Model):
 
     @property
     def stato_tessera(self):
+        if self.tesserato_altra_asd:
+            return 'TESSERATO ESTERNO'
         if not self.numero_tessera or not self.numero_tessera.strip() or not self.data_emissione_tessera:
             return 'NON TESSERATO'
         from datetime import date, timedelta
@@ -939,6 +968,13 @@ class MovimentoPrimaNota(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    numero_progressivo = models.PositiveIntegerField(
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="ID progressivo incrementale univoco della voce di prima nota"
+    )
     data = models.DateField(default=timezone.now, help_text="Data del movimento")
     descrizione = models.CharField(max_length=255, help_text="Descrizione del movimento")
     categoria = models.CharField(max_length=100, default='Generale', help_text="Categoria del movimento")
@@ -951,11 +987,23 @@ class MovimentoPrimaNota(models.Model):
     class Meta:
         verbose_name = "Movimento Prima Nota"
         verbose_name_plural = "Prima Nota Cassa"
-        ordering = ['-data', '-created_at']
+        ordering = ['-numero_progressivo', '-data', '-created_at']
+
+    def save(self, *args, **kwargs):
+        if self.numero_progressivo is None:
+            from django.db import transaction
+            from django.db.models import Max
+            with transaction.atomic():
+                max_num = MovimentoPrimaNota.objects.select_for_update().aggregate(m=Max('numero_progressivo'))['m'] or 0
+                self.numero_progressivo = max_num + 1
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def __str__(self):
         segno = '+' if self.tipo == 'entrata' else '-'
-        return f"[{self.data.strftime('%d/%m/%Y')}] {self.descrizione} ({self.categoria}): {segno}€{self.importo}"
+        num_str = f"#{self.numero_progressivo} " if self.numero_progressivo else ""
+        return f"{num_str}[{self.data.strftime('%d/%m/%Y')}] {self.descrizione} ({self.categoria}): {segno}€{self.importo}"
 
 
 class CategoriaBilancio(models.Model):

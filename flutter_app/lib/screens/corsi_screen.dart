@@ -695,6 +695,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
         : null;
     String ruolo = a.ruolo;
     String livello = a.livello;
+    bool tesseratoAltraAsd = a.tesseratoAltraAsd;
 
     showDialog(
       context: context,
@@ -749,53 +750,88 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: tesseraController,
-                    decoration: const InputDecoration(labelText: 'Numero Tessera', prefixIcon: Icon(Icons.badge_outlined)),
+                  CheckboxListTile(
+                    value: tesseratoAltraAsd,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('TESSERATO con altra ASD', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.teal)),
+                    subtitle: const Text('Disabilita numero e data tessera. Risulterà tesserato esterno.', style: TextStyle(fontSize: 11)),
+                    onChanged: (val) {
+                      setDlgState(() {
+                        tesseratoAltraAsd = val ?? false;
+                        if (tesseratoAltraAsd) {
+                          tesseraController.clear();
+                          dataEmissione = null;
+                        }
+                      });
+                    },
+                    controlAffinity: ListTileControlAffinity.leading,
                   ),
                   const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
-                    title: Text(
-                      dataEmissione == null
-                          ? 'Nessuna data di emissione'
-                          : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
-                        fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
-                      ),
+                  TextField(
+                    controller: tesseraController,
+                    enabled: !tesseratoAltraAsd,
+                    decoration: InputDecoration(
+                      labelText: 'Numero Tessera',
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                      filled: tesseratoAltraAsd,
+                      fillColor: tesseratoAltraAsd ? Colors.grey.shade100 : null,
+                      hintText: tesseratoAltraAsd ? 'Disabilitato (tesserato esterno)' : null,
                     ),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: [
-                        if (dataEmissione != null)
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                            tooltip: 'Rimuovi data emissione',
-                            onPressed: () => setDlgState(() => dataEmissione = null),
+                  ),
+                  const SizedBox(height: 8),
+                  IgnorePointer(
+                    ignoring: tesseratoAltraAsd,
+                    child: Opacity(
+                      opacity: tesseratoAltraAsd ? 0.4 : 1.0,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                        title: Text(
+                          tesseratoAltraAsd
+                              ? 'Data emissione non necessaria (esterno)'
+                              : dataEmissione == null
+                                  ? 'Nessuna data di emissione'
+                                  : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: (tesseratoAltraAsd || dataEmissione == null) ? Colors.grey.shade600 : Colors.black87,
+                            fontWeight: (!tesseratoAltraAsd && dataEmissione != null) ? FontWeight.bold : FontWeight.normal,
                           ),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.edit_calendar, size: 16),
-                          label: const Text('Data', style: TextStyle(fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () async {
-                            final picked = await showDatePicker(
-                              context: ctx,
-                              initialDate: dataEmissione ?? DateTime.now(),
-                              firstDate: DateTime(2000),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) {
-                              setDlgState(() => dataEmissione = picked);
-                            }
-                          },
                         ),
-                      ],
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: [
+                            if (dataEmissione != null && !tesseratoAltraAsd)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                                tooltip: 'Rimuovi data emissione',
+                                onPressed: () => setDlgState(() => dataEmissione = null),
+                              ),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.edit_calendar, size: 16),
+                              label: const Text('Data', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: tesseratoAltraAsd
+                                  ? null
+                                  : () async {
+                                      final picked = await showDatePicker(
+                                        context: ctx,
+                                        initialDate: dataEmissione ?? DateTime.now(),
+                                        firstDate: DateTime(2000),
+                                        lastDate: DateTime(2100),
+                                      );
+                                      if (picked != null) {
+                                        setDlgState(() => dataEmissione = picked);
+                                      }
+                                    },
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   if (a.partnerId != null) ...[
@@ -858,10 +894,11 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     'ruolo': ruolo,
                     'livello': livello,
                     'note': noteController.text.trim(),
-                    'numero_tessera': tesseraController.text.trim(),
-                    'data_emissione_tessera': dataEmissione != null
+                    'numero_tessera': tesseratoAltraAsd ? '' : tesseraController.text.trim(),
+                    'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
                         ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
                         : null,
+                    'tesserato_altra_asd': tesseratoAltraAsd,
                   });
                   if (res == null) {
                     if (mounted) {
@@ -1047,11 +1084,18 @@ class _CorsiScreenState extends State<CorsiScreen> {
     IconData icon;
     String label = a.statoTessera;
 
-    if (a.hasTesseraOk) {
+    if (a.isTesseratoEsterno) {
+      bg = Colors.teal.shade50;
+      border = Colors.teal.shade600;
+      fg = Colors.teal.shade900;
+      icon = Icons.verified_user;
+      label = 'TESSERATO ESTERNO';
+    } else if (a.hasTesseraOk) {
       bg = Colors.green.shade50;
       border = Colors.green.shade600;
       fg = Colors.green.shade900;
       icon = Icons.verified;
+      label = 'TESSERA OK';
     } else if (a.hasTesseraScaduta) {
       bg = Colors.red.shade50;
       border = Colors.red.shade600;
@@ -1064,12 +1108,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
       icon = Icons.credit_card_off;
     }
 
-    String tooltip = label;
-    if (a.numeroTessera.isNotEmpty) {
-      tooltip += ' (N. ${a.numeroTessera})';
-    }
-    if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
-      tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
+    String tooltip = a.isTesseratoEsterno ? 'Tesserato con altra ASD (Esterno)' : label;
+    if (!a.isTesseratoEsterno) {
+      if (a.numeroTessera.isNotEmpty) {
+        tooltip += ' (N. ${a.numeroTessera})';
+      }
+      if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
+        tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
+      }
     }
 
     final isMobile = MediaQuery.of(context).size.width < 800;
@@ -1435,7 +1481,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (a.numeroTessera.isNotEmpty)
+                                        if (a.isTesseratoEsterno)
+                                          const Padding(
+                                            padding: EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              '🏛️ Tesserato altra ASD',
+                                              style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w600),
+                                            ),
+                                          )
+                                        else if (a.numeroTessera.isNotEmpty)
                                           Padding(
                                             padding: const EdgeInsets.only(top: 2),
                                             child: Text(
@@ -1552,15 +1606,23 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   ],
                                 ],
                               ),
-                              subtitle: a.numeroTessera.isNotEmpty
-                                  ? Padding(
-                                      padding: const EdgeInsets.only(top: 2),
+                              subtitle: a.isTesseratoEsterno
+                                  ? const Padding(
+                                      padding: EdgeInsets.only(top: 2),
                                       child: Text(
-                                        'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
-                                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                        '🏛️ Tesserato altra ASD',
+                                        style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w600),
                                       ),
                                     )
-                                  : null,
+                                  : a.numeroTessera.isNotEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text(
+                                            'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                            style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                          ),
+                                        )
+                                      : null,
                               trailing: Wrap(
                                 spacing: 6,
                                 crossAxisAlignment: WrapCrossAlignment.center,

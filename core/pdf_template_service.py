@@ -532,6 +532,7 @@ def genera_pdf_allegati_bilancio(
 
     movimenti = qs.order_by('data', 'created_at')
     t_pn_data = [[
+        Paragraph('N.', th_style),
         Paragraph('Data', th_style),
         Paragraph('Descrizione', th_style),
         Paragraph('Categoria', th_style),
@@ -545,7 +546,9 @@ def genera_pdf_allegati_bilancio(
             tipo_label = "Entrata" if is_e else "Uscita"
             tipo_color = green_text if is_e else red_text
             sign = "+" if is_e else "-"
+            num_prog = f"#{m.numero_progressivo}" if m.numero_progressivo else "-"
             t_pn_data.append([
+                Paragraph(num_prog, td_center),
                 Paragraph(m.data.strftime('%d/%m/%Y'), td_center),
                 Paragraph(m.descrizione or '-', td_style),
                 Paragraph(m.categoria or '-', td_style),
@@ -555,6 +558,7 @@ def genera_pdf_allegati_bilancio(
     else:
         t_pn_data.append([
             Paragraph('-', td_center),
+            Paragraph('-', td_center),
             Paragraph('Nessun movimento registrato in prima nota per questo esercizio.', td_style),
             Paragraph('-', td_style),
             Paragraph('-', td_center),
@@ -562,6 +566,7 @@ def genera_pdf_allegati_bilancio(
         ])
 
     t_pn_data.append([
+        Paragraph('-', td_center),
         Paragraph('<b>TOTALE</b>', td_center),
         Paragraph(f"<b>N. {movimenti.count()} movimenti registrati</b>", td_style),
         Paragraph('-', td_center),
@@ -569,7 +574,7 @@ def genera_pdf_allegati_bilancio(
         Paragraph(f"<b>{format_valuta_italiana(tot_m_s)}</b>", ParagraphStyle('PNS', fontName='Helvetica-Bold', fontSize=8, textColor=tot_col, alignment=2)),
     ])
 
-    t_pn = Table(t_pn_data, colWidths=[70, 183, 140, 60, 70], repeatRows=1)
+    t_pn = Table(t_pn_data, colWidths=[35, 65, 160, 133, 60, 70], repeatRows=1)
     t_pn.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), primary),
         ('GRID', (0,0), (-1,-1), 0.5, border_col),

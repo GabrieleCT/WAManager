@@ -333,7 +333,7 @@ class _PrimaNotaCassaViewState extends State<PrimaNotaCassaView> {
                 color: tipo == 'entrata' ? Colors.green.shade700 : Colors.red.shade700,
               ),
               const SizedBox(width: 8),
-              Text(isModifica ? 'Modifica Movimento' : 'Nuovo Movimento di Cassa'),
+              Text(isModifica ? 'Modifica Movimento ${movimento.idDisplay}' : 'Nuovo Movimento di Cassa'),
             ],
           ),
           content: SingleChildScrollView(
@@ -621,7 +621,7 @@ class _PrimaNotaCassaViewState extends State<PrimaNotaCassaView> {
       builder: (ctx) => AlertDialog(
         title: const Text('Elimina Movimento'),
         content: Text(
-          'Vuoi davvero eliminare il movimento del ${_dateFormat.format(DateTime.tryParse(m.data) ?? DateTime.now())}:\n\n"${m.descrizione}" (${_currencyFormat.format(m.importo)})?',
+          'Vuoi davvero eliminare il movimento ${m.idDisplay} del ${_dateFormat.format(DateTime.tryParse(m.data) ?? DateTime.now())}:\n\n"${m.descrizione}" (${_currencyFormat.format(m.importo)})?',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
@@ -941,6 +941,7 @@ class _PrimaNotaCassaViewState extends State<PrimaNotaCassaView> {
           child: DataTable(
             headingRowColor: MaterialStateProperty.all(Colors.teal.shade50),
             columns: const [
+              DataColumn(label: Text('ID', style: TextStyle(fontWeight: FontWeight.bold))),
               DataColumn(label: Text('Data', style: TextStyle(fontWeight: FontWeight.bold))),
               DataColumn(label: Text('Tipo', style: TextStyle(fontWeight: FontWeight.bold))),
               DataColumn(label: Text('Descrizione', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -954,6 +955,24 @@ class _PrimaNotaCassaViewState extends State<PrimaNotaCassaView> {
               final dateStr = _dateFormat.format(DateTime.tryParse(m.data) ?? DateTime.now());
               return DataRow(
                 cells: [
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.teal.shade200),
+                      ),
+                      child: Text(
+                        m.numeroProgressivo != null ? '#${m.numeroProgressivo}' : '-',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal.shade900,
+                        ),
+                      ),
+                    ),
+                  ),
                   DataCell(Text(dateStr, style: const TextStyle(fontWeight: FontWeight.w500))),
                   DataCell(
                     Container(
@@ -1075,32 +1094,56 @@ class _PrimaNotaCassaViewState extends State<PrimaNotaCassaView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: m.isEntrata ? Colors.green.shade50 : Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: m.isEntrata ? Colors.green.shade300 : Colors.red.shade300),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            m.isEntrata ? Icons.arrow_downward : Icons.arrow_upward,
-                            size: 13,
-                            color: m.isEntrata ? Colors.green.shade800 : Colors.red.shade800,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            m.tipoDisplay.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: m.isEntrata ? Colors.green.shade900 : Colors.red.shade900,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (m.numeroProgressivo != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.teal.shade200),
+                            ),
+                            child: Text(
+                              '#${m.numeroProgressivo}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.teal.shade900,
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 6),
                         ],
-                      ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: m.isEntrata ? Colors.green.shade50 : Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: m.isEntrata ? Colors.green.shade300 : Colors.red.shade300),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                m.isEntrata ? Icons.arrow_downward : Icons.arrow_upward,
+                                size: 13,
+                                color: m.isEntrata ? Colors.green.shade800 : Colors.red.shade800,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                m.tipoDisplay.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: m.isEntrata ? Colors.green.shade900 : Colors.red.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     Text(
                       '${m.isEntrata ? "+" : "-"} ${_currencyFormat.format(m.importo)}',

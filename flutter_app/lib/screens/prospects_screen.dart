@@ -134,11 +134,13 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
     String? selectedCorsoId = editingProspect?.corsoId;
 
-
+    bool isSaving = false;
 
     showDialog(
 
       context: context,
+
+      barrierDismissible: false,
 
       builder: (ctx) => StatefulBuilder(
 
@@ -160,9 +162,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
 
 
-          return AlertDialog(
+          return PopScope(
 
-            title: Text(editingProspect == null ? 'Nuovo Prospect' : 'Modifica Prospect'),
+            canPop: !isSaving,
+
+            child: Stack(
+
+              children: [
+
+                AlertDialog(
+
+                  title: Text(editingProspect == null ? 'Nuovo Prospect' : 'Modifica Prospect'),
 
             content: SingleChildScrollView(
 
@@ -402,127 +412,126 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
             actions: [
 
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-
-              ElevatedButton(
-
-                onPressed: () async {
-
-                  if (nomeController.text.trim().isEmpty || 
-
-                      cognomeController.text.trim().isEmpty || 
-
-                      selectedScuolaId == null || 
-
-                      selectedCorsoId == null) {
-
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compila tutti i campi obbligatori (*).')));
-
-                    return;
-
-                  }
-
-                  final data = {
-
-                    'nome': nomeController.text.trim(),
-
-                    'cognome': cognomeController.text.trim(),
-
-                    'telefono': telefonoController.text.trim(),
-
-                    'ruolo': ruolo,
-
-                    'livello': livello,
-
-                    'corso': selectedCorsoId,
-
-                    'recensione': recensione,
-
-                    'is_prospect': true,
-
-                    'note': noteController.text.trim().isNotEmpty ? noteController.text.trim() : 'Prospect',
-
-                  };
-
-                  final res = editingProspect == null
-
-                      ? await _api.createAllievo(data)
-
-                      : await _api.updateAllievo(editingProspect.id, data);
-
-
-
-                  if (res == null) {
-
-                    if (mounted) {
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-
-                        const SnackBar(
-
-                          content: Text('Errore durante il salvataggio del prospect. Verifica i dati inseriti.'),
-
-                          backgroundColor: Colors.red,
-
-                        ),
-
-                      );
-
-                    }
-
-                    return;
-
-                  }
-
-
-
-                  if (ctx.mounted) Navigator.pop(ctx);
-
-                  if (mounted) {
-
-                    if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-
-                      checkAndShowGoogleSyncError(
-
-                        context,
-
-                        entityType: 'Prospect',
-
-                        name: res.nomeCompleto,
-
-                        error: res.googleSyncError,
-
-                      );
-
-                    } else {
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-
-                        SnackBar(
-
-                          content: Text(editingProspect == null ? 'Prospect salvato con successo!' : 'Prospect aggiornato con successo!'),
-
-                          backgroundColor: Colors.green.shade800,
-
-                        ),
-
-                      );
-
-                    }
-
-                  }
-
-                  _loadData();
-
-                },
-
-                child: Text(editingProspect == null ? 'Salva Prospect' : 'Aggiorna Prospect'),
-
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(ctx),
+                child: const Text('Annulla'),
               ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (nomeController.text.trim().isEmpty || 
+                            cognomeController.text.trim().isEmpty || 
+                            selectedScuolaId == null || 
+                            selectedCorsoId == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Compila tutti i campi obbligatori (*).')));
+                          return;
+                        }
 
+                        setDlgState(() => isSaving = true);
+                        try {
+                          final data = {
+                            'nome': nomeController.text.trim(),
+                            'cognome': cognomeController.text.trim(),
+                            'telefono': telefonoController.text.trim(),
+                            'ruolo': ruolo,
+                            'livello': livello,
+                            'corso': selectedCorsoId,
+                            'recensione': recensione,
+                            'is_prospect': true,
+                            'note': noteController.text.trim().isNotEmpty ? noteController.text.trim() : 'Prospect',
+                          };
+
+                          final res = editingProspect == null
+                              ? await _api.createAllievo(data)
+                              : await _api.updateAllievo(editingProspect.id, data);
+
+                          if (res == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Errore durante il salvataggio del prospect. Verifica i dati inseriti.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                              checkAndShowGoogleSyncError(
+                                context,
+                                entityType: 'Prospect',
+                                name: res.nomeCompleto,
+                                error: res.googleSyncError,
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(editingProspect == null ? 'Prospect salvato con successo!' : 'Prospect aggiornato con successo!'),
+                                  backgroundColor: Colors.green.shade800,
+                                ),
+                              );
+                            }
+                          }
+                          _loadData();
+                        } finally {
+                          if (ctx.mounted && isSaving) {
+                            setDlgState(() => isSaving = false);
+                          }
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(editingProspect == null ? 'Salva Prospect' : 'Aggiorna Prospect'),
+              ),
             ],
-
-          );
+          ),
+          if (isSaving)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Salvataggio in corso...',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Sincronizzazione contatto in corso...',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
 
         },
 

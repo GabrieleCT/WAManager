@@ -47,6 +47,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
       if (_filterStatoTessera != 'tutti') {
         if (_filterStatoTessera == 'ok' && !a.hasTesseraOk) return false;
+        if (_filterStatoTessera == 'esterno' && !a.isTesseratoEsterno) return false;
         if (_filterStatoTessera == 'scaduta' && !a.hasTesseraScaduta) return false;
         if (_filterStatoTessera == 'non_tesserato' && !a.isNonTesserato) return false;
       }
@@ -448,6 +449,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
           : '',
     );
     final telefonoController = TextEditingController(text: allievo?.telefono ?? '');
+    final emailController = TextEditingController(text: allievo?.email ?? '');
+    final comuneNascitaController = TextEditingController(text: allievo?.comuneNascita ?? '');
+    final provinciaNascitaController = TextEditingController(text: allievo?.provinciaNascita ?? '');
+    final codiceFiscaleController = TextEditingController(text: allievo?.codiceFiscale ?? '');
+    DateTime? dataNascita = (allievo?.dataNascita != null && allievo!.dataNascita!.isNotEmpty)
+        ? DateTime.tryParse(allievo.dataNascita!)
+        : null;
     final tesseraController = TextEditingController(text: allievo?.numeroTessera ?? '');
     DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
         ? DateTime.tryParse(allievo.dataEmissioneTessera!)
@@ -464,8 +472,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
       selectedScuolaId = _scuole.first.id;
     }
 
+    bool tesseratoAltraAsd = allievo?.tesseratoAltraAsd ?? false;
+    bool isSaving = false;
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
           final isMobile = MediaQuery.of(context).size.width < 800;
@@ -477,22 +489,26 @@ class _AllieviScreenState extends State<AllieviScreen> {
             selectedCorsoId = corsiFiltrati.isNotEmpty ? corsiFiltrati.first.id : null;
           }
 
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
+          return PopScope(
+            canPop: !isSaving,
+            child: Stack(
               children: [
-                Icon(
-                  allievo == null ? Icons.person_add_alt_1 : Icons.edit_note,
-                  color: Theme.of(context).primaryColor,
-                  size: 26,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  allievo == null ? 'Nuovo Allievo' : 'Modifica Allievo',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
+                AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      Icon(
+                        allievo == null ? Icons.person_add_alt_1 : Icons.edit_note,
+                        color: Theme.of(context).primaryColor,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        allievo == null ? 'Nuovo Allievo' : 'Modifica Allievo',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
             content: SizedBox(
               width: isMobile ? double.maxFinite : 540,
               child: SingleChildScrollView(
@@ -562,6 +578,117 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                hintText: 'es. allievo@email.com',
+                                prefixIcon: Icon(Icons.email_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: codiceFiscaleController,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: const InputDecoration(
+                                labelText: 'Codice Fiscale',
+                                hintText: 'Es. RSSMRA85M01H501Z',
+                                prefixIcon: Icon(Icons.badge_outlined),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.cake_outlined, color: Colors.indigo),
+                          title: Text(
+                            dataNascita == null
+                                ? 'Nessuna data di nascita'
+                                : 'Data di nascita: ${DateFormat("dd/MM/yyyy").format(dataNascita!)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: dataNascita == null ? Colors.grey.shade600 : Colors.black87,
+                              fontWeight: dataNascita == null ? FontWeight.normal : FontWeight.bold,
+                            ),
+                          ),
+                          trailing: Wrap(
+                            spacing: 4,
+                            children: [
+                              if (dataNascita != null)
+                                IconButton(
+                                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                                  tooltip: 'Rimuovi data nascita',
+                                  onPressed: () => setDlgState(() => dataNascita = null),
+                                ),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.edit_calendar, size: 16),
+                                label: const Text('Data', style: TextStyle(fontSize: 12)),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: ctx,
+                                    initialDate: dataNascita ?? DateTime(1990, 1, 1),
+                                    firstDate: DateTime(1920),
+                                    lastDate: DateTime.now(),
+                                  );
+                                  if (picked != null) {
+                                    setDlgState(() => dataNascita = picked);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: comuneNascitaController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Comune di Nascita',
+                                hintText: 'Es. Milano',
+                                prefixIcon: Icon(Icons.location_city_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 1,
+                            child: TextField(
+                              controller: provinciaNascitaController,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: const InputDecoration(
+                                labelText: 'Provincia',
+                                hintText: 'Es. MI',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ] else ...[
                       TextField(
                         controller: nomeController,
@@ -596,6 +723,109 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           labelText: 'Telefono (opzionale, es. +39333...)',
                           prefixIcon: Icon(Icons.phone_outlined),
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          hintText: 'es. allievo@email.com',
+                          prefixIcon: Icon(Icons.email_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: codiceFiscaleController,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'Codice Fiscale',
+                          hintText: 'Es. RSSMRA85M01H501Z',
+                          prefixIcon: Icon(Icons.badge_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.cake_outlined, color: Colors.indigo),
+                          title: Text(
+                            dataNascita == null
+                                ? 'Nessuna data di nascita'
+                                : 'Data di nascita: ${DateFormat("dd/MM/yyyy").format(dataNascita!)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: dataNascita == null ? Colors.grey.shade600 : Colors.black87,
+                              fontWeight: dataNascita == null ? FontWeight.normal : FontWeight.bold,
+                            ),
+                          ),
+                          trailing: Wrap(
+                            spacing: 4,
+                            children: [
+                              if (dataNascita != null)
+                                IconButton(
+                                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                                  tooltip: 'Rimuovi data nascita',
+                                  onPressed: () => setDlgState(() => dataNascita = null),
+                                ),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.edit_calendar, size: 16),
+                                label: const Text('Data', style: TextStyle(fontSize: 12)),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: ctx,
+                                    initialDate: dataNascita ?? DateTime(1990, 1, 1),
+                                    firstDate: DateTime(1920),
+                                    lastDate: DateTime.now(),
+                                  );
+                                  if (picked != null) {
+                                    setDlgState(() => dataNascita = picked);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: comuneNascitaController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Comune di Nascita',
+                                hintText: 'Es. Milano',
+                                prefixIcon: Icon(Icons.location_city_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 1,
+                            child: TextField(
+                              controller: provinciaNascitaController,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: const InputDecoration(
+                                labelText: 'Provincia',
+                                hintText: 'Es. MI',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
 
@@ -725,65 +955,108 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: tesseratoAltraAsd ? Colors.teal.shade50 : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: tesseratoAltraAsd ? Colors.teal.shade300 : const Color(0xFFCBD5E1)),
+                      ),
+                      child: CheckboxListTile(
+                        value: tesseratoAltraAsd,
+                        activeColor: Colors.teal,
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                        title: const Text(
+                          'TESSERATO con altra ASD',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          tesseratoAltraAsd
+                              ? 'Allievo tesserato esternamente. Numero e data emissione disabilitati.'
+                              : 'Seleziona se l\'allievo ha già una tessera attiva rilasciata da un\'altra ASD.',
+                          style: TextStyle(fontSize: 11, color: tesseratoAltraAsd ? Colors.teal.shade800 : Colors.grey.shade600),
+                        ),
+                        onChanged: (val) {
+                          setDlgState(() {
+                            tesseratoAltraAsd = val ?? false;
+                            if (tesseratoAltraAsd) {
+                              tesseraController.clear();
+                              dataEmissione = null;
+                            }
+                          });
+                        },
+                      ),
+                    ),
                     TextField(
                       controller: tesseraController,
-                      decoration: const InputDecoration(
+                      enabled: !tesseratoAltraAsd,
+                      decoration: InputDecoration(
                         labelText: 'Numero Tessera',
-                        hintText: 'Es. 12345 / 2025-ABC',
-                        prefixIcon: Icon(Icons.badge_outlined),
+                        hintText: tesseratoAltraAsd ? 'Non richiesto (Tesserato con altra ASD)' : 'Es. 12345 / 2025-ABC',
+                        prefixIcon: const Icon(Icons.badge_outlined),
+                        filled: tesseratoAltraAsd,
+                        fillColor: tesseratoAltraAsd ? Colors.grey.shade100 : null,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
-                        title: Text(
-                          dataEmissione == null
-                              ? 'Nessuna data di emissione'
-                              : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: dataEmissione == null ? Colors.grey.shade600 : Colors.black87,
-                            fontWeight: dataEmissione == null ? FontWeight.normal : FontWeight.bold,
-                          ),
+                    Opacity(
+                      opacity: tesseratoAltraAsd ? 0.5 : 1.0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: tesseratoAltraAsd ? Colors.grey.shade100 : Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
                         ),
-                        trailing: Wrap(
-                          spacing: 4,
-                          children: [
-                            if (dataEmissione != null)
-                              IconButton(
-                                icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                tooltip: 'Rimuovi data emissione',
-                                onPressed: () => setDlgState(() => dataEmissione = null),
-                              ),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.edit_calendar, size: 16),
-                              label: const Text('Data', style: TextStyle(fontSize: 12)),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () async {
-                                final picked = await showDatePicker(
-                                  context: ctx,
-                                  initialDate: dataEmissione ?? DateTime.now(),
-                                  firstDate: DateTime(2000),
-                                  lastDate: DateTime(2100),
-                                );
-                                if (picked != null) {
-                                  setDlgState(() => dataEmissione = picked);
-                                }
-                              },
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
+                          title: Text(
+                            tesseratoAltraAsd
+                                ? 'Non richiesta (Tesserato con altra ASD)'
+                                : (dataEmissione == null
+                                    ? 'Nessuna data di emissione'
+                                    : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: (tesseratoAltraAsd || dataEmissione == null) ? Colors.grey.shade600 : Colors.black87,
+                              fontWeight: (!tesseratoAltraAsd && dataEmissione != null) ? FontWeight.bold : FontWeight.normal,
                             ),
-                          ],
+                          ),
+                          trailing: tesseratoAltraAsd
+                              ? null
+                              : Wrap(
+                                  spacing: 4,
+                                  children: [
+                                    if (dataEmissione != null)
+                                      IconButton(
+                                        icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                                        tooltip: 'Rimuovi data emissione',
+                                        onPressed: () => setDlgState(() => dataEmissione = null),
+                                      ),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.edit_calendar, size: 16),
+                                      label: const Text('Data', style: TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      onPressed: () async {
+                                        final picked = await showDatePicker(
+                                          context: ctx,
+                                          initialDate: dataEmissione ?? DateTime.now(),
+                                          firstDate: DateTime(2000),
+                                          lastDate: DateTime(2100),
+                                        );
+                                        if (picked != null) {
+                                          setDlgState(() => dataEmissione = picked);
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
                     ),
@@ -958,76 +1231,140 @@ class _AllieviScreenState extends State<AllieviScreen> {
                 TextButton.icon(
                   icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
                   label: const Text('Elimina', style: TextStyle(color: Colors.red)),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _confirmDeleteAllievo(allievo);
-                  },
+                  onPressed: isSaving
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _confirmDeleteAllievo(allievo);
+                        },
                 ),
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: isSaving ? null : () => Navigator.pop(ctx),
                 child: const Text('Annulla'),
               ),
               ElevatedButton(
-                onPressed: () async {
-                  if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
-                  final nomeTrimmed = nomeController.text.trim();
-                  final nickTrimmed = nicknameController.text.trim();
-                  final effectiveNickname = nickTrimmed.isNotEmpty ? nickTrimmed : nomeTrimmed;
-                  final data = {
-                    'nome': nomeTrimmed,
-                    'cognome': cognomeController.text.trim(),
-                    if (allievo != null) 'nickname': effectiveNickname,
-                    'telefono': telefonoController.text.trim(),
-                    'ruolo': ruolo,
-                    'livello': livello,
-                    'recensione': recensione,
-                    'corso': selectedCorsoId,
-                    'is_prospect': false,
-                    'numero_tessera': tesseraController.text.trim(),
-                    'data_emissione_tessera': dataEmissione != null
-                        ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
-                        : null,
-                  };
-                  final res = allievo == null
-                      ? await _api.createAllievo(data)
-                      : await _api.updateAllievo(allievo.id, data);
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                        setDlgState(() => isSaving = true);
+                        try {
+                          final nomeTrimmed = nomeController.text.trim();
+                          final nickTrimmed = nicknameController.text.trim();
+                          final effectiveNickname = nickTrimmed.isNotEmpty ? nickTrimmed : nomeTrimmed;
+                          final data = {
+                            'nome': nomeTrimmed,
+                            'cognome': cognomeController.text.trim(),
+                            if (allievo != null) 'nickname': effectiveNickname,
+                            'telefono': telefonoController.text.trim(),
+                            'email': emailController.text.trim(),
+                            'data_nascita': dataNascita != null
+                                ? DateFormat('yyyy-MM-dd').format(dataNascita!)
+                                : null,
+                            'comune_nascita': comuneNascitaController.text.trim(),
+                            'provincia_nascita': provinciaNascitaController.text.trim(),
+                            'codice_fiscale': codiceFiscaleController.text.trim().toUpperCase(),
+                            'ruolo': ruolo,
+                            'livello': livello,
+                            'recensione': recensione,
+                            'corso': selectedCorsoId,
+                            'is_prospect': false,
+                            'tesserato_altra_asd': tesseratoAltraAsd,
+                            'numero_tessera': tesseratoAltraAsd ? '' : tesseraController.text.trim(),
+                            'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
+                                ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
+                                : null,
+                          };
+                          final res = allievo == null
+                              ? await _api.createAllievo(data)
+                              : await _api.updateAllievo(allievo.id, data);
 
-                  if (res == null) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Errore durante il salvataggio dell'allievo. Verifica i dati inseriti."),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                    return;
-                  }
+                          if (res == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Errore durante il salvataggio dell'allievo. Verifica i dati inseriti."),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                            return;
+                          }
 
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (mounted) {
-                    if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                      checkAndShowGoogleSyncError(
-                        context,
-                        entityType: 'Allievo',
-                        name: res.nomeCompleto,
-                        error: res.googleSyncError,
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(allievo == null ? 'Allievo salvato con successo!' : 'Allievo aggiornato con successo!'),
-                          backgroundColor: Colors.green.shade800,
-                        ),
-                      );
-                    }
-                  }
-                  _loadAllievi();
-                },
-                child: const Text('Salva'),
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                              checkAndShowGoogleSyncError(
+                                context,
+                                entityType: 'Allievo',
+                                name: res.nomeCompleto,
+                                error: res.googleSyncError,
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(allievo == null ? 'Allievo salvato con successo!' : 'Allievo aggiornato con successo!'),
+                                  backgroundColor: Colors.green.shade800,
+                                ),
+                              );
+                            }
+                          }
+                          _loadAllievi();
+                        } finally {
+                          if (ctx.mounted && isSaving) {
+                            setDlgState(() => isSaving = false);
+                          }
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Salva'),
               ),
             ],
-          );
+          ),
+          if (isSaving)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Salvataggio in corso...',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Sincronizzazione contatto in corso...',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
         },
       ),
     );
@@ -1452,11 +1789,18 @@ class _AllieviScreenState extends State<AllieviScreen> {
     IconData icon;
     String label = a.statoTessera;
 
-    if (a.hasTesseraOk) {
+    if (a.isTesseratoEsterno) {
+      bg = Colors.teal.shade50;
+      border = Colors.teal.shade600;
+      fg = Colors.teal.shade900;
+      icon = Icons.verified_user;
+      label = 'TESSERATO ESTERNO';
+    } else if (a.hasTesseraOk) {
       bg = Colors.green.shade50;
       border = Colors.green.shade600;
       fg = Colors.green.shade900;
       icon = Icons.verified;
+      label = 'TESSERA OK';
     } else if (a.hasTesseraScaduta) {
       bg = Colors.red.shade50;
       border = Colors.red.shade600;
@@ -1469,15 +1813,17 @@ class _AllieviScreenState extends State<AllieviScreen> {
       icon = Icons.credit_card_off;
     }
 
-    String tooltip = label;
-    if (a.numeroTessera.isNotEmpty) {
-      tooltip += ' (N. ${a.numeroTessera})';
-    }
-    if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
-      try {
-        final d = DateTime.parse(a.dataEmissioneTessera!);
-        tooltip += ' - Emessa il ${DateFormat('dd/MM/yyyy').format(d)}';
-      } catch (_) {}
+    String tooltip = a.isTesseratoEsterno ? 'Tesserato con altra ASD (Esterno)' : label;
+    if (!a.isTesseratoEsterno) {
+      if (a.numeroTessera.isNotEmpty) {
+        tooltip += ' (N. ${a.numeroTessera})';
+      }
+      if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
+        try {
+          final d = DateTime.parse(a.dataEmissioneTessera!);
+          tooltip += ' - Emessa il ${DateFormat('dd/MM/yyyy').format(d)}';
+        } catch (_) {}
+      }
     }
 
     return Tooltip(
@@ -1700,6 +2046,15 @@ class _AllieviScreenState extends State<AllieviScreen> {
             a.nomeCompleto,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
+          subtitle: (a.telefono.isNotEmpty || a.email.isNotEmpty)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    [if (a.telefono.isNotEmpty) '📞 ${a.telefono}', if (a.email.isNotEmpty) '✉️ ${a.email}'].join(' • '),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                )
+              : null,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1727,12 +2082,39 @@ class _AllieviScreenState extends State<AllieviScreen> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('📞 ${a.telefono}'),
+            Wrap(
+              spacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (a.telefono.isNotEmpty) Text('📞 ${a.telefono}'),
+                if (a.email.isNotEmpty) Text('✉️ ${a.email}', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade800)),
+              ],
+            ),
+            if (a.codiceFiscale.isNotEmpty || (a.dataNascita != null && a.dataNascita!.isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  [
+                    if (a.codiceFiscale.isNotEmpty) '🆔 CF: ${a.codiceFiscale}',
+                    if (a.dataNascita != null && a.dataNascita!.isNotEmpty)
+                      '🎂 Nato: ${DateFormat("dd/MM/yyyy").format(DateTime.tryParse(a.dataNascita!) ?? DateTime.now())}${a.comuneNascita.isNotEmpty ? " a ${a.comuneNascita}" : ""}${a.provinciaNascita.isNotEmpty ? " (${a.provinciaNascita})" : ""}',
+                  ].join('   •   '),
+                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
+                ),
+              ),
             if (a.corsoDescrizione != null)
               Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (a.partnerId != null)
               Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
-            if (a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
+            if (a.isTesseratoEsterno)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '🏛️ Tesserato con altra ASD',
+                  style: TextStyle(fontSize: 11, color: Colors.teal.shade800, fontWeight: FontWeight.w600),
+                ),
+              )
+            else if (a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
@@ -2076,7 +2458,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           ),
                           items: const [
                             DropdownMenuItem(value: 'tutti', child: Text('Tutte le tessere')),
-                            DropdownMenuItem(value: 'ok', child: Text('TESSERA OK')),
+                            DropdownMenuItem(value: 'ok', child: Text('TESSERA OK (Tutti i tesserati)')),
+                            DropdownMenuItem(value: 'esterno', child: Text('Solo TESSERATI ESTERNI')),
                             DropdownMenuItem(value: 'scaduta', child: Text('TESSERA SCADUTA')),
                             DropdownMenuItem(value: 'non_tesserato', child: Text('NON TESSERATO')),
                           ],
@@ -2147,13 +2530,16 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           label: Text('Visualizzati: ${allieviVisualizzati.length} / ${_allievi.length}'),
                         ),
 
-                        Chip(
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: Colors.green.shade50,
-                          avatar: Icon(Icons.verified, size: 16, color: Colors.green.shade800),
-                          label: Text(
-                            'Tessera OK: ${allieviVisualizzati.where((a) => a.hasTesseraOk).length}',
-                            style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                        Tooltip(
+                          message: 'Totale allievi tesserati: ${allieviVisualizzati.where((a) => a.hasTesseraOk).length} (di cui ${allieviVisualizzati.where((a) => a.isTesseratoEsterno).length} esterni con altra ASD)',
+                          child: Chip(
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: Colors.green.shade50,
+                            avatar: Icon(Icons.verified, size: 16, color: Colors.green.shade800),
+                            label: Text(
+                              'Tessera OK: ${allieviVisualizzati.where((a) => a.hasTesseraOk).length} (${allieviVisualizzati.where((a) => a.isTesseratoEsterno).length})',
+                              style: TextStyle(color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ),
                         Chip(

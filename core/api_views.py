@@ -217,7 +217,7 @@ class AllievoViewSet(viewsets.ModelViewSet):
         'recensione': ['exact'],
         'is_active': ['exact']
     }
-    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera']
+    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera', 'email', 'codice_fiscale', 'comune_nascita']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
 
     def create(self, request, *args, **kwargs):
@@ -374,20 +374,21 @@ class AllievoViewSet(viewsets.ModelViewSet):
             from django.db.models import Q
             one_year_ago = date.today() - timedelta(days=365)
             st = stato_tessera.lower().strip()
-            if 'ok' in st:
-                qs = qs.exclude(numero_tessera='').filter(
-                    numero_tessera__isnull=False,
-                    data_emissione_tessera__isnull=False,
-                    data_emissione_tessera__gte=one_year_ago
+            if 'estern' in st:
+                qs = qs.filter(tesserato_altra_asd=True)
+            elif 'ok' in st:
+                qs = qs.filter(
+                    Q(tesserato_altra_asd=True) |
+                    (~Q(numero_tessera='') & Q(numero_tessera__isnull=False, data_emissione_tessera__isnull=False, data_emissione_tessera__gte=one_year_ago))
                 )
             elif 'scadut' in st:
-                qs = qs.exclude(numero_tessera='').filter(
+                qs = qs.filter(tesserato_altra_asd=False).exclude(numero_tessera='').filter(
                     numero_tessera__isnull=False,
                     data_emissione_tessera__isnull=False,
                     data_emissione_tessera__lt=one_year_ago
                 )
             elif 'non' in st or 'tesserato' in st:
-                qs = qs.filter(
+                qs = qs.filter(tesserato_altra_asd=False).filter(
                     Q(numero_tessera='') | Q(numero_tessera__isnull=True) | Q(data_emissione_tessera__isnull=True)
                 )
         return qs
@@ -3132,12 +3133,12 @@ class GoogleContactsConfigViewSet(viewsets.ViewSet):
 # ─── 2.15 Bilancio: Prima Nota Cassa ────────────────────────────
 
 class MovimentoPrimaNotaViewSet(viewsets.ModelViewSet):
-    queryset = MovimentoPrimaNota.objects.all().order_by('-data', '-created_at')
+    queryset = MovimentoPrimaNota.objects.all().order_by('-numero_progressivo', '-data', '-created_at')
     serializer_class = MovimentoPrimaNotaSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['tipo', 'categoria']
-    search_fields = ['descrizione', 'categoria', 'note']
-    ordering_fields = ['data', 'importo', 'categoria', 'created_at']
+    search_fields = ['numero_progressivo', 'descrizione', 'categoria', 'note']
+    ordering_fields = ['numero_progressivo', 'data', 'importo', 'categoria', 'created_at']
 
     def get_queryset(self):
         qs = super().get_queryset()

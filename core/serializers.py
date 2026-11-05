@@ -161,6 +161,11 @@ class AllievoSerializer(serializers.ModelSerializer):
     corso_has_whatsapp = serializers.SerializerMethodField()
     nickname = serializers.CharField(required=False, allow_blank=True, default='')
     telefono = serializers.CharField(required=False, allow_blank=True, default='')
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    data_nascita = serializers.DateField(required=False, allow_null=True)
+    comune_nascita = serializers.CharField(required=False, allow_blank=True, default='')
+    provincia_nascita = serializers.CharField(required=False, allow_blank=True, default='')
+    codice_fiscale = serializers.CharField(required=False, allow_blank=True, default='')
     numero_tessera = serializers.CharField(required=False, allow_blank=True, default='')
     data_emissione_tessera = serializers.DateField(required=False, allow_null=True)
     stato_tessera = serializers.CharField(read_only=True)
@@ -174,7 +179,8 @@ class AllievoSerializer(serializers.ModelSerializer):
             'is_active', 'is_prospect', 'note', 'partner', 'partner_nome', 'partner_cognome',
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
             'corso_gruppo_whatsapp', 'corso_has_whatsapp',
-            'email', 'numero_tessera', 'data_emissione_tessera', 'stato_tessera', 'google_contact_id',
+            'email', 'data_nascita', 'comune_nascita', 'provincia_nascita', 'codice_fiscale',
+            'numero_tessera', 'data_emissione_tessera', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
             'created_at', 'updated_at'
         ]
 
@@ -185,6 +191,23 @@ class AllievoSerializer(serializers.ModelSerializer):
                 data['nickname'] = ''
             if 'telefono' in data and data['telefono'] is None:
                 data['telefono'] = ''
+            if 'email' in data and data['email'] is None:
+                data['email'] = ''
+            if data.get('data_nascita') == '':
+                data['data_nascita'] = None
+            if 'comune_nascita' in data and data['comune_nascita'] is None:
+                data['comune_nascita'] = ''
+            if 'provincia_nascita' in data and data['provincia_nascita'] is None:
+                data['provincia_nascita'] = ''
+            if 'codice_fiscale' in data:
+                if data['codice_fiscale'] is None:
+                    data['codice_fiscale'] = ''
+                else:
+                    data['codice_fiscale'] = str(data['codice_fiscale']).strip().upper()
+            if data.get('tesserato_altra_asd') in [True, 'true', 'True', 1, '1']:
+                data['tesserato_altra_asd'] = True
+                data['numero_tessera'] = ''
+                data['data_emissione_tessera'] = None
             if data.get('data_emissione_tessera') == '':
                 data['data_emissione_tessera'] = None
             if 'numero_tessera' in data and data['numero_tessera'] is None:
@@ -626,10 +649,11 @@ class MovimentoPrimaNotaSerializer(serializers.ModelSerializer):
     class Meta:
         model = MovimentoPrimaNota
         fields = [
-            'id', 'data', 'descrizione', 'categoria',
+            'id', 'numero_progressivo', 'data', 'descrizione', 'categoria',
             'tipo', 'tipo_display', 'importo', 'note',
             'created_at', 'updated_at'
         ]
+        read_only_fields = ['id', 'numero_progressivo', 'created_at', 'updated_at']
 
 
 class CategoriaBilancioSerializer(serializers.ModelSerializer):

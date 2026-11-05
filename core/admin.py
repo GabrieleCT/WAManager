@@ -9,11 +9,12 @@ from .models import (
 
 @admin.register(MovimentoPrimaNota)
 class MovimentoPrimaNotaAdmin(admin.ModelAdmin):
-    list_display = ('data', 'tipo', 'descrizione', 'categoria', 'importo', 'created_at')
+    list_display = ('numero_progressivo', 'data', 'tipo', 'descrizione', 'categoria', 'importo', 'created_at')
     list_filter = ('tipo', 'categoria', 'data')
-    search_fields = ('descrizione', 'categoria', 'note')
+    search_fields = ('numero_progressivo', 'descrizione', 'categoria', 'note')
     date_hierarchy = 'data'
-    ordering = ('-data', '-created_at')
+    ordering = ('-numero_progressivo', '-data', '-created_at')
+    readonly_fields = ('numero_progressivo', 'created_at', 'updated_at')
 
 
 @admin.register(CategoriaBilancio)
@@ -47,9 +48,9 @@ class ArgomentoAdmin(admin.ModelAdmin):
 
 @admin.register(Allievo)
 class AllievoAdmin(admin.ModelAdmin):
-    list_display = ('cognome', 'nome', 'nickname', 'ruolo', 'livello', 'telefono', 'corso', 'recensione', 'is_active', 'is_prospect')
-    list_filter = ('ruolo', 'livello', 'is_active', 'is_prospect', 'recensione', 'corso__scuola', 'corso')
-    search_fields = ('nome', 'cognome', 'nickname', 'telefono')
+    list_display = ('cognome', 'nome', 'nickname', 'ruolo', 'livello', 'telefono', 'corso', 'tesserato_altra_asd', 'recensione', 'is_active', 'is_prospect')
+    list_filter = ('tesserato_altra_asd', 'ruolo', 'livello', 'is_active', 'is_prospect', 'recensione', 'corso__scuola', 'corso')
+    search_fields = ('nome', 'cognome', 'nickname', 'telefono', 'email', 'codice_fiscale', 'comune_nascita')
 
 
 @admin.register(Jolly)

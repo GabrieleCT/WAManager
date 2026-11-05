@@ -203,8 +203,13 @@ class Allievo {
   final bool corsoHasWhatsapp;
   final String numeroTessera;
   final String? dataEmissioneTessera;
+  final bool tesseratoAltraAsd;
   final String statoTessera;
   final String email;
+  final String? dataNascita;
+  final String comuneNascita;
+  final String provinciaNascita;
+  final String codiceFiscale;
   final String? googleContactId;
   final String? googleSyncError;
 
@@ -217,6 +222,10 @@ class Allievo {
     required this.ruoloDisplay,
     required this.telefono,
     this.email = '',
+    this.dataNascita,
+    this.comuneNascita = '',
+    this.provinciaNascita = '',
+    this.codiceFiscale = '',
     this.corsoId,
     this.corsoDescrizione,
     this.scuolaId,
@@ -237,6 +246,7 @@ class Allievo {
     this.corsoHasWhatsapp = false,
     this.numeroTessera = '',
     this.dataEmissioneTessera,
+    this.tesseratoAltraAsd = false,
     this.statoTessera = 'NON TESSERATO',
     this.googleContactId,
     this.googleSyncError,
@@ -245,9 +255,10 @@ class Allievo {
   String get nomeCompleto => '$nome $cognome';
   String get partnerNomeCompleto => partnerNome != null ? '$partnerNome $partnerCognome' : '';
 
-  bool get hasTesseraOk => statoTessera == 'TESSERA OK';
-  bool get hasTesseraScaduta => statoTessera == 'TESSERA SCADUTA' || statoTessera == 'TESSERA SCADUTO';
-  bool get isNonTesserato => statoTessera == 'NON TESSERATO';
+  bool get isTesseratoEsterno => tesseratoAltraAsd || statoTessera == 'TESSERATO ESTERNO';
+  bool get hasTesseraOk => statoTessera == 'TESSERA OK' || isTesseratoEsterno;
+  bool get hasTesseraScaduta => !isTesseratoEsterno && (statoTessera == 'TESSERA SCADUTA' || statoTessera == 'TESSERA SCADUTO');
+  bool get isNonTesserato => !isTesseratoEsterno && statoTessera == 'NON TESSERATO';
 
   String get sortName {
     final myName = '$cognome $nome'.toLowerCase().trim();
@@ -297,7 +308,12 @@ class Allievo {
       corsoHasWhatsapp: json['corso_has_whatsapp'] ?? false,
       numeroTessera: json['numero_tessera'] ?? '',
       dataEmissioneTessera: json['data_emissione_tessera'],
+      tesseratoAltraAsd: json['tesserato_altra_asd'] == true || json['tesserato_altra_asd'] == 1 || json['tesserato_altra_asd'] == 'true',
       statoTessera: json['stato_tessera'] ?? 'NON TESSERATO',
+      dataNascita: json['data_nascita'],
+      comuneNascita: json['comune_nascita'] ?? '',
+      provinciaNascita: json['provincia_nascita'] ?? '',
+      codiceFiscale: json['codice_fiscale'] ?? '',
       googleContactId: json['google_contact_id'],
       googleSyncError: googleSyncError,
     );
@@ -310,6 +326,11 @@ class Allievo {
     'ruolo': ruolo,
     'telefono': telefono,
     'email': email,
+    'data_nascita': dataNascita,
+    'comune_nascita': comuneNascita,
+    'provincia_nascita': provinciaNascita,
+    'codice_fiscale': codiceFiscale,
+    'tesserato_altra_asd': tesseratoAltraAsd,
     'corso': corsoId,
     'recensione': recensione,
     'livello': livello,
@@ -1093,6 +1114,7 @@ class GoogleDriveFolderItem {
 
 class MovimentoPrimaNota {
   final String id;
+  final int? numeroProgressivo;
   final String data;
   final String descrizione;
   final String categoria;
@@ -1105,6 +1127,7 @@ class MovimentoPrimaNota {
 
   MovimentoPrimaNota({
     required this.id,
+    this.numeroProgressivo,
     required this.data,
     required this.descrizione,
     required this.categoria,
@@ -1118,10 +1141,14 @@ class MovimentoPrimaNota {
 
   bool get isEntrata => tipo == 'entrata';
   bool get isUscita => tipo == 'uscita';
+  String get idDisplay => numeroProgressivo != null ? '#$numeroProgressivo' : '';
 
   factory MovimentoPrimaNota.fromJson(Map<String, dynamic> json) {
     return MovimentoPrimaNota(
       id: json['id'] ?? '',
+      numeroProgressivo: json['numero_progressivo'] is int
+          ? json['numero_progressivo']
+          : int.tryParse(json['numero_progressivo']?.toString() ?? ''),
       data: json['data'] ?? '',
       descrizione: json['descrizione'] ?? '',
       categoria: json['categoria'] ?? 'Generale',
