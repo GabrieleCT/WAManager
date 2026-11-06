@@ -202,6 +202,8 @@ class Allievo {
   final String? corsoGruppoWhatsapp;
   final bool corsoHasWhatsapp;
   final String numeroTessera;
+  final String numeroTesseraAcsi;
+  final String tesseraAssociativa;
   final String? dataEmissioneTessera;
   final bool tesseratoAltraAsd;
   final String statoTessera;
@@ -245,6 +247,8 @@ class Allievo {
     this.corsoGruppoWhatsapp,
     this.corsoHasWhatsapp = false,
     this.numeroTessera = '',
+    this.numeroTesseraAcsi = '',
+    this.tesseraAssociativa = '',
     this.dataEmissioneTessera,
     this.tesseratoAltraAsd = false,
     this.statoTessera = 'NON TESSERATO',
@@ -306,7 +310,9 @@ class Allievo {
       inGruppoCorsoWhatsapp: json['in_gruppo_corso_whatsapp'] ?? false,
       corsoGruppoWhatsapp: json['corso_gruppo_whatsapp'],
       corsoHasWhatsapp: json['corso_has_whatsapp'] ?? false,
-      numeroTessera: json['numero_tessera'] ?? '',
+      numeroTesseraAcsi: json['numero_tessera_acsi'] ?? json['numero_tessera'] ?? '',
+      tesseraAssociativa: json['tessera_associativa'] ?? '',
+      numeroTessera: json['numero_tessera_acsi'] ?? json['numero_tessera'] ?? '',
       dataEmissioneTessera: json['data_emissione_tessera'],
       tesseratoAltraAsd: json['tesserato_altra_asd'] == true || json['tesserato_altra_asd'] == 1 || json['tesserato_altra_asd'] == 'true',
       statoTessera: json['stato_tessera'] ?? 'NON TESSERATO',
@@ -338,7 +344,9 @@ class Allievo {
     'is_prospect': isProspect,
     'note': note,
     'in_gruppo_scuola_whatsapp': inGruppoScuolaWhatsapp,
-    'numero_tessera': numeroTessera,
+    'numero_tessera_acsi': numeroTesseraAcsi,
+    'numero_tessera': numeroTesseraAcsi.isNotEmpty ? numeroTesseraAcsi : numeroTessera,
+    'tessera_associativa': tesseraAssociativa,
     'data_emissione_tessera': dataEmissioneTessera,
   };
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
@@ -6,6 +7,81 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
+
+class _UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
+    );
+  }
+}
+
+class _Date8InputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 8) {
+      digits = digits.substring(0, 8);
+    }
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 2 || i == 4) {
+        buffer.write('/');
+      }
+      buffer.write(digits[i]);
+    }
+
+    if ((digits.length == 2 || digits.length == 4) &&
+        newValue.text.endsWith('/') &&
+        !oldValue.text.endsWith('/')) {
+      buffer.write('/');
+    }
+
+    final string = buffer.toString();
+
+    int selectionIndex = newValue.selection.end;
+    if (selectionIndex < 0) selectionIndex = 0;
+    if (selectionIndex > newValue.text.length) selectionIndex = newValue.text.length;
+
+    int digitsBeforeCursor = 0;
+    for (int i = 0; i < selectionIndex; i++) {
+      if (RegExp(r'\d').hasMatch(newValue.text[i])) {
+        digitsBeforeCursor++;
+      }
+    }
+
+    int newCursorPos = 0;
+    int countedDigits = 0;
+    while (newCursorPos < string.length && countedDigits < digitsBeforeCursor) {
+      if (RegExp(r'\d').hasMatch(string[newCursorPos])) {
+        countedDigits++;
+      }
+      newCursorPos++;
+    }
+
+    if (newCursorPos < string.length && string[newCursorPos] == '/' && (countedDigits == 2 || countedDigits == 4)) {
+      newCursorPos++;
+    }
+
+    if (newCursorPos > string.length) {
+      newCursorPos = string.length;
+    }
+
+    return TextEditingValue(
+      text: string,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+  }
+}
 
 class AllieviScreen extends StatefulWidget {
   final bool embedded;
@@ -450,13 +526,40 @@ class _AllieviScreenState extends State<AllieviScreen> {
     );
     final telefonoController = TextEditingController(text: allievo?.telefono ?? '');
     final emailController = TextEditingController(text: allievo?.email ?? '');
-    final comuneNascitaController = TextEditingController(text: allievo?.comuneNascita ?? '');
-    final provinciaNascitaController = TextEditingController(text: allievo?.provinciaNascita ?? '');
-    final codiceFiscaleController = TextEditingController(text: allievo?.codiceFiscale ?? '');
-    DateTime? dataNascita = (allievo?.dataNascita != null && allievo!.dataNascita!.isNotEmpty)
-        ? DateTime.tryParse(allievo.dataNascita!)
-        : null;
-    final tesseraController = TextEditingController(text: allievo?.numeroTessera ?? '');
+    final comuneNascitaController = TextEditingController(text: (allievo?.comuneNascita ?? '').toUpperCase());
+    final provinciaNascitaController = TextEditingController(text: (allievo?.provinciaNascita ?? '').toUpperCase());
+    final codiceFiscaleController = TextEditingController(text: (allievo?.codiceFiscale ?? '').toUpperCase());
+    String initialDataNascitaStr = '';
+    if (allievo?.dataNascita != null && allievo!.dataNascita!.isNotEmpty) {
+      final parsed = DateTime.tryParse(allievo.dataNascita!);
+      if (parsed != null) {
+        initialDataNascitaStr = DateFormat('dd/MM/yyyy').format(parsed);
+      }
+    }
+    final dataNascitaController = TextEditingController(text: initialDataNascitaStr);
+    final tesseraAcsiController = TextEditingController(
+      text: allievo != null
+          ? (allievo.numeroTesseraAcsi.isNotEmpty ? allievo.numeroTesseraAcsi : allievo.numeroTessera)
+          : '',
+    );
+    String initialTesseraAssociativa = allievo?.tesseraAssociativa ?? '';
+    if (allievo == null) {
+      int maxNum = 0;
+      for (final a in _allievi) {
+        final val = a.tesseraAssociativa.trim();
+        final n = int.tryParse(val);
+        if (n != null && n > maxNum) maxNum = n;
+      }
+      initialTesseraAssociativa = (maxNum + 1).toString();
+    }
+    final tesseraAssociativaController = TextEditingController(text: initialTesseraAssociativa);
+    if (allievo == null) {
+      _api.getNextTesseraAssociativa().then((val) {
+        if (val.isNotEmpty && tesseraAssociativaController.text != val) {
+          tesseraAssociativaController.text = val;
+        }
+      });
+    }
     DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
         ? DateTime.tryParse(allievo.dataEmissioneTessera!)
         : null;
@@ -585,6 +688,9 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             child: TextField(
                               controller: emailController,
                               keyboardType: TextInputType.emailAddress,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Email',
                                 hintText: 'es. allievo@email.com',
@@ -597,6 +703,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             child: TextField(
                               controller: codiceFiscaleController,
                               textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                                LengthLimitingTextInputFormatter(16),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Codice Fiscale',
                                 hintText: 'Es. RSSMRA85M01H501Z',
@@ -607,80 +717,49 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         ],
                       ),
                       const SizedBox(height: 18),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.cake_outlined, color: Colors.indigo),
-                          title: Text(
-                            dataNascita == null
-                                ? 'Nessuna data di nascita'
-                                : 'Data di nascita: ${DateFormat("dd/MM/yyyy").format(dataNascita!)}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: dataNascita == null ? Colors.grey.shade600 : Colors.black87,
-                              fontWeight: dataNascita == null ? FontWeight.normal : FontWeight.bold,
-                            ),
-                          ),
-                          trailing: Wrap(
-                            spacing: 4,
-                            children: [
-                              if (dataNascita != null)
-                                IconButton(
-                                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                  tooltip: 'Rimuovi data nascita',
-                                  onPressed: () => setDlgState(() => dataNascita = null),
-                                ),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.edit_calendar, size: 16),
-                                label: const Text('Data', style: TextStyle(fontSize: 12)),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                onPressed: () async {
-                                  final picked = await showDatePicker(
-                                    context: ctx,
-                                    initialDate: dataNascita ?? DateTime(1990, 1, 1),
-                                    firstDate: DateTime(1920),
-                                    lastDate: DateTime.now(),
-                                  );
-                                  if (picked != null) {
-                                    setDlgState(() => dataNascita = picked);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
                       Row(
                         children: [
                           Expanded(
-                            flex: 3,
+                            flex: 4,
+                            child: TextField(
+                              controller: dataNascitaController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                _Date8InputFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Data di Nascita',
+                                hintText: 'GG/MM/AAAA (8 cifre)',
+                                prefixIcon: Icon(Icons.cake_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 5,
                             child: TextField(
                               controller: comuneNascitaController,
-                              textCapitalization: TextCapitalization.words,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Comune di Nascita',
-                                hintText: 'Es. Milano',
+                                hintText: 'Es. MILANO',
                                 prefixIcon: Icon(Icons.location_city_outlined),
                               ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            flex: 1,
+                            flex: 2,
                             child: TextField(
                               controller: provinciaNascitaController,
                               textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                                LengthLimitingTextInputFormatter(2),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Provincia',
                                 hintText: 'Es. MI',
@@ -728,6 +807,9 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       TextField(
                         controller: emailController,
                         keyboardType: TextInputType.emailAddress,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                        ],
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           hintText: 'es. allievo@email.com',
@@ -738,6 +820,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       TextField(
                         controller: codiceFiscaleController,
                         textCapitalization: TextCapitalization.characters,
+                        inputFormatters: [
+                          _UpperCaseTextFormatter(),
+                          LengthLimitingTextInputFormatter(16),
+                        ],
                         decoration: const InputDecoration(
                           labelText: 'Codice Fiscale',
                           hintText: 'Es. RSSMRA85M01H501Z',
@@ -745,57 +831,16 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.cake_outlined, color: Colors.indigo),
-                          title: Text(
-                            dataNascita == null
-                                ? 'Nessuna data di nascita'
-                                : 'Data di nascita: ${DateFormat("dd/MM/yyyy").format(dataNascita!)}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: dataNascita == null ? Colors.grey.shade600 : Colors.black87,
-                              fontWeight: dataNascita == null ? FontWeight.normal : FontWeight.bold,
-                            ),
-                          ),
-                          trailing: Wrap(
-                            spacing: 4,
-                            children: [
-                              if (dataNascita != null)
-                                IconButton(
-                                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                  tooltip: 'Rimuovi data nascita',
-                                  onPressed: () => setDlgState(() => dataNascita = null),
-                                ),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.edit_calendar, size: 16),
-                                label: const Text('Data', style: TextStyle(fontSize: 12)),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                onPressed: () async {
-                                  final picked = await showDatePicker(
-                                    context: ctx,
-                                    initialDate: dataNascita ?? DateTime(1990, 1, 1),
-                                    firstDate: DateTime(1920),
-                                    lastDate: DateTime.now(),
-                                  );
-                                  if (picked != null) {
-                                    setDlgState(() => dataNascita = picked);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                      TextField(
+                        controller: dataNascitaController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          _Date8InputFormatter(),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Data di Nascita',
+                          hintText: 'GG/MM/AAAA (8 cifre)',
+                          prefixIcon: Icon(Icons.cake_outlined),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -805,10 +850,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             flex: 3,
                             child: TextField(
                               controller: comuneNascitaController,
-                              textCapitalization: TextCapitalization.words,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Comune di Nascita',
-                                hintText: 'Es. Milano',
+                                hintText: 'Es. MILANO',
                                 prefixIcon: Icon(Icons.location_city_outlined),
                               ),
                             ),
@@ -819,6 +867,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             child: TextField(
                               controller: provinciaNascitaController,
                               textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                                LengthLimitingTextInputFormatter(2),
+                              ],
                               decoration: const InputDecoration(
                                 labelText: 'Provincia',
                                 hintText: 'Es. MI',
@@ -955,6 +1007,17 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    TextField(
+                      controller: tesseraAssociativaController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Tessera Associativa',
+                        hintText: 'Es. 1, 2, 3...',
+                        prefixIcon: Icon(Icons.card_membership_outlined),
+                        helperText: 'Numero progressivo socio interno all\'ASD',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
@@ -973,7 +1036,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         ),
                         subtitle: Text(
                           tesseratoAltraAsd
-                              ? 'Allievo tesserato esternamente. Numero e data emissione disabilitati.'
+                              ? 'Allievo tesserato esternamente. Numero e data emissione ACSI disabilitati.'
                               : 'Seleziona se l\'allievo ha già una tessera attiva rilasciata da un\'altra ASD.',
                           style: TextStyle(fontSize: 11, color: tesseratoAltraAsd ? Colors.teal.shade800 : Colors.grey.shade600),
                         ),
@@ -981,7 +1044,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           setDlgState(() {
                             tesseratoAltraAsd = val ?? false;
                             if (tesseratoAltraAsd) {
-                              tesseraController.clear();
+                              tesseraAcsiController.clear();
                               dataEmissione = null;
                             }
                           });
@@ -989,11 +1052,11 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       ),
                     ),
                     TextField(
-                      controller: tesseraController,
+                      controller: tesseraAcsiController,
                       enabled: !tesseratoAltraAsd,
                       decoration: InputDecoration(
-                        labelText: 'Numero Tessera',
-                        hintText: tesseratoAltraAsd ? 'Non richiesto (Tesserato con altra ASD)' : 'Es. 12345 / 2025-ABC',
+                        labelText: 'Numero Tessera ACSI',
+                        hintText: tesseratoAltraAsd ? 'Non richiesto (Tesserato con altra ASD)' : 'Es. PS7546012',
                         prefixIcon: const Icon(Icons.badge_outlined),
                         filled: tesseratoAltraAsd,
                         fillColor: tesseratoAltraAsd ? Colors.grey.shade100 : null,
@@ -1246,23 +1309,69 @@ class _AllieviScreenState extends State<AllieviScreen> {
                 onPressed: isSaving
                     ? null
                     : () async {
-                        if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                        final nomeTrimmed = nomeController.text.trim();
+                        final cognomeTrimmed = cognomeController.text.trim();
+                        if (nomeTrimmed.isEmpty || cognomeTrimmed.isEmpty) return;
+
+                        String? dataNascitaIso;
+                        final rawDateStr = dataNascitaController.text.trim();
+                        if (rawDateStr.isNotEmpty) {
+                          final parts = rawDateStr.split('/');
+                          if (parts.length == 3 && parts[0].length == 2 && parts[1].length == 2 && parts[2].length == 4) {
+                            final d = int.tryParse(parts[0]);
+                            final m = int.tryParse(parts[1]);
+                            final y = int.tryParse(parts[2]);
+                            if (d != null && m != null && y != null && m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= DateTime.now().year) {
+                              try {
+                                final dt = DateTime(y, m, d);
+                                if (dt.year == y && dt.month == m && dt.day == d) {
+                                  dataNascitaIso = DateFormat('yyyy-MM-dd').format(dt);
+                                }
+                              } catch (_) {}
+                            }
+                          }
+                          if (dataNascitaIso == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Data di nascita non valida. Inserisci 8 cifre nel formato GG/MM/AAAA (es. 15/05/1990) oppure lascia il campo vuoto.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                        }
+
+                        final emailClean = emailController.text.replaceAll(' ', '').trim().toLowerCase();
+                        if (emailClean.isNotEmpty) {
+                          final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                          if (!emailRegex.hasMatch(emailClean)) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("L'indirizzo email inserito non è valido (es. nome@dominio.it)."),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                        }
+
                         setDlgState(() => isSaving = true);
                         try {
-                          final nomeTrimmed = nomeController.text.trim();
                           final nickTrimmed = nicknameController.text.trim();
                           final effectiveNickname = nickTrimmed.isNotEmpty ? nickTrimmed : nomeTrimmed;
                           final data = {
                             'nome': nomeTrimmed,
-                            'cognome': cognomeController.text.trim(),
+                            'cognome': cognomeTrimmed,
                             if (allievo != null) 'nickname': effectiveNickname,
                             'telefono': telefonoController.text.trim(),
-                            'email': emailController.text.trim(),
-                            'data_nascita': dataNascita != null
-                                ? DateFormat('yyyy-MM-dd').format(dataNascita!)
-                                : null,
-                            'comune_nascita': comuneNascitaController.text.trim(),
-                            'provincia_nascita': provinciaNascitaController.text.trim(),
+                            'email': emailClean,
+                            'data_nascita': dataNascitaIso,
+                            'comune_nascita': comuneNascitaController.text.trim().toUpperCase(),
+                            'provincia_nascita': provinciaNascitaController.text.trim().toUpperCase(),
                             'codice_fiscale': codiceFiscaleController.text.trim().toUpperCase(),
                             'ruolo': ruolo,
                             'livello': livello,
@@ -1270,7 +1379,9 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             'corso': selectedCorsoId,
                             'is_prospect': false,
                             'tesserato_altra_asd': tesseratoAltraAsd,
-                            'numero_tessera': tesseratoAltraAsd ? '' : tesseraController.text.trim(),
+                            'tessera_associativa': tesseraAssociativaController.text.trim(),
+                            'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
+                            'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
                             'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
                                 ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
                                 : null,
@@ -1814,9 +1925,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
     }
 
     String tooltip = a.isTesseratoEsterno ? 'Tesserato con altra ASD (Esterno)' : label;
+    if (a.tesseraAssociativa.isNotEmpty) {
+      tooltip += ' - Tess. Associativa: ${a.tesseraAssociativa}';
+    }
     if (!a.isTesseratoEsterno) {
-      if (a.numeroTessera.isNotEmpty) {
-        tooltip += ' (N. ${a.numeroTessera})';
+      final acsi = a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera;
+      if (acsi.isNotEmpty) {
+        tooltip += ' (ACSI: $acsi)';
       }
       if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
         try {
@@ -2106,19 +2221,16 @@ class _AllieviScreenState extends State<AllieviScreen> {
               Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (a.partnerId != null)
               Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
-            if (a.isTesseratoEsterno)
+            if (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  '🏛️ Tesserato con altra ASD',
-                  style: TextStyle(fontSize: 11, color: Colors.teal.shade800, fontWeight: FontWeight.w600),
-                ),
-              )
-            else if (a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  '💳 Tessera: ${a.numeroTessera.isNotEmpty ? a.numeroTessera : "N/D"}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (Emessa: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataEmissioneTessera!) ?? DateTime.now())})" : ""}',
+                  [
+                    if (a.tesseraAssociativa.isNotEmpty) '🪪 Tessera Associativa: ${a.tesseraAssociativa}',
+                    if (a.isTesseratoEsterno) '🏛️ Tesserato con altra ASD'
+                    else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
+                      '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera).isNotEmpty ? (a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera) : "N/D"}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (Emessa: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataEmissioneTessera!) ?? DateTime.now())})" : ""}',
+                  ].join('   •   '),
                   style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
                 ),
               ),

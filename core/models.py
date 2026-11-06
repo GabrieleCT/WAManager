@@ -162,11 +162,19 @@ class Allievo(models.Model):
         default=False,
         help_text="Indica se l'allievo è presente nel gruppo WhatsApp del Corso"
     )
-    numero_tessera = models.CharField(
+    numero_tessera_acsi = models.CharField(
         max_length=50,
         blank=True,
         default='',
-        help_text="Numero della tessera dell'allievo"
+        verbose_name="Numero Tessera ACSI",
+        help_text="Numero della tessera ACSI dell'allievo"
+    )
+    tessera_associativa = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name="Tessera Associativa",
+        help_text="Numero progressivo della tessera associativa interna all'ASD"
     )
     data_emissione_tessera = models.DateField(
         null=True,
@@ -216,10 +224,19 @@ class Allievo(models.Model):
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     @property
+    def numero_tessera(self):
+        """Compatibilità retroattiva: mappa su numero_tessera_acsi."""
+        return self.numero_tessera_acsi
+
+    @numero_tessera.setter
+    def numero_tessera(self, value):
+        self.numero_tessera_acsi = value
+
+    @property
     def stato_tessera(self):
         if self.tesserato_altra_asd:
             return 'TESSERATO ESTERNO'
-        if not self.numero_tessera or not self.numero_tessera.strip() or not self.data_emissione_tessera:
+        if not self.numero_tessera_acsi or not self.numero_tessera_acsi.strip() or not self.data_emissione_tessera:
             return 'NON TESSERATO'
         from datetime import date, timedelta
         today = date.today()
@@ -230,6 +247,29 @@ class Allievo(models.Model):
         if today > scadenza:
             return 'TESSERA SCADUTA'
         return 'TESSERA OK'
+
+    @classmethod
+    def get_next_tessera_associativa(cls):
+        """
+        Calcola il prossimo numero progressivo per la tessera associativa
+        prendendo il massimo numero intero presente tra le tessere associative esistenti.
+        """
+        max_num = 0
+        valori = cls.objects.exclude(tessera_associativa='').exclude(tessera_associativa__isnull=True).values_list('tessera_associativa', flat=True)
+        for v in valori:
+            v_str = str(v).strip()
+            if v_str.isdigit():
+                num = int(v_str)
+                if num > max_num:
+                    max_num = num
+            else:
+                import re
+                m = re.search(r'\d+', v_str)
+                if m:
+                    num = int(m.group(0))
+                    if num > max_num:
+                        max_num = num
+        return str(max_num + 1)
 
     class Meta:
         verbose_name_plural = 'Allievi'

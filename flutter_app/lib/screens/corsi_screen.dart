@@ -688,7 +688,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final nomeController = TextEditingController(text: a.nome);
     final cognomeController = TextEditingController(text: a.cognome);
     final telefonoController = TextEditingController(text: a.telefono);
-    final tesseraController = TextEditingController(text: a.numeroTessera);
+    final tesseraAcsiController = TextEditingController(
+      text: a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera,
+    );
+    final tesseraAssociativaController = TextEditingController(text: a.tesseraAssociativa);
     final noteController = TextEditingController(text: a.note);
     DateTime? dataEmissione = (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty)
         ? DateTime.tryParse(a.dataEmissioneTessera!)
@@ -750,17 +753,28 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
                   ),
                   const SizedBox(height: 8),
+                  TextField(
+                    controller: tesseraAssociativaController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Tessera Associativa',
+                      hintText: 'Es. 1, 2, 3...',
+                      prefixIcon: Icon(Icons.card_membership_outlined),
+                      helperText: 'Numero progressivo socio interno all\'ASD',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   CheckboxListTile(
                     value: tesseratoAltraAsd,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: const Text('TESSERATO con altra ASD', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.teal)),
-                    subtitle: const Text('Disabilita numero e data tessera. Risulterà tesserato esterno.', style: TextStyle(fontSize: 11)),
+                    subtitle: const Text('Disabilita numero e data emissione ACSI. Risulterà tesserato esterno.', style: TextStyle(fontSize: 11)),
                     onChanged: (val) {
                       setDlgState(() {
                         tesseratoAltraAsd = val ?? false;
                         if (tesseratoAltraAsd) {
-                          tesseraController.clear();
+                          tesseraAcsiController.clear();
                           dataEmissione = null;
                         }
                       });
@@ -769,14 +783,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
                   ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: tesseraController,
+                    controller: tesseraAcsiController,
                     enabled: !tesseratoAltraAsd,
                     decoration: InputDecoration(
-                      labelText: 'Numero Tessera',
+                      labelText: 'Numero Tessera ACSI',
                       prefixIcon: const Icon(Icons.badge_outlined),
                       filled: tesseratoAltraAsd,
                       fillColor: tesseratoAltraAsd ? Colors.grey.shade100 : null,
-                      hintText: tesseratoAltraAsd ? 'Disabilitato (tesserato esterno)' : null,
+                      hintText: tesseratoAltraAsd ? 'Disabilitato (tesserato esterno)' : 'Es. PS7546012',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -894,7 +908,9 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     'ruolo': ruolo,
                     'livello': livello,
                     'note': noteController.text.trim(),
-                    'numero_tessera': tesseratoAltraAsd ? '' : tesseraController.text.trim(),
+                    'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
+                    'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
+                    'tessera_associativa': tesseraAssociativaController.text.trim(),
                     'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
                         ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
                         : null,
@@ -1109,9 +1125,13 @@ class _CorsiScreenState extends State<CorsiScreen> {
     }
 
     String tooltip = a.isTesseratoEsterno ? 'Tesserato con altra ASD (Esterno)' : label;
+    if (a.tesseraAssociativa.isNotEmpty) {
+      tooltip += ' - Tess. Associativa: ${a.tesseraAssociativa}';
+    }
     if (!a.isTesseratoEsterno) {
-      if (a.numeroTessera.isNotEmpty) {
-        tooltip += ' (N. ${a.numeroTessera})';
+      final acsi = a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera;
+      if (acsi.isNotEmpty) {
+        tooltip += ' (ACSI: $acsi)';
       }
       if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
         tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
@@ -1481,19 +1501,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (a.isTesseratoEsterno)
-                                          const Padding(
-                                            padding: EdgeInsets.only(top: 2),
-                                            child: Text(
-                                              '🏛️ Tesserato altra ASD',
-                                              style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w600),
-                                            ),
-                                          )
-                                        else if (a.numeroTessera.isNotEmpty)
+                                        if (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
                                           Padding(
                                             padding: const EdgeInsets.only(top: 2),
                                             child: Text(
-                                              'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                              [
+                                                if (a.tesseraAssociativa.isNotEmpty) '🪪 Tess. Ass: ${a.tesseraAssociativa}',
+                                                if (a.isTesseratoEsterno) '🏛️ Altra ASD'
+                                                else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                                                  '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera)}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                              ].join(' • '),
                                               style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
                                             ),
                                           ),
@@ -1606,23 +1623,20 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   ],
                                 ],
                               ),
-                              subtitle: a.isTesseratoEsterno
-                                  ? const Padding(
-                                      padding: EdgeInsets.only(top: 2),
+                              subtitle: (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 2),
                                       child: Text(
-                                        '🏛️ Tesserato altra ASD',
-                                        style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w600),
+                                        [
+                                          if (a.tesseraAssociativa.isNotEmpty) '🪪 Tessera Associativa: ${a.tesseraAssociativa}',
+                                          if (a.isTesseratoEsterno) '🏛️ Tesserato altra ASD'
+                                          else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                                            '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera)}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
+                                        ].join('   •   '),
+                                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
                                       ),
                                     )
-                                  : a.numeroTessera.isNotEmpty
-                                      ? Padding(
-                                          padding: const EdgeInsets.only(top: 2),
-                                          child: Text(
-                                            'Tessera: ${a.numeroTessera}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
-                                            style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
-                                          ),
-                                        )
-                                      : null,
+                                  : null,
                               trailing: Wrap(
                                 spacing: 6,
                                 crossAxisAlignment: WrapCrossAlignment.center,

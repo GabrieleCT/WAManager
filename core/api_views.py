@@ -217,7 +217,7 @@ class AllievoViewSet(viewsets.ModelViewSet):
         'recensione': ['exact'],
         'is_active': ['exact']
     }
-    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera', 'email', 'codice_fiscale', 'comune_nascita']
+    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera_acsi', 'tessera_associativa', 'email', 'codice_fiscale', 'comune_nascita']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
 
     def create(self, request, *args, **kwargs):
@@ -379,19 +379,26 @@ class AllievoViewSet(viewsets.ModelViewSet):
             elif 'ok' in st:
                 qs = qs.filter(
                     Q(tesserato_altra_asd=True) |
-                    (~Q(numero_tessera='') & Q(numero_tessera__isnull=False, data_emissione_tessera__isnull=False, data_emissione_tessera__gte=one_year_ago))
+                    (~Q(numero_tessera_acsi='') & Q(numero_tessera_acsi__isnull=False, data_emissione_tessera__isnull=False, data_emissione_tessera__gte=one_year_ago))
                 )
             elif 'scadut' in st:
-                qs = qs.filter(tesserato_altra_asd=False).exclude(numero_tessera='').filter(
-                    numero_tessera__isnull=False,
+                qs = qs.filter(tesserato_altra_asd=False).exclude(numero_tessera_acsi='').filter(
+                    numero_tessera_acsi__isnull=False,
                     data_emissione_tessera__isnull=False,
                     data_emissione_tessera__lt=one_year_ago
                 )
             elif 'non' in st or 'tesserato' in st:
                 qs = qs.filter(tesserato_altra_asd=False).filter(
-                    Q(numero_tessera='') | Q(numero_tessera__isnull=True) | Q(data_emissione_tessera__isnull=True)
+                    Q(numero_tessera_acsi='') | Q(numero_tessera_acsi__isnull=True) | Q(data_emissione_tessera__isnull=True)
                 )
         return qs
+
+    @action(detail=False, methods=['get'], url_path='next-tessera-associativa')
+    def next_tessera_associativa(self, request):
+        """Restituisce il prossimo numero progressivo per la tessera associativa."""
+        return Response({
+            'next_tessera_associativa': Allievo.get_next_tessera_associativa()
+        })
 
     @action(detail=False, methods=['get'])
     def prospects(self, request):

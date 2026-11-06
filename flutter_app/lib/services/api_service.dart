@@ -260,6 +260,17 @@ class ApiService {
     return [];
   }
 
+  Future<String> getNextTesseraAssociativa() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/api/allievi/next-tessera-associativa/'), headers: _headers);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        return data['next_tessera_associativa']?.toString() ?? '1';
+      }
+    } catch (_) {}
+    return '1';
+  }
+
   Future<Allievo?> createAllievo(Map<String, dynamic> data) async {
     final res = await http.post(Uri.parse('$baseUrl/api/allievi/'), headers: _headers, body: jsonEncode(data));
     if (res.statusCode == 201) {

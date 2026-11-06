@@ -166,7 +166,9 @@ class AllievoSerializer(serializers.ModelSerializer):
     comune_nascita = serializers.CharField(required=False, allow_blank=True, default='')
     provincia_nascita = serializers.CharField(required=False, allow_blank=True, default='')
     codice_fiscale = serializers.CharField(required=False, allow_blank=True, default='')
-    numero_tessera = serializers.CharField(required=False, allow_blank=True, default='')
+    numero_tessera_acsi = serializers.CharField(required=False, allow_blank=True, default='')
+    numero_tessera = serializers.CharField(source='numero_tessera_acsi', required=False, allow_blank=True)
+    tessera_associativa = serializers.CharField(required=False, allow_blank=True, default='')
     data_emissione_tessera = serializers.DateField(required=False, allow_null=True)
     stato_tessera = serializers.CharField(read_only=True)
 
@@ -180,7 +182,7 @@ class AllievoSerializer(serializers.ModelSerializer):
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
             'corso_gruppo_whatsapp', 'corso_has_whatsapp',
             'email', 'data_nascita', 'comune_nascita', 'provincia_nascita', 'codice_fiscale',
-            'numero_tessera', 'data_emissione_tessera', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
+            'numero_tessera_acsi', 'numero_tessera', 'tessera_associativa', 'data_emissione_tessera', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
             'created_at', 'updated_at'
         ]
 
@@ -191,8 +193,11 @@ class AllievoSerializer(serializers.ModelSerializer):
                 data['nickname'] = ''
             if 'telefono' in data and data['telefono'] is None:
                 data['telefono'] = ''
-            if 'email' in data and data['email'] is None:
-                data['email'] = ''
+            if 'email' in data:
+                if data['email'] is None:
+                    data['email'] = ''
+                else:
+                    data['email'] = str(data['email']).replace(' ', '').strip().lower()
             if data.get('data_nascita') == '':
                 data['data_nascita'] = None
             if 'comune_nascita' in data and data['comune_nascita'] is None:
@@ -204,15 +209,26 @@ class AllievoSerializer(serializers.ModelSerializer):
                     data['codice_fiscale'] = ''
                 else:
                     data['codice_fiscale'] = str(data['codice_fiscale']).strip().upper()
+            if 'numero_tessera_acsi' in data:
+                if data['numero_tessera_acsi'] is None:
+                    data['numero_tessera_acsi'] = ''
+            elif 'numero_tessera' in data:
+                data['numero_tessera_acsi'] = data['numero_tessera'] or ''
+            if 'tessera_associativa' in data and data['tessera_associativa'] is None:
+                data['tessera_associativa'] = ''
             if data.get('tesserato_altra_asd') in [True, 'true', 'True', 1, '1']:
                 data['tesserato_altra_asd'] = True
+                data['numero_tessera_acsi'] = ''
                 data['numero_tessera'] = ''
                 data['data_emissione_tessera'] = None
             if data.get('data_emissione_tessera') == '':
                 data['data_emissione_tessera'] = None
-            if 'numero_tessera' in data and data['numero_tessera'] is None:
-                data['numero_tessera'] = ''
         return super().to_internal_value(data)
+
+    def create(self, validated_data):
+        if not validated_data.get('tessera_associativa'):
+            validated_data['tessera_associativa'] = Allievo.get_next_tessera_associativa()
+        return super().create(validated_data)
 
     def get_corso_descrizione(self, obj):
         if obj.corso:
