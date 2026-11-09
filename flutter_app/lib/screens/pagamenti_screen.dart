@@ -378,8 +378,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
   }
 
   Future<void> _mostraEmettiRicevutaDialog(Pagamento p) async {
-    final dataPagamentoParsed = DateTime.tryParse(p.dataPagamento);
-    DateTime selectedDate = dataPagamentoParsed ?? DateTime.now();
+    DateTime selectedDate = DateTime.now();
     int currYear = selectedDate.year;
 
     // Recupera contatore per l'anno di riferimento
@@ -401,7 +400,6 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
     final importoController = TextEditingController(text: p.importo.toStringAsFixed(2));
     final noteController = TextEditingController(text: p.note);
     String? selectedAllievoId = p.allievoId.isNotEmpty ? p.allievoId : null;
-    bool apriStampaSubito = true;
 
     await showDialog(
       context: context,
@@ -519,7 +517,7 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                       'Data Emissione: ${DateFormat('dd/MM/yyyy').format(selectedDate)}',
                       style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
-                    subtitle: const Text('Default data del pagamento registrato', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    subtitle: const Text('Default data odierna', style: TextStyle(fontSize: 11, color: Colors.grey)),
                     trailing: TextButton.icon(
                       icon: const Icon(Icons.edit_calendar, size: 18),
                       label: const Text('Cambia'),
@@ -554,17 +552,6 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                       labelText: 'Note (opzionale, es. bonifico, contanti)',
                       prefixIcon: Icon(Icons.notes),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Opzione stampa immediata
-                  CheckboxListTile(
-                    value: apriStampaSubito,
-                    onChanged: (val) => setDlgState(() => apriStampaSubito = val ?? true),
-                    title: const Text('Apri anteprima di stampa subito dopo l\'emissione', style: TextStyle(fontSize: 13)),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
                   ),
                 ],
               ),
@@ -633,10 +620,6 @@ class _PagamentiScreenState extends State<PagamentiScreen> {
                         ),
                       ),
                     );
-
-                    if (apriStampaSubito) {
-                      _stampaRicevutaEmessa(nuovaRicevuta);
-                    }
                   }
                 } else {
                   if (mounted) {

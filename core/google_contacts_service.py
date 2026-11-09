@@ -324,14 +324,14 @@ def sync_allievo_to_google_contacts(allievo, clean_potenziale=False):
 
             config.last_sync_at = timezone.now()
             config.save(update_fields=['last_sync_at'])
-            logger.info(f"Contatto Google creato per {allievo.nome} {allievo.cognome} ({resource_name}) con nota '{note_text}'")
+            logger.info(f"Contatto Google creato per {allievo.nome} {allievo.cognome} ({resource_name}) con nota '{note_to_use}'")
 
             return {
                 'success': True,
                 'action': 'created',
                 'resource_name': resource_name,
-                'note': note_text,
-                'message': f"Contatto '{allievo.nome} {allievo.cognome}' creato in Google Contacts con nota '{note_text}'."
+                'note': note_to_use,
+                'message': f"Contatto '{allievo.nome} {allievo.cognome}' creato in Google Contacts con nota '{note_to_use}'."
             }
         else:
             err_data = create_resp.json() if create_resp.headers.get('content-type', '').startswith('application/json') else {}

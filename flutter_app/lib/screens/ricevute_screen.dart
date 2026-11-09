@@ -778,6 +778,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   }
 
   Future<void> _salvaSuGoogleDrive(Ricevuta r) async {
+    if (r.caricataDrive) return;
     setState(() => _uploadingDriveIds.add(r.id));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -801,6 +802,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
       if (mounted) {
         setState(() => _uploadingDriveIds.remove(r.id));
         if (res['success'] == true) {
+          _loadRicevuteOnly();
           final folderNome = res['folder_nome'] ?? 'Ricevute';
           final link = res['webViewLink']?.toString();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -855,11 +857,45 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
   }
 
   Future<void> _inviaWhatsApp(Ricevuta r) async {
-    final defaultPhone = r.allievoTelefono ?? '';
+    if (r.inviataWhatsapp) return;
+
+    if (_allievi.isEmpty) {
+      try {
+        _allievi = await _api.getAllievi(isProspect: false);
+      } catch (_) {}
+    }
+
+    Allievo? matchedAllievo;
+    if (r.allievoId != null && r.allievoId!.isNotEmpty) {
+      try {
+        matchedAllievo = _allievi.firstWhere((a) => a.id == r.allievoId);
+      } catch (_) {}
+    }
+    if (matchedAllievo == null && r.intestatario.trim().isNotEmpty) {
+      try {
+        matchedAllievo = _allievi.firstWhere(
+          (a) => a.nomeCompleto.trim().toLowerCase() == r.intestatario.trim().toLowerCase(),
+        );
+      } catch (_) {}
+    }
+
+    String nick = '';
+    if (matchedAllievo != null) {
+      nick = matchedAllievo.nickname.trim().isNotEmpty
+          ? matchedAllievo.nickname.trim()
+          : matchedAllievo.nome.trim();
+    } else if (r.allievoNickname != null && r.allievoNickname!.trim().isNotEmpty) {
+      nick = r.allievoNickname!.trim();
+    } else if (r.intestatario.trim().isNotEmpty) {
+      nick = r.intestatario.trim().split(' ').first;
+    }
+
+    String defaultPhone = (r.allievoTelefono ?? '').trim();
+    if (defaultPhone.isEmpty && matchedAllievo != null && matchedAllievo.telefono.isNotEmpty) {
+      defaultPhone = matchedAllievo.telefono.trim();
+    }
     final phoneController = TextEditingController(text: defaultPhone);
-    final nick = (r.allievoNickname != null && r.allievoNickname!.trim().isNotEmpty)
-        ? r.allievoNickname!.trim()
-        : r.intestatario.trim();
+
     String defaultMsg = 'Gentile $nick, in allegato la ricevuta ${r.numeroDisplay} del ${r.data} di € ${r.importo.toStringAsFixed(2)} per "${r.causale}".';
     try {
       final cfg = await _api.getDaemonConfig();
@@ -867,6 +903,8 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
         defaultMsg = cfg.ricevutaTesto
             .replaceAll('{nickname}', nick)
             .replaceAll('<nickname>', nick)
+            .replaceAll('{nome}', matchedAllievo?.nome.trim() ?? nick)
+            .replaceAll('{cognome}', matchedAllievo?.cognome.trim() ?? '')
             .replaceAll('{numero}', r.numeroDisplay)
             .replaceAll('{data}', r.data)
             .replaceAll('{importo}', r.importo.toStringAsFixed(2))
@@ -1035,6 +1073,7 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                       if (ctx.mounted) {
                         if (res['success'] == true) {
                           Navigator.pop(ctx);
+                          _loadRicevuteOnly();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Row(
@@ -1755,6 +1794,58 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                             ),
                           ),
                         ],
+                        if (r.caricataDrive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.blue.shade300),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.cloud_done, size: 12, color: Colors.blue.shade700),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Drive',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (r.inviataWhatsapp) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.teal.shade300),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.done_all, size: 12, color: Color(0xFF25D366)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'WhatsApp',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E7E34),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     subtitle: Column(
@@ -1825,50 +1916,60 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                                   ),
                                   PopupMenuItem(
                                     value: 'drive',
+                                    enabled: !r.caricataDrive,
                                     child: Row(
                                       children: [
-                                        Icon(Icons.add_to_drive, color: Colors.blue.shade700, size: 18),
+                                        Icon(
+                                          r.caricataDrive ? Icons.cloud_done : Icons.add_to_drive,
+                                          color: r.caricataDrive ? Colors.grey : Colors.blue.shade700,
+                                          size: 18,
+                                        ),
                                         const SizedBox(width: 8),
-                                        const Text('Salva in Google Drive'),
+                                        Text(r.caricataDrive ? 'Già in Google Drive' : 'Salva in Google Drive'),
                                       ],
                                     ),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'wa',
+                                    enabled: !r.inviataWhatsapp,
                                     child: Row(
                                       children: [
-                                        Icon(Icons.chat, color: Color(0xFF25D366), size: 18),
+                                        Icon(
+                                          r.inviataWhatsapp ? Icons.done_all : Icons.chat,
+                                          color: r.inviataWhatsapp ? Colors.grey : const Color(0xFF25D366),
+                                          size: 18,
+                                        ),
                                         const SizedBox(width: 8),
-                                        Text('Invia WhatsApp'),
+                                        Text(r.inviataWhatsapp ? 'Già inviata WhatsApp' : 'Invia WhatsApp'),
                                       ],
                                     ),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'pdf',
-                                    child: Row(
+                                    child: const Row(
                                       children: [
                                         Icon(Icons.picture_as_pdf, color: Colors.indigo, size: 18),
-                                        const SizedBox(width: 8),
+                                        SizedBox(width: 8),
                                         Text('Stampa PDF'),
                                       ],
                                     ),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'edit',
-                                    child: Row(
+                                    child: const Row(
                                       children: [
                                         Icon(Icons.edit, color: Colors.blue, size: 18),
-                                        const SizedBox(width: 8),
+                                        SizedBox(width: 8),
                                         Text('Modifica'),
                                       ],
                                     ),
                                   ),
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'delete',
-                                    child: Row(
+                                    child: const Row(
                                       children: [
                                         Icon(Icons.delete, color: Colors.red, size: 18),
-                                        const SizedBox(width: 8),
+                                        SizedBox(width: 8),
                                         Text('Elimina', style: TextStyle(color: Colors.red)),
                                       ],
                                     ),
@@ -1908,14 +2009,26 @@ class _RicevuteScreenState extends State<RicevuteScreen> {
                                       height: 18,
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
-                                  : Icon(Icons.add_to_drive, color: Colors.blue.shade700),
-                              tooltip: 'Salva in Google Drive',
-                              onPressed: _uploadingDriveIds.contains(r.id) ? null : () => _salvaSuGoogleDrive(r),
+                                  : Icon(
+                                      r.caricataDrive ? Icons.cloud_done : Icons.add_to_drive,
+                                      color: r.caricataDrive ? Colors.grey.shade400 : Colors.blue.shade700,
+                                    ),
+                              tooltip: r.caricataDrive
+                                  ? 'Già salvata in Google Drive'
+                                  : 'Salva in Google Drive',
+                              onPressed: (_uploadingDriveIds.contains(r.id) || r.caricataDrive)
+                                  ? null
+                                  : () => _salvaSuGoogleDrive(r),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.chat, color: Color(0xFF25D366)),
-                              tooltip: 'Invia Ricevuta via WhatsApp',
-                              onPressed: () => _inviaWhatsApp(r),
+                              icon: Icon(
+                                r.inviataWhatsapp ? Icons.done_all : Icons.chat,
+                                color: r.inviataWhatsapp ? Colors.grey.shade400 : const Color(0xFF25D366),
+                              ),
+                              tooltip: r.inviataWhatsapp
+                                  ? 'Già inviata via WhatsApp'
+                                  : 'Invia Ricevuta via WhatsApp',
+                              onPressed: r.inviataWhatsapp ? null : () => _inviaWhatsApp(r),
                             ),
                             IconButton(
                               icon: const Icon(Icons.picture_as_pdf, color: Colors.indigo),

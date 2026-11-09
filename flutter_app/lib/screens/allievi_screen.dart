@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
+import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 
 class _UpperCaseTextFormatter extends TextInputFormatter {
   @override
@@ -109,6 +110,27 @@ class _AllieviScreenState extends State<AllieviScreen> {
   String _filterStatoTessera = 'tutti'; // 'tutti', 'ok', 'scaduta', 'non_tesserato'
   bool _syncingWhatsapp = false;
 
+  String get _currentActiveTrimestre {
+    if (_filterNonPagato != 'tutti') {
+      return _filterNonPagato;
+    }
+    final now = DateTime.now();
+    if (now.month >= 9 && now.month <= 12) {
+      return 'T1';
+    } else if (now.month >= 1 && now.month <= 3) {
+      return 'T2';
+    } else if (now.month >= 4 && now.month <= 6) {
+      return 'T3';
+    } else {
+      return 'T1';
+    }
+  }
+
+  bool _allievoHaPagato(Allievo a) {
+    final trim = _currentActiveTrimestre;
+    return _pagamenti.any((p) => p.allievoId == a.id && (p.trimestre == trim || p.trimestre == 'ANNUALE' || p.trimestre == 'ANNO'));
+  }
+
   List<Allievo> get _filteredAllievi {
     return _allievi.where((a) {
       if (_filterWaScuola == 'si' && !a.inGruppoScuolaWhatsapp) return false;
@@ -117,8 +139,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       if (_filterWaCorso == 'no' && a.inGruppoCorsoWhatsapp) return false;
       
       if (_filterNonPagato != 'tutti') {
-        final haPagato = _pagamenti.any((p) => p.allievoId == a.id && p.trimestre == _filterNonPagato);
-        if (haPagato) return false;
+        if (_allievoHaPagato(a)) return false;
       }
 
       if (_filterStatoTessera != 'tutti') {
@@ -537,29 +558,42 @@ class _AllieviScreenState extends State<AllieviScreen> {
       }
     }
     final dataNascitaController = TextEditingController(text: initialDataNascitaStr);
+    // Calcolo locale del progressivo per Tessera Associativa (max + 1)
+    int maxAss = 0;
+    for (final a in _allievi) {
+      final val = a.tesseraAssociativa.trim();
+      final n = int.tryParse(val);
+      if (n != null && n > maxAss) maxAss = n;
+    }
+    String suggeritoAssociativa = (maxAss + 1).toString();
+
     final tesseraAcsiController = TextEditingController(
       text: allievo != null
           ? (allievo.numeroTesseraAcsi.isNotEmpty ? allievo.numeroTesseraAcsi : allievo.numeroTessera)
           : '',
     );
-    String initialTesseraAssociativa = allievo?.tesseraAssociativa ?? '';
-    if (allievo == null) {
-      int maxNum = 0;
-      for (final a in _allievi) {
-        final val = a.tesseraAssociativa.trim();
-        final n = int.tryParse(val);
-        if (n != null && n > maxNum) maxNum = n;
-      }
-      initialTesseraAssociativa = (maxNum + 1).toString();
-    }
-    final tesseraAssociativaController = TextEditingController(text: initialTesseraAssociativa);
-    if (allievo == null) {
-      _api.getNextTesseraAssociativa().then((val) {
-        if (val.isNotEmpty && tesseraAssociativaController.text != val) {
-          tesseraAssociativaController.text = val;
+    final tesseraAssociativaController = TextEditingController(
+      text: allievo?.tesseraAssociativa ?? (allievo == null ? suggeritoAssociativa : ''),
+    );
+
+    StateSetter? dialogSetState;
+    _api.getNextTessere().then((map) {
+      bool changed = false;
+      if (map['next_tessera_associativa'] != null && map['next_tessera_associativa']!.isNotEmpty) {
+        suggeritoAssociativa = map['next_tessera_associativa']!;
+        if (allievo == null && tesseraAssociativaController.text.isEmpty) {
+          tesseraAssociativaController.text = suggeritoAssociativa;
         }
-      });
-    }
+        changed = true;
+      }
+      if (changed && dialogSetState != null) {
+        dialogSetState!(() {});
+      }
+    });
+
+    tesseraAssociativaController.addListener(() {
+      if (dialogSetState != null) dialogSetState!(() {});
+    });
     DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
         ? DateTime.tryParse(allievo.dataEmissioneTessera!)
         : null;
@@ -583,6 +617,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
+          dialogSetState = setDlgState;
           final isMobile = MediaQuery.of(context).size.width < 800;
           final corsiFiltrati = _corsi.where((c) => 
             c.scuolaId == selectedScuolaId && c.livello == livello
@@ -590,6 +625,47 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
           if (selectedCorsoId != null && !corsiFiltrati.any((c) => c.id == selectedCorsoId)) {
             selectedCorsoId = corsiFiltrati.isNotEmpty ? corsiFiltrati.first.id : null;
+          }
+
+          Widget buildSuggerimentoBadge({
+            required String numero,
+            required VoidCallback onUse,
+          }) {
+            return InkWell(
+              onTap: onUse,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade300, width: 1.1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lightbulb_outline, size: 15, color: Colors.blue.shade800),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Numero tessera suggerito: $numero',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade700,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'Usa',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           return PopScope(
@@ -1007,16 +1083,54 @@ class _AllieviScreenState extends State<AllieviScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: tesseraAssociativaController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Tessera Associativa',
-                        hintText: 'Es. 1, 2, 3...',
-                        prefixIcon: Icon(Icons.card_membership_outlined),
-                        helperText: 'Numero progressivo socio interno all\'ASD',
+                    if (!isMobile) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: tesseraAssociativaController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Tessera Associativa',
+                                hintText: 'Es. 1, 2, 3...',
+                                prefixIcon: Icon(Icons.card_membership_outlined),
+                                helperText: 'Numero progressivo socio interno all\'ASD',
+                              ),
+                            ),
+                          ),
+                          if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty) ...[
+                            const SizedBox(width: 10),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: buildSuggerimentoBadge(
+                                numero: suggeritoAssociativa,
+                                onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ),
+                    ] else ...[
+                      TextField(
+                        controller: tesseraAssociativaController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Tessera Associativa',
+                          hintText: 'Es. 1, 2, 3...',
+                          prefixIcon: Icon(Icons.card_membership_outlined),
+                          helperText: 'Numero progressivo socio interno all\'ASD',
+                        ),
+                      ),
+                      if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 4),
+                          child: buildSuggerimentoBadge(
+                            numero: suggeritoAssociativa,
+                            onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 12),
                     Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -1254,36 +1368,40 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF128C7E),
-                            side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      if (!allievo.isTesserato) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF128C7E),
+                              side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.chat, size: 18, color: Color(0xFF25D366)),
+                            label: const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            onPressed: () => _mostraInviaModuloTesseramentoDialog(allievo),
                           ),
-                          icon: const Icon(Icons.chat, size: 18, color: Color(0xFF25D366)),
-                          label: const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          onPressed: () => _mostraInviaModuloTesseramentoDialog(allievo),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.teal.shade800,
-                            side: BorderSide(color: Colors.teal.shade400, width: 1.5),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ],
+                      if (!_allievoHaPagato(allievo)) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.teal.shade800,
+                              side: BorderSide(color: Colors.teal.shade400, width: 1.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.account_balance, size: 18, color: Colors.teal),
+                            label: const Text('Invia Istruzioni di Pagamento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            onPressed: () => _mostraInviaIstruzioniPagamentoDialog(allievo),
                           ),
-                          icon: const Icon(Icons.account_balance, size: 18, color: Colors.teal),
-                          label: const Text('Invia Istruzioni di Pagamento', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          onPressed: () => _mostraInviaIstruzioniPagamentoDialog(allievo),
                         ),
-                      ),
+                      ],
                     ],
                   ],
                 ),
@@ -1482,179 +1600,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
   }
 
   Future<void> _mostraInviaIstruzioniPagamentoDialog(Allievo a) async {
-    final phoneController = TextEditingController(text: a.telefono);
-    final nick = a.nickname.trim().isNotEmpty ? a.nickname.trim() : a.nome.trim();
-    String defaultMsg = 'Ciao $nick, per effettuare il pagamento della quota a favore di TantoTango, puoi effettuare un bonifico.';
-    try {
-      final cfg = await _api.getDaemonConfig();
-      final asd = await _api.getConfigurazioneASD();
-      final iban = asd?.iban.trim() ?? '';
-      final nomeAsd = (asd?.nome != null && asd!.nome.trim().isNotEmpty) ? asd.nome.trim() : 'TantoTango';
-      if (cfg != null && cfg.istruzioniPagamentoTesto.isNotEmpty) {
-        defaultMsg = cfg.istruzioniPagamentoTesto
-            .replaceAll('{iban}', iban)
-            .replaceAll('<iban>', iban)
-            .replaceAll('{nome_asd}', nomeAsd)
-            .replaceAll('<nome_asd>', nomeAsd)
-            .replaceAll('{nickname}', nick)
-            .replaceAll('<nickname>', nick)
-            .replaceAll('{nome}', a.nome)
-            .replaceAll('{cognome}', a.cognome)
-            .replaceAll('{nome_completo}', a.nomeCompleto);
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    final messageController = TextEditingController(text: defaultMsg);
-    bool sending = false;
-    String? localError;
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.account_balance, color: Colors.teal, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Invia Istruzioni di Pagamento', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text(a.nomeCompleto, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (localError != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            localError!,
-                            style: TextStyle(color: Colors.red.shade900, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                TextField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  enabled: !sending,
-                  decoration: InputDecoration(
-                    labelText: 'Numero di Telefono WhatsApp *',
-                    hintText: 'es. 393401234567 o 3401234567',
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    helperText: a.telefono.isNotEmpty
-                        ? 'Numero registrato per l\'allievo'
-                        : 'Inserisci il numero con prefisso internazionale (es. 39...)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: messageController,
-                  maxLines: 7,
-                  minLines: 4,
-                  enabled: !sending,
-                  decoration: InputDecoration(
-                    labelText: 'Messaggio WhatsApp con IBAN',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: sending ? null : () => Navigator.pop(ctx),
-              child: const Text('Annulla'),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF25D366),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: sending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.send, size: 18),
-              label: Text(sending ? 'Invio in corso...' : 'Invia via WhatsApp'),
-              onPressed: sending
-                  ? null
-                  : () async {
-                      final phone = phoneController.text.trim();
-                      if (phone.isEmpty) {
-                        setDlgState(() => localError = 'Inserisci un numero di telefono valido.');
-                        return;
-                      }
-
-                      setDlgState(() {
-                        sending = true;
-                        localError = null;
-                      });
-
-                      final res = await _api.sendIstruzioniPagamentoWhatsApp(
-                        allievoId: a.id,
-                        telefono: phone,
-                        messaggio: messageController.text.trim(),
-                      );
-
-                      if (!ctx.mounted) return;
-                      if (!mounted) return;
-
-                      if (res['success'] == true) {
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(res['message'] ?? 'Istruzioni inviate con successo!'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } else {
-                        setDlgState(() {
-                          sending = false;
-                          localError = res['error'] ?? 'Errore durante l\'invio delle istruzioni.';
-                        });
-                      }
-                    },
-            ),
-          ],
-        ),
-      ),
-    );
+    await mostraInviaIstruzioniPagamentoDialog(context, a, api: _api);
   }
 
   Future<void> _mostraInviaModuloTesseramentoDialog(Allievo a) async {
@@ -2242,32 +2188,30 @@ class _AllieviScreenState extends State<AllieviScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _buildStatoTesseraBadge(a),
-            Chip(
-              label: Text(a.livelloDisplay, style: const TextStyle(fontSize: 11)),
-              visualDensity: VisualDensity.compact,
-            ),
             _buildWhatsappScuolaBadge(a),
             _buildWhatsappCorsoBadge(a),
             if (a.recensione == 'si')
               const Tooltip(message: 'Recensione rilasciata', child: Icon(Icons.star, color: Colors.amber, size: 18)),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF128C7E),
-                side: const BorderSide(color: Color(0xFF25D366)),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                visualDensity: VisualDensity.compact,
+            if (!a.isTesserato)
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF128C7E),
+                  side: const BorderSide(color: Color(0xFF25D366)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
+                label: const Text('Modulo Tesseramento', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () => _mostraInviaModuloTesseramentoDialog(a),
               ),
-              icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
-              label: const Text('Modulo Tesseramento', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              onPressed: () => _mostraInviaModuloTesseramentoDialog(a),
-            ),
-            IconButton(
-              icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
-              tooltip: 'Invia Istruzioni di Pagamento (IBAN)',
-              onPressed: () => _mostraInviaIstruzioniPagamentoDialog(a),
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-            ),
+            if (!_allievoHaPagato(a))
+              IconButton(
+                icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
+                tooltip: 'Invia Istruzioni di Pagamento (IBAN)',
+                onPressed: () => _mostraInviaIstruzioniPagamentoDialog(a),
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
               onPressed: () => _showAddEditDialog(a),

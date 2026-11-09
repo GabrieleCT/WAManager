@@ -263,6 +263,12 @@ class Allievo {
   bool get hasTesseraOk => statoTessera == 'TESSERA OK' || isTesseratoEsterno;
   bool get hasTesseraScaduta => !isTesseratoEsterno && (statoTessera == 'TESSERA SCADUTA' || statoTessera == 'TESSERA SCADUTO');
   bool get isNonTesserato => !isTesseratoEsterno && statoTessera == 'NON TESSERATO';
+  bool get isTesserato =>
+      hasTesseraOk ||
+      isTesseratoEsterno ||
+      numeroTessera.trim().isNotEmpty ||
+      numeroTesseraAcsi.trim().isNotEmpty ||
+      tesseraAssociativa.trim().isNotEmpty;
 
   String get sortName {
     final myName = '$cognome $nome'.toLowerCase().trim();
@@ -812,6 +818,11 @@ class Ricevuta {
   final String? pagamentoId;
   final String? movimentoCassaId;
   final bool inBilancio;
+  final bool inviataWhatsapp;
+  final String? dataInvioWhatsapp;
+  final bool caricataDrive;
+  final String? dataCaricamentoDrive;
+  final String? driveFileId;
   final String numeroDisplay;
   final String createdAt;
   final String updatedAt;
@@ -832,6 +843,11 @@ class Ricevuta {
     this.pagamentoId,
     this.movimentoCassaId,
     this.inBilancio = false,
+    this.inviataWhatsapp = false,
+    this.dataInvioWhatsapp,
+    this.caricataDrive = false,
+    this.dataCaricamentoDrive,
+    this.driveFileId,
     required this.numeroDisplay,
     this.createdAt = '',
     this.updatedAt = '',
@@ -858,6 +874,11 @@ class Ricevuta {
       pagamentoId: json['pagamento'],
       movimentoCassaId: json['movimento_cassa']?.toString(),
       inBilancio: json['in_bilancio'] == true || json['movimento_cassa'] != null,
+      inviataWhatsapp: json['inviata_whatsapp'] == true,
+      dataInvioWhatsapp: json['data_invio_whatsapp'],
+      caricataDrive: json['caricata_drive'] == true,
+      dataCaricamentoDrive: json['data_caricamento_drive'],
+      driveFileId: json['drive_file_id'],
       numeroDisplay: json['numero_display'] ?? 'N. ${json['numero']}/${json['anno']}',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
@@ -876,9 +897,15 @@ class Ricevuta {
     String? allievoId,
     String? allievoNome,
     String? allievoTelefono,
+    String? allievoNickname,
     String? pagamentoId,
     String? movimentoCassaId,
     bool? inBilancio,
+    bool? inviataWhatsapp,
+    String? dataInvioWhatsapp,
+    bool? caricataDrive,
+    String? dataCaricamentoDrive,
+    String? driveFileId,
     String? numeroDisplay,
     String? createdAt,
     String? updatedAt,
@@ -895,9 +922,15 @@ class Ricevuta {
       allievoId: allievoId ?? this.allievoId,
       allievoNome: allievoNome ?? this.allievoNome,
       allievoTelefono: allievoTelefono ?? this.allievoTelefono,
+      allievoNickname: allievoNickname ?? this.allievoNickname,
       pagamentoId: pagamentoId ?? this.pagamentoId,
       movimentoCassaId: movimentoCassaId ?? this.movimentoCassaId,
       inBilancio: inBilancio ?? this.inBilancio,
+      inviataWhatsapp: inviataWhatsapp ?? this.inviataWhatsapp,
+      dataInvioWhatsapp: dataInvioWhatsapp ?? this.dataInvioWhatsapp,
+      caricataDrive: caricataDrive ?? this.caricataDrive,
+      dataCaricamentoDrive: dataCaricamentoDrive ?? this.dataCaricamentoDrive,
+      driveFileId: driveFileId ?? this.driveFileId,
       numeroDisplay: numeroDisplay ?? this.numeroDisplay,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

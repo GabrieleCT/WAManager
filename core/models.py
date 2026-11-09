@@ -236,16 +236,19 @@ class Allievo(models.Model):
     def stato_tessera(self):
         if self.tesserato_altra_asd:
             return 'TESSERATO ESTERNO'
-        if not self.numero_tessera_acsi or not self.numero_tessera_acsi.strip() or not self.data_emissione_tessera:
+        num_acsi = (self.numero_tessera_acsi or '').strip()
+        num_ass = (self.tessera_associativa or '').strip()
+        if not num_acsi and not num_ass:
             return 'NON TESSERATO'
-        from datetime import date, timedelta
-        today = date.today()
-        try:
-            scadenza = self.data_emissione_tessera.replace(year=self.data_emissione_tessera.year + 1)
-        except ValueError:
-            scadenza = self.data_emissione_tessera + timedelta(days=365)
-        if today > scadenza:
-            return 'TESSERA SCADUTA'
+        if self.data_emissione_tessera:
+            from datetime import date, timedelta
+            today = date.today()
+            try:
+                scadenza = self.data_emissione_tessera.replace(year=self.data_emissione_tessera.year + 1)
+            except ValueError:
+                scadenza = self.data_emissione_tessera + timedelta(days=365)
+            if today > scadenza:
+                return 'TESSERA SCADUTA'
         return 'TESSERA OK'
 
     @classmethod
@@ -270,6 +273,33 @@ class Allievo(models.Model):
                     if num > max_num:
                         max_num = num
         return str(max_num + 1)
+
+    @classmethod
+    def get_next_numero_tessera_acsi(cls):
+        """
+        Calcola il prossimo numero progressivo per la tessera ACSI
+        prendendo il massimo numero presente tra le tessere ACSI esistenti.
+        Preserva l'eventuale prefisso alfabetico (es. 'PS7546025' -> 'PS7546026').
+        """
+        import re
+        valori = cls.objects.exclude(numero_tessera_acsi='').exclude(numero_tessera_acsi__isnull=True).values_list('numero_tessera_acsi', flat=True)
+        max_num = 0
+        best_prefix = ''
+        best_len = 0
+        for v in valori:
+            v_str = str(v).strip()
+            m = re.match(r'^([A-Za-z]*)(\d+)$', v_str)
+            if m:
+                prefix, digits = m.groups()
+                n = int(digits)
+                if n > max_num:
+                    max_num = n
+                    best_prefix = prefix
+                    best_len = len(digits)
+        if max_num > 0:
+            next_digits = str(max_num + 1).zfill(best_len)
+            return f"{best_prefix}{next_digits}"
+        return ''
 
     class Meta:
         verbose_name_plural = 'Allievi'
@@ -834,6 +864,11 @@ class Ricevuta(models.Model):
         related_name='ricevute',
         help_text="Movimento di prima nota cassa associato alla ricevuta"
     )
+    inviata_whatsapp = models.BooleanField(default=False, help_text="Indica se la ricevuta è stata inviata via WhatsApp")
+    data_invio_whatsapp = models.DateTimeField(null=True, blank=True, help_text="Data e ora di invio via WhatsApp")
+    caricata_drive = models.BooleanField(default=False, help_text="Indica se la ricevuta è stata caricata su Google Drive")
+    data_caricamento_drive = models.DateTimeField(null=True, blank=True, help_text="Data e ora di caricamento su Google Drive")
+    drive_file_id = models.CharField(max_length=255, blank=True, default='', help_text="ID del file su Google Drive")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

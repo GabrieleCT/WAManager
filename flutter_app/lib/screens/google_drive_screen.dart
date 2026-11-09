@@ -517,7 +517,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
       dialogTitle = 'Seleziona Cartella per i VERBALI';
     }
 
-    final selected = await showDialog<GoogleDriveFolderItem>(
+    final selected = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => GoogleDriveFolderPickerDialog(
@@ -527,7 +527,12 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
       ),
     );
 
-    if (selected != null) {
+    if (selected == 'reconnect') {
+      _startOAuthFlow();
+      return;
+    }
+
+    if (selected != null && selected is GoogleDriveFolderItem) {
       setState(() => _savingSettings = true);
       Map<String, dynamic> updateData;
       String targetLabel;
@@ -936,77 +941,94 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
             if (isConnected) ...[
               // Stato Connesso
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade300),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green.shade700, size: 28),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+              Builder(
+                builder: (context) {
+                  final bool hasError = _config?.lastTestStatus == 'error';
+                  final Color cardBg = hasError ? Colors.amber.shade50 : Colors.green.shade50;
+                  final Color cardBorder = hasError ? Colors.amber.shade400 : Colors.green.shade300;
+                  final IconData cardIcon = hasError ? Icons.warning_amber_rounded : Icons.check_circle;
+                  final Color iconColor = hasError ? Colors.amber.shade800 : Colors.green.shade700;
+                  final String badgeText = hasError ? 'SESSIONE DA RINNOVARE' : 'ATTIVO';
+                  final Color badgeColor = hasError ? Colors.amber.shade800 : Colors.green.shade600;
+                  final Color textColor = hasError ? Colors.amber.shade900 : Colors.green.shade900;
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cardBorder),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(cardIcon, color: iconColor, size: 28),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                userName.isNotEmpty ? userName : 'Account Google Connesso',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green.shade900,
-                                ),
+                              Row(
+                                children: [
+                                  Text(
+                                    userName.isNotEmpty ? userName : 'Account Google Connesso',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: badgeColor,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      badgeText,
+                                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.shade600,
-                                  borderRadius: BorderRadius.circular(10),
+                              if (userEmail.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  userEmail,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: hasError ? Colors.amber.shade900 : Colors.green.shade800,
+                                  ),
                                 ),
-                                child: const Text(
-                                  'ATTIVO',
-                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ],
+                              const SizedBox(height: 8),
+                              if (_config!.lastTestMessage.isNotEmpty)
+                                Text(
+                                  _config!.lastTestMessage,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: hasError ? Colors.red.shade900 : Colors.green.shade900,
+                                    fontWeight: hasError ? FontWeight.w600 : FontWeight.normal,
+                                  ),
                                 ),
-                              ),
+                              if (_config!.lastTestedAt != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Verificato il: ${_formatDate(_config!.lastTestedAt!)}',
+                                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                  ),
+                                ),
                             ],
                           ),
-                          if (userEmail.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              userEmail,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.green.shade800,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          if (_config!.lastTestMessage.isNotEmpty)
-                            Text(
-                              _config!.lastTestMessage,
-                              style: TextStyle(fontSize: 12, color: Colors.green.shade900),
-                            ),
-                          if (_config!.lastTestedAt != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Verificato il: ${_formatDate(_config!.lastTestedAt!)}',
-                                style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                              ),
-                            ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -1030,9 +1052,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                     label: Text(_testingConnection ? 'Test in corso...' : 'Verifica Connessione e Spazio'),
                     onPressed: _testingConnection ? null : _testConnection,
                   ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blue.shade800,
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: (_config?.lastTestStatus == 'error') ? Colors.amber.shade800 : Colors.blue.shade800,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -2252,18 +2275,53 @@ class _GoogleDriveFolderPickerDialogState extends State<GoogleDriveFolderPickerD
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                                Icon(
+                                  (_error!.toLowerCase().contains('scadut') || _error!.toLowerCase().contains('revocat') || _error!.toLowerCase().contains('ricollega'))
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.error_outline,
+                                  size: 48,
+                                  color: (_error!.toLowerCase().contains('scadut') || _error!.toLowerCase().contains('revocat') || _error!.toLowerCase().contains('ricollega'))
+                                      ? Colors.amber.shade800
+                                      : Colors.red,
+                                ),
                                 const SizedBox(height: 12),
                                 Text(
                                   _error!,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(color: Colors.red),
+                                  style: TextStyle(
+                                    color: (_error!.toLowerCase().contains('scadut') || _error!.toLowerCase().contains('revocat') || _error!.toLowerCase().contains('ricollega'))
+                                        ? Colors.amber.shade900
+                                        : Colors.red.shade800,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                                const SizedBox(height: 16),
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Riprova'),
-                                  onPressed: () => _loadFolders(_currentParentId),
+                                const SizedBox(height: 18),
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 8,
+                                  alignment: WrapAlignment.center,
+                                  children: [
+                                    if (_error!.toLowerCase().contains('scadut') || _error!.toLowerCase().contains('revocat') || _error!.toLowerCase().contains('ricollega'))
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.blue.shade700,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        icon: const Icon(Icons.sync, size: 18),
+                                        label: const Text('Ricollega Account Google'),
+                                        onPressed: () {
+                                          Navigator.pop(context, 'reconnect');
+                                        },
+                                      ),
+                                    OutlinedButton.icon(
+                                      icon: const Icon(Icons.refresh, size: 18),
+                                      label: const Text('Riprova'),
+                                      onPressed: () => _loadFolders(_currentParentId),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),

@@ -260,6 +260,23 @@ class ApiService {
     return [];
   }
 
+  Future<Map<String, String>> getNextTessere() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/api/allievi/next-tessera-associativa/'), headers: _headers);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        return {
+          'next_tessera_associativa': data['next_tessera_associativa']?.toString() ?? '1',
+          'next_numero_tessera_acsi': data['next_numero_tessera_acsi']?.toString() ?? '',
+        };
+      }
+    } catch (_) {}
+    return {
+      'next_tessera_associativa': '1',
+      'next_numero_tessera_acsi': '',
+    };
+  }
+
   Future<String> getNextTesseraAssociativa() async {
     try {
       final res = await http.get(Uri.parse('$baseUrl/api/allievi/next-tessera-associativa/'), headers: _headers);

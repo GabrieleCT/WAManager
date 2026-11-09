@@ -544,7 +544,9 @@ class RicevutaSerializer(serializers.ModelSerializer):
             'id', 'numero', 'anno', 'data', 'intestatario',
             'causale', 'importo', 'note', 'allievo', 'allievo_nome',
             'allievo_telefono', 'allievo_nickname', 'pagamento', 'movimento_cassa',
-            'in_bilancio', 'numero_display', 'created_at', 'updated_at'
+            'in_bilancio', 'inviata_whatsapp', 'data_invio_whatsapp',
+            'caricata_drive', 'data_caricamento_drive', 'drive_file_id',
+            'numero_display', 'created_at', 'updated_at'
         ]
         validators = []
 
@@ -556,11 +558,36 @@ class RicevutaSerializer(serializers.ModelSerializer):
     def get_allievo_telefono(self, obj):
         if obj.allievo and obj.allievo.telefono:
             return obj.allievo.telefono
+        if obj.pagamento and obj.pagamento.allievo and obj.pagamento.allievo.telefono:
+            return obj.pagamento.allievo.telefono
+        if obj.intestatario:
+            parts = obj.intestatario.strip().split()
+            if len(parts) >= 2:
+                allievo = Allievo.objects.filter(nome__iexact=parts[0], cognome__iexact=' '.join(parts[1:])).first()
+                if allievo and allievo.telefono:
+                    return allievo.telefono
         return ''
 
     def get_allievo_nickname(self, obj):
         if obj.allievo:
-            return (obj.allievo.nickname or obj.allievo.nome or '').strip()
+            nick = (obj.allievo.nickname or obj.allievo.nome or '').strip()
+            if nick:
+                return nick
+        if obj.pagamento and obj.pagamento.allievo:
+            nick = (obj.pagamento.allievo.nickname or obj.pagamento.allievo.nome or '').strip()
+            if nick:
+                return nick
+        if obj.intestatario:
+            parts = obj.intestatario.strip().split()
+            if len(parts) >= 2:
+                allievo = Allievo.objects.filter(nome__iexact=parts[0], cognome__iexact=' '.join(parts[1:])).first()
+                if allievo:
+                    return (allievo.nickname or allievo.nome or '').strip()
+            elif len(parts) == 1:
+                allievo = Allievo.objects.filter(nome__iexact=parts[0]).first()
+                if allievo:
+                    return (allievo.nickname or allievo.nome or '').strip()
+            return parts[0] if parts else ''
         return ''
 
     def validate(self, attrs):

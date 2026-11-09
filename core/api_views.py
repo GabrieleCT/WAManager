@@ -374,30 +374,33 @@ class AllievoViewSet(viewsets.ModelViewSet):
             from django.db.models import Q
             one_year_ago = date.today() - timedelta(days=365)
             st = stato_tessera.lower().strip()
+            has_num = (~Q(numero_tessera_acsi='') & Q(numero_tessera_acsi__isnull=False)) | (~Q(tessera_associativa='') & Q(tessera_associativa__isnull=False))
+            not_expired = Q(data_emissione_tessera__isnull=True) | Q(data_emissione_tessera__gte=one_year_ago)
             if 'estern' in st:
                 qs = qs.filter(tesserato_altra_asd=True)
             elif 'ok' in st:
                 qs = qs.filter(
-                    Q(tesserato_altra_asd=True) |
-                    (~Q(numero_tessera_acsi='') & Q(numero_tessera_acsi__isnull=False, data_emissione_tessera__isnull=False, data_emissione_tessera__gte=one_year_ago))
+                    Q(tesserato_altra_asd=True) | (has_num & not_expired)
                 )
             elif 'scadut' in st:
-                qs = qs.filter(tesserato_altra_asd=False).exclude(numero_tessera_acsi='').filter(
-                    numero_tessera_acsi__isnull=False,
+                qs = qs.filter(tesserato_altra_asd=False).filter(
+                    has_num,
                     data_emissione_tessera__isnull=False,
                     data_emissione_tessera__lt=one_year_ago
                 )
             elif 'non' in st or 'tesserato' in st:
                 qs = qs.filter(tesserato_altra_asd=False).filter(
-                    Q(numero_tessera_acsi='') | Q(numero_tessera_acsi__isnull=True) | Q(data_emissione_tessera__isnull=True)
+                    (Q(numero_tessera_acsi='') | Q(numero_tessera_acsi__isnull=True)) &
+                    (Q(tessera_associativa='') | Q(tessera_associativa__isnull=True))
                 )
         return qs
 
     @action(detail=False, methods=['get'], url_path='next-tessera-associativa')
     def next_tessera_associativa(self, request):
-        """Restituisce il prossimo numero progressivo per la tessera associativa."""
+        """Restituisce il prossimo numero progressivo per la tessera associativa e per la tessera ACSI."""
         return Response({
-            'next_tessera_associativa': Allievo.get_next_tessera_associativa()
+            'next_tessera_associativa': Allievo.get_next_tessera_associativa(),
+            'next_numero_tessera_acsi': Allievo.get_next_numero_tessera_acsi(),
         })
 
     @action(detail=False, methods=['get'])
@@ -1841,6 +1844,11 @@ class RicevutaViewSet(viewsets.ModelViewSet):
                 supportsAllDrives=True
             ).execute()
 
+            ricevuta.caricata_drive = True
+            ricevuta.data_caricamento_drive = timezone.now()
+            ricevuta.drive_file_id = uploaded_file.get('id', '')
+            ricevuta.save(update_fields=['caricata_drive', 'data_caricamento_drive', 'drive_file_id', 'updated_at'])
+
             return Response({
                 'success': True,
                 'file_id': uploaded_file.get('id'),
@@ -1871,7 +1879,19 @@ class RicevutaViewSet(viewsets.ModelViewSet):
             tmpl = cfg.ricevuta_testo if (cfg and cfg.ricevuta_testo and cfg.ricevuta_testo.strip()) else (
                 "Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per \"{causale}\"."
             )
-            nick = (ricevuta.allievo.nickname or ricevuta.allievo.nome if ricevuta.allievo else ricevuta.intestatario or '').strip()
+            nick = ''
+            if ricevuta.allievo:
+                nick = (ricevuta.allievo.nickname or ricevuta.allievo.nome or '').strip()
+            elif ricevuta.pagamento and ricevuta.pagamento.allievo:
+                nick = (ricevuta.pagamento.allievo.nickname or ricevuta.pagamento.allievo.nome or '').strip()
+            if not nick and ricevuta.intestatario:
+                parts = ricevuta.intestatario.strip().split()
+                if len(parts) >= 2:
+                    matched = Allievo.objects.filter(nome__iexact=parts[0], cognome__iexact=' '.join(parts[1:])).first()
+                    if matched:
+                        nick = (matched.nickname or matched.nome or '').strip()
+                if not nick and parts:
+                    nick = parts[0]
             data_str = ricevuta.data.strftime('%d/%m/%Y') if ricevuta.data else ''
             messaggio = tmpl.replace('{nickname}', nick)\
                             .replace('<nickname>', nick)\
@@ -1906,6 +1926,9 @@ class RicevutaViewSet(viewsets.ModelViewSet):
             )
 
             if res.get('success'):
+                ricevuta.inviata_whatsapp = True
+                ricevuta.data_invio_whatsapp = timezone.now()
+                ricevuta.save(update_fields=['inviata_whatsapp', 'data_invio_whatsapp', 'updated_at'])
                 return Response({
                     'success': True,
                     'message': f"Ricevuta inviata con successo via WhatsApp a {telefono}!"
@@ -1997,12 +2020,17 @@ def get_google_drive_service(config=None):
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
 
+        exp = config.oauth_token_expiry
+        if exp and hasattr(exp, 'tzinfo') and exp.tzinfo is not None:
+            exp = exp.replace(tzinfo=None)
+
         creds = Credentials(
             token=config.oauth_access_token or None,
             refresh_token=config.oauth_refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=config.oauth_client_id,
             client_secret=config.oauth_client_secret,
+            expiry=exp,
             scopes=[
                 'https://www.googleapis.com/auth/drive',
                 'https://www.googleapis.com/auth/userinfo.email',
@@ -2016,13 +2044,20 @@ def get_google_drive_service(config=None):
                     creds.refresh(Request())
                     config.oauth_access_token = creds.token
                     if creds.expiry:
-                        config.oauth_token_expiry = creds.expiry
-                    config.save(update_fields=['oauth_access_token', 'oauth_token_expiry'])
+                        config.oauth_token_expiry = timezone.make_aware(creds.expiry) if timezone.is_naive(creds.expiry) else creds.expiry
+                    config.last_test_status = 'success'
+                    config.save(update_fields=['oauth_access_token', 'oauth_token_expiry', 'last_test_status'])
                 except Exception as e:
                     err_str = str(e)
+                    config.last_test_status = 'error'
+                    config.last_tested_at = timezone.now()
                     if 'invalid_grant' in err_str or 'expired or revoked' in err_str:
-                        raise ValueError("Il token Google OAuth è scaduto o è stato revocato. Clicca su 'Ricollega Account Google' per rinnovare l'accesso.")
-                    raise ValueError(f"Impossibile aggiornare il token di accesso Google: {err_str}")
+                        config.last_test_message = "Token Google scaduto o revocato. Clicca su 'Ricollega Account Google' in Impostazioni per riattivare la sessione."
+                        config.save(update_fields=['last_test_status', 'last_test_message', 'last_tested_at'])
+                        raise ValueError(config.last_test_message)
+                    config.last_test_message = f"Impossibile aggiornare il token di accesso Google: {err_str}"
+                    config.save(update_fields=['last_test_status', 'last_test_message', 'last_tested_at'])
+                    raise ValueError(config.last_test_message)
         return build('drive', 'v3', credentials=creds)
 
     else:
@@ -2527,6 +2562,9 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
                             'parents': f.get('parents', []),
                         }
                 except Exception as e:
+                    err_str = str(e)
+                    if 'invalid_grant' in err_str or 'expired or revoked' in err_str or '401' in err_str:
+                        raise
                     print(f"Avviso cartelle root: {e}")
 
                 # 2. Cartelle condivise (sharedWithMe)
@@ -2547,6 +2585,9 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
                             'parents': f.get('parents', []),
                         }
                 except Exception as e:
+                    err_str = str(e)
+                    if 'invalid_grant' in err_str or 'expired or revoked' in err_str or '401' in err_str:
+                        raise
                     print(f"Avviso cartelle sharedWithMe: {e}")
 
                 # 3. Shared Drives (Team Drives)
@@ -2614,10 +2655,15 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
                 })
 
         except Exception as e:
+            err_str = str(e)
+            if 'invalid_grant' in err_str or 'expired or revoked' in err_str or 'scadut' in err_str:
+                err_msg = "Token Google scaduto o revocato. Clicca su 'Ricollega Account Google' in Impostazioni per riattivare la sessione."
+            else:
+                err_msg = f"Errore durante l'accesso alle cartelle di Google Drive: {err_str}"
             return Response({
                 'success': False,
-                'error': f"Errore durante l'accesso alle cartelle di Google Drive: {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'error': err_msg
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], url_path='create-folder')
     def create_folder(self, request):

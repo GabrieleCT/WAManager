@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
+import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 
 
 
@@ -171,7 +172,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
               children: [
 
                 AlertDialog(
-
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   title: Text(editingProspect == null ? 'Nuovo Prospect' : 'Modifica Prospect'),
 
             content: SingleChildScrollView(
@@ -403,6 +404,23 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                     ),
 
                   ),
+
+                  if (editingProspect != null) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.teal,
+                          side: const BorderSide(color: Colors.teal),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.account_balance, size: 20),
+                        label: const Text('Invia Coordinate Bancarie (IBAN) via WhatsApp', style: TextStyle(fontWeight: FontWeight.w600)),
+                        onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, editingProspect, api: _api),
+                      ),
+                    ),
+                  ],
 
                 ],
 
@@ -1019,6 +1037,11 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
+                                icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
+                                tooltip: 'Invia Coordinate Bancarie (IBAN)',
+                                onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, p, api: _api),
+                              ),
+                              IconButton(
                                 icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                                 tooltip: 'Modifica prospect',
                                 onPressed: () => _showAddEditProspectDialog(p),
@@ -1087,6 +1110,11 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                           spacing: 4,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            IconButton(
+                              icon: const Icon(Icons.account_balance_outlined, size: 18, color: Colors.teal),
+                              tooltip: 'Invia Coordinate Bancarie (IBAN)',
+                              onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, p, api: _api),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
                               tooltip: 'Modifica prospect',

@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
+import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -436,20 +437,27 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final telCtl = TextEditingController();
     final noteCtl = TextEditingController();
     String ruolo = 'leader';
+    bool isSaving = false;
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: Row(
+        builder: (ctx, setDlgState) => PopScope(
+          canPop: !isSaving,
+          child: Stack(
             children: [
-              Icon(Icons.person_add_alt_1, color: Colors.amber.shade800),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Assegna Prospect in Prova', style: TextStyle(fontSize: 16)),
-              ),
-            ],
-          ),
+              AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: [
+                    Icon(Icons.person_add_alt_1, color: Colors.amber.shade800),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('Assegna Prospect in Prova', style: TextStyle(fontSize: 16)),
+                    ),
+                  ],
+                ),
           content: SizedBox(
             width: 480,
             child: SingleChildScrollView(
@@ -540,59 +548,115 @@ class _CorsiScreenState extends State<CorsiScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+            TextButton(onPressed: isSaving ? null : () => Navigator.pop(ctx), child: const Text('Annulla')),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800, foregroundColor: Colors.white),
-              icon: const Icon(Icons.check),
-              label: const Text('Assegna al Corso'),
-              onPressed: () async {
-                if (tabIndex == 0) {
-                  if (selectedProspectId == null) return;
-                  await _api.updateAllievo(selectedProspectId!, {'corso': c.id, 'livello': c.livello});
-                } else {
-                  if (nomeCtl.text.trim().isEmpty || cognomeCtl.text.trim().isEmpty) return;
-                  final data = {
-                    'nome': nomeCtl.text.trim(),
-                    'cognome': cognomeCtl.text.trim(),
-                    'telefono': telCtl.text.trim(),
-                    'ruolo': ruolo,
-                    'livello': c.livello,
-                    'corso': c.id,
-                    'is_prospect': true,
-                    'recensione': 'no',
-                    'note': noteCtl.text.trim().isNotEmpty ? noteCtl.text.trim() : 'Lezione di prova',
-                  };
-                  final res = await _api.createAllievo(data);
-                  if (res == null) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Errore durante la creazione del prospect.'), backgroundColor: Colors.red),
-                      );
-                    }
-                    return;
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                    checkAndShowGoogleSyncError(
-                      context,
-                      entityType: 'Prospect',
-                      name: res.nomeCompleto,
-                      error: res.googleSyncError,
-                    );
-                  }
-                  _fetchIscritti(c.id);
-                  _loadAll();
-                  return;
-                }
-                if (ctx.mounted) Navigator.pop(ctx);
-                _fetchIscritti(c.id);
-                _loadAll();
-              },
+              icon: isSaving
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.check),
+              label: Text(tabIndex == 0 ? 'Assegna al Corso' : 'Salva Prospect'),
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (tabIndex == 0) {
+                        if (selectedProspectId == null) return;
+                        setDlgState(() => isSaving = true);
+                        try {
+                          await _api.updateAllievo(selectedProspectId!, {'corso': c.id, 'livello': c.livello});
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _fetchIscritti(c.id);
+                          _loadAll();
+                        } finally {
+                          if (ctx.mounted && isSaving) {
+                            setDlgState(() => isSaving = false);
+                          }
+                        }
+                      } else {
+                        if (nomeCtl.text.trim().isEmpty || cognomeCtl.text.trim().isEmpty) return;
+                        setDlgState(() => isSaving = true);
+                        try {
+                          final data = {
+                            'nome': nomeCtl.text.trim(),
+                            'cognome': cognomeCtl.text.trim(),
+                            'telefono': telCtl.text.trim(),
+                            'ruolo': ruolo,
+                            'livello': c.livello,
+                            'corso': c.id,
+                            'is_prospect': true,
+                            'recensione': 'no',
+                            'note': noteCtl.text.trim().isNotEmpty ? noteCtl.text.trim() : 'Lezione di prova',
+                          };
+                          final res = await _api.createAllievo(data);
+                          if (res == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Errore durante la creazione del prospect.'), backgroundColor: Colors.red),
+                              );
+                            }
+                            return;
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                            checkAndShowGoogleSyncError(
+                              context,
+                              entityType: 'Prospect',
+                              name: res.nomeCompleto,
+                              error: res.googleSyncError,
+                            );
+                          }
+                          _fetchIscritti(c.id);
+                          _loadAll();
+                        } finally {
+                          if (ctx.mounted && isSaving) {
+                            setDlgState(() => isSaving = false);
+                          }
+                        }
+                      }
+                    },
             ),
           ],
         ),
+        if (isSaving)
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: Card(
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Salvataggio in corso...',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Sincronizzazione contatto in corso...',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   void _showQuickPayDialog(Corso c, Allievo a, String? activeTrimestreCode) {
@@ -699,13 +763,87 @@ class _CorsiScreenState extends State<CorsiScreen> {
     String ruolo = a.ruolo;
     String livello = a.livello;
     bool tesseratoAltraAsd = a.tesseratoAltraAsd;
+    bool isSaving = false;
+
+    int maxAss = 0;
+    final allAllievi = _iscrittiMap.values.expand((x) => x).toList();
+    for (final all in allAllievi) {
+      final val = all.tesseraAssociativa.trim();
+      final n = int.tryParse(val);
+      if (n != null && n > maxAss) maxAss = n;
+    }
+    String suggeritoAssociativa = (maxAss + 1).toString();
+
+    StateSetter? dialogSetState;
+    _api.getNextTessere().then((map) {
+      bool changed = false;
+      if (map['next_tessera_associativa'] != null && map['next_tessera_associativa']!.isNotEmpty) {
+        suggeritoAssociativa = map['next_tessera_associativa']!;
+        changed = true;
+      }
+      if (changed && dialogSetState != null) {
+        dialogSetState!(() {});
+      }
+    });
+
+    tesseraAssociativaController.addListener(() {
+      if (dialogSetState != null) dialogSetState!(() {});
+    });
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
-          return AlertDialog(
-            title: Text(a.isProspect ? 'Modifica Prospect' : 'Modifica Allievo'),
+          dialogSetState = setDlgState;
+          final isMobile = MediaQuery.of(context).size.width < 800;
+
+          Widget buildSuggerimentoBadge({
+            required String numero,
+            required VoidCallback onUse,
+          }) {
+            return InkWell(
+              onTap: onUse,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade300, width: 1.1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lightbulb_outline, size: 15, color: Colors.blue.shade800),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Numero tessera suggerito: $numero',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade700,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'Usa',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return PopScope(
+            canPop: !isSaving,
+            child: Stack(
+              children: [
+                AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Text(a.isProspect ? 'Modifica Prospect' : 'Modifica Allievo'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -753,16 +891,54 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     child: Text('Dati Tessera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: tesseraAssociativaController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Tessera Associativa',
-                      hintText: 'Es. 1, 2, 3...',
-                      prefixIcon: Icon(Icons.card_membership_outlined),
-                      helperText: 'Numero progressivo socio interno all\'ASD',
+                  if (!isMobile) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: tesseraAssociativaController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Tessera Associativa',
+                              hintText: 'Es. 1, 2, 3...',
+                              prefixIcon: Icon(Icons.card_membership_outlined),
+                              helperText: 'Numero progressivo socio interno all\'ASD',
+                            ),
+                          ),
+                        ),
+                        if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty) ...[
+                          const SizedBox(width: 10),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: buildSuggerimentoBadge(
+                              numero: suggeritoAssociativa,
+                              onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
+                  ] else ...[
+                    TextField(
+                      controller: tesseraAssociativaController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Tessera Associativa',
+                        hintText: 'Es. 1, 2, 3...',
+                        prefixIcon: Icon(Icons.card_membership_outlined),
+                        helperText: 'Numero progressivo socio interno all\'ASD',
+                      ),
+                    ),
+                    if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 4),
+                        child: buildSuggerimentoBadge(
+                          numero: suggeritoAssociativa,
+                          onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 8),
                   CheckboxListTile(
                     value: tesseratoAltraAsd,
@@ -897,52 +1073,106 @@ class _CorsiScreenState extends State<CorsiScreen> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
+              TextButton(onPressed: isSaving ? null : () => Navigator.pop(ctx), child: const Text('Annulla')),
               ElevatedButton(
-                onPressed: () async {
-                  if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
-                  final res = await _api.updateAllievo(a.id, {
-                    'nome': nomeController.text.trim(),
-                    'cognome': cognomeController.text.trim(),
-                    'telefono': telefonoController.text.trim(),
-                    'ruolo': ruolo,
-                    'livello': livello,
-                    'note': noteController.text.trim(),
-                    'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
-                    'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
-                    'tessera_associativa': tesseraAssociativaController.text.trim(),
-                    'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
-                        ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
-                        : null,
-                    'tesserato_altra_asd': tesseratoAltraAsd,
-                  });
-                  if (res == null) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Errore durante l'aggiornamento di ${a.isProspect ? 'questo prospect' : 'questo allievo'}."), backgroundColor: Colors.red),
-                      );
-                    }
-                    return;
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                    checkAndShowGoogleSyncError(
-                      context,
-                      entityType: a.isProspect ? 'Prospect' : 'Allievo',
-                      name: res.nomeCompleto,
-                      error: res.googleSyncError,
-                    );
-                  }
-                  _fetchIscritti(c.id);
-                  _loadAll();
-                },
-                child: const Text('Salva'),
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                        setDlgState(() => isSaving = true);
+                        try {
+                          final res = await _api.updateAllievo(a.id, {
+                            'nome': nomeController.text.trim(),
+                            'cognome': cognomeController.text.trim(),
+                            'telefono': telefonoController.text.trim(),
+                            'ruolo': ruolo,
+                            'livello': livello,
+                            'note': noteController.text.trim(),
+                            'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
+                            'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
+                            'tessera_associativa': tesseraAssociativaController.text.trim(),
+                            'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
+                                ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
+                                : null,
+                            'tesserato_altra_asd': tesseratoAltraAsd,
+                          });
+                          if (res == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("Errore durante l'aggiornamento di ${a.isProspect ? 'questo prospect' : 'questo allievo'}."), backgroundColor: Colors.red),
+                              );
+                            }
+                            return;
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted && res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
+                            checkAndShowGoogleSyncError(
+                              context,
+                              entityType: a.isProspect ? 'Prospect' : 'Allievo',
+                              name: res.nomeCompleto,
+                              error: res.googleSyncError,
+                            );
+                          }
+                          _fetchIscritti(c.id);
+                          _loadAll();
+                        } finally {
+                          if (ctx.mounted && isSaving) {
+                            setDlgState(() => isSaving = false);
+                          }
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Salva'),
               ),
             ],
-          );
-        },
+          ),
+          if (isSaving)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Salvataggio in corso...',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Sincronizzazione contatto in corso...',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
+  },
+),
+);
   }
 
   void _confirmDeleteOrRemoveAllievo(Corso c, Allievo a) {
@@ -1846,6 +2076,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                       _fetchIscritti(c.id);
                                       _loadAll();
                                     }
+                                  } else if (value == 'iban') {
+                                    mostraInviaIstruzioniPagamentoDialog(context, p, api: _api);
                                   } else if (value == 'edit') {
                                     _showEditAllievoDialog(c, p);
                                   } else if (value == 'delete') {
@@ -1853,6 +2085,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   }
                                 },
                                 itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                    value: 'iban',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.account_balance, size: 18, color: Colors.teal),
+                                        SizedBox(width: 8),
+                                        Text('Invia Istruzioni Pagamento (IBAN)'),
+                                      ],
+                                    ),
+                                  ),
                                   PopupMenuItem(
                                     value: 'convert',
                                     child: Row(
@@ -1969,6 +2211,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                         }
                                       },
                                     ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.account_balance_outlined, size: 18, color: Colors.teal),
+                                    tooltip: 'Invia Istruzioni Pagamento (IBAN) a ${p.nomeCompleto}',
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, p, api: _api),
                                   ),
                                   const SizedBox(width: 4),
                                   IconButton(
