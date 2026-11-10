@@ -6,7 +6,7 @@ from django.db.models import Q
 from django.template import Template, Context
 from .models import (
     Lezione, Corso, Allievo, Presenza, Match, MessageTemplate, MessageLog, RecurringSchedule,
-    SondaggioMattutinoConfig
+    SondaggioMattutinoConfig, GeminiLog
 )
 from .wa_client import send_whatsapp_message
 from .services import generate_matches
@@ -281,7 +281,7 @@ def invia_sondaggio_mattutino_giornaliero():
                 Presenza.objects.get_or_create(
                     lezione=lezione,
                     allievo=allievo,
-                    defaults={'presente': False, 'fonte': 'whatsapp', 'is_jolly': False}
+                    defaults={'presente': None, 'fonte': 'whatsapp', 'is_jolly': False}
                 )
 
         orario_str = corso.orario.strftime('%H:%M') if corso.orario else ''
@@ -791,11 +791,21 @@ def start_sollecito_checker_daemon():
 
     def _loop():
         time.sleep(20)  # Breve attesa iniziale
+        try:
+            GeminiLog.cleanup_expired()
+        except Exception as e:
+            print(f"[Demone Retention GeminiLog] Errore avvio pulizia: {e}")
+
         while True:
             try:
                 controlla_e_invia_solleciti_mancata_risposta()
             except Exception as e:
                 print(f"[Demone Solleciti Mancata Risposta] Errore: {e}")
+            try:
+                # Retention massima 12 ore: pulizia automatica dei log obsoleti
+                GeminiLog.cleanup_expired()
+            except Exception as e:
+                print(f"[Demone Retention GeminiLog] Errore pulizia: {e}")
             time.sleep(60)   # Controlla ogni minuto
 
     t = threading.Thread(target=_loop, daemon=True, name="SollecitoMancataRispostaDaemon")

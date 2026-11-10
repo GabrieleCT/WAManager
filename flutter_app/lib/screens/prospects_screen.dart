@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
+import '../widgets/convert_prospect_dialog.dart';
 
 
 
@@ -626,43 +627,16 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
               label: const Text('Conferma Iscrizione'),
 
               onPressed: () async {
-
                 if (selectedCorsoId == null) return;
-
-                final res = await _api.convertProspectToStudent(prospect.id, selectedCorsoId!);
-
-                if (ctx.mounted) Navigator.pop(ctx);
-
-                if (res != null && mounted) {
-
-                  if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-
-                    checkAndShowGoogleSyncError(
-
-                      context,
-
-                      entityType: 'Allievo',
-
-                      name: res.nomeCompleto,
-
-                      error: res.googleSyncError,
-
-                    );
-
-                  } else {
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-
-                      SnackBar(content: Text('${prospect.nomeCompleto} iscritto al corso con successo!')),
-
-                    );
-
-                  }
-
-                }
-
-                _loadData();
-
+                Navigator.pop(ctx);
+                final corsoObj = _corsi.where((c) => c.id == selectedCorsoId).firstOrNull;
+                await mostraConversioneAllievoDialog(
+                  context,
+                  prospect: prospect,
+                  corsoId: selectedCorsoId!,
+                  corsoNome: corsoObj != null ? '${corsoObj.scuolaNome} ${corsoObj.livelloDisplay}' : null,
+                  onCompleted: () => _loadData(),
+                );
               },
 
             ),

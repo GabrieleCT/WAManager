@@ -757,7 +757,18 @@ app.post('/api/groups/:groupId/participants/add', async (req, res) => {
         const userJid = `${phoneDigits}@s.whatsapp.net`;
 
         logToFile(`Aggiunta utente ${userJid} al gruppo ${targetJid}...`);
-        const result = await sock.groupParticipantsUpdate(targetJid, [userJid], 'add');
+        let result;
+        try {
+            result = await sock.groupParticipantsUpdate(targetJid, [userJid], 'add');
+        } catch (err) {
+            if (String(err.message || err).includes('rate-overlimit')) {
+                logToFile(`Rate-overlimit rilevato per ${userJid} in ${targetJid}, attesa 2.5s e retry...`);
+                await new Promise(r => setTimeout(r, 2500));
+                result = await sock.groupParticipantsUpdate(targetJid, [userJid], 'add');
+            } else {
+                throw err;
+            }
+        }
         logToFile(`Risultato groupParticipantsUpdate: ${JSON.stringify(result)}`);
 
         const item = result && result[0] ? result[0] : null;

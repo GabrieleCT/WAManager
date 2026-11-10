@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 import os
+import re
 import datetime
 from django.utils import timezone
 from django.db import transaction
@@ -270,7 +271,8 @@ class AllievoViewSet(viewsets.ModelViewSet):
         """Sincronizza manualmente il singolo allievo/prospect in Google Contacts."""
         allievo = self.get_object()
         from .google_contacts_service import sync_allievo_to_google_contacts
-        res = sync_allievo_to_google_contacts(allievo)
+        clean_potenziale = request.data.get('clean_potenziale', not allievo.is_prospect)
+        res = sync_allievo_to_google_contacts(allievo, clean_potenziale=clean_potenziale)
         return Response(res)
 
     @action(detail=True, methods=['post'], url_path='cleanup-step')
@@ -409,6 +411,108 @@ class AllievoViewSet(viewsets.ModelViewSet):
         prospects = self.queryset.filter(is_prospect=True)
         serializer = self.get_serializer(prospects, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='convert-status')
+    def convert_status(self, request, pk=None):
+        """Step 1: Aggiornamento status da prospect ad allievo effettivo."""
+        try:
+            allievo = self.get_object()
+            corso_id = request.data.get('corso_id')
+            if not corso_id:
+                return Response({'success': False, 'error': 'corso_id obbligatorio per la conversione.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            corso = Corso.objects.filter(id=corso_id).first()
+            if not corso:
+                return Response({'success': False, 'error': 'Corso non trovato.'}, status=status.HTTP_404_NOT_FOUND)
+
+            allievo.corso = corso
+            allievo.livello = corso.livello
+            allievo.is_prospect = False
+
+            if allievo.note and re.search(r'\bpotenzial[ei]\b', allievo.note, flags=re.IGNORECASE):
+                from .google_contacts_service import remove_potenziale_from_note
+                allievo.note = remove_potenziale_from_note(allievo.note)
+
+            allievo.save()
+            return Response({
+                'success': True,
+                'message': f"Status aggiornato: {allievo.nome} {allievo.cognome} è ora allievo effettivo del corso {corso.nome}.",
+                'allievo': self.get_serializer(allievo).data
+            })
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='add-to-whatsapp-groups')
+    def add_to_whatsapp_groups(self, request, pk=None):
+        """Step 2: Inserimento nei gruppi WhatsApp di corso e scuola."""
+        allievo = self.get_object()
+        if not allievo.telefono or allievo.telefono.strip().upper() == 'TBD':
+            return Response({
+                'success': True,
+                'warning': True,
+                'message': "Nessun numero di telefono WhatsApp registrato: inserimento nei gruppi saltato."
+            })
+
+        status_info = get_whatsapp_status()
+        if status_info.get('status') != 'CONNECTED':
+            return Response({
+                'success': True,
+                'warning': True,
+                'message': f"Client WhatsApp non connesso ({status_info.get('status')}): inserimento nei gruppi saltato."
+            })
+
+        corso = allievo.corso
+        scuola = corso.scuola if corso else None
+        details = []
+
+        if corso and corso.gruppo_whatsapp:
+            try:
+                res_corso = add_group_participant(corso.gruppo_whatsapp, allievo.telefono)
+                if res_corso.get('success'):
+                    allievo.in_gruppo_corso_whatsapp = True
+                    allievo.save(update_fields=['in_gruppo_corso_whatsapp'])
+                    details.append("Aggiunto al gruppo Corso")
+                else:
+                    err = res_corso.get('error', 'richiesta inviata')
+                    details.append(f"Corso: {err}")
+            except Exception as e:
+                details.append(f"Corso: {e}")
+        else:
+            details.append("Corso: nessun gruppo WhatsApp associato")
+
+        if scuola and scuola.gruppo_whatsapp:
+            if corso and scuola.gruppo_whatsapp == corso.gruppo_whatsapp:
+                if allievo.in_gruppo_corso_whatsapp:
+                    allievo.in_gruppo_scuola_whatsapp = True
+                    allievo.save(update_fields=['in_gruppo_scuola_whatsapp'])
+                details.append("Scuola: coincide con il corso")
+            else:
+                import time
+                time.sleep(2.0)  # Pausa precauzionale per evitare il rate-limit (rate-overlimit) di WhatsApp
+                try:
+                    res_scuola = add_group_participant(scuola.gruppo_whatsapp, allievo.telefono)
+                    # Se incappa in rate-overlimit, attendi 2.5s e ritenta una volta
+                    if not res_scuola.get('success') and 'rate' in str(res_scuola.get('error', '')).lower():
+                        time.sleep(2.5)
+                        res_scuola = add_group_participant(scuola.gruppo_whatsapp, allievo.telefono)
+
+                    if res_scuola.get('success'):
+                        allievo.in_gruppo_scuola_whatsapp = True
+                        allievo.save(update_fields=['in_gruppo_scuola_whatsapp'])
+                        details.append("Aggiunto al gruppo Scuola")
+                    else:
+                        err = res_scuola.get('error', 'richiesta inviata')
+                        details.append(f"Scuola: {err}")
+                except Exception as e:
+                    details.append(f"Scuola: {e}")
+        else:
+            details.append("Scuola: nessun gruppo WhatsApp associato")
+
+        return Response({
+            'success': True,
+            'message': " • ".join(details),
+            'details': details
+        })
 
     @action(detail=True, methods=['post'])
     def convert_to_student(self, request, pk=None):
@@ -854,9 +958,9 @@ class AllievoViewSet(viewsets.ModelViewSet):
         """
         allievo = self.get_object()
         telefono = request.data.get('telefono') or allievo.telefono
-        if not telefono:
+        if not telefono or str(telefono).strip().upper() == 'TBD':
             return Response(
-                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono associato."},
+                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -918,9 +1022,9 @@ class AllievoViewSet(viewsets.ModelViewSet):
         """
         allievo = self.get_object()
         telefono = request.data.get('telefono') or allievo.telefono
-        if not telefono:
+        if not telefono or str(telefono).strip().upper() == 'TBD':
             return Response(
-                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono associato."},
+                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1135,7 +1239,7 @@ class PresenzaViewSet(viewsets.ModelViewSet):
         updated_count = 0
         for item in presenze_data:
             allievo_id = item.get('allievo_id')
-            presente_val = item.get('presente', False)
+            presente_val = item.get('presente', None)
             fonte_val = item.get('fonte', 'manuale')
             if allievo_id:
                 Presenza.objects.update_or_create(
@@ -1556,11 +1660,16 @@ class SondaggioMattutinoViewSet(viewsets.ModelViewSet):
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class GeminiLogViewSet(viewsets.ModelViewSet):
-    queryset = GeminiLog.objects.all().order_by('-timestamp')
     serializer_class = GeminiLogSerializer
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['esito_interpretato', 'allievo', 'lezione', 'corso']
     ordering_fields = ['timestamp']
+
+    def get_queryset(self):
+        # Retention massima 12 ore: pulizia automatica prima della risposta
+        GeminiLog.cleanup_expired()
+        cutoff = timezone.now() - datetime.timedelta(hours=GeminiLog.RETENTION_HOURS)
+        return GeminiLog.objects.filter(timestamp__gte=cutoff).order_by('-timestamp')
 
     @action(detail=False, methods=['delete', 'post'], url_path='clear-all')
     def clear_all(self, request):
@@ -2722,7 +2831,9 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             'folder_tessere_id',
             'folder_tessere_nome',
             'folder_verbali_id',
-            'folder_verbali_nome'
+            'folder_verbali_nome',
+            'folder_libro_soci_id',
+            'folder_libro_soci_nome'
         ]
         for f in folder_fields:
             if f in request.data:

@@ -6,6 +6,7 @@ import '../services/pdf_report_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
+import '../widgets/convert_prospect_dialog.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -2059,23 +2060,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 constraints: const BoxConstraints(),
                                 onSelected: (value) async {
                                   if (value == 'convert') {
-                                    final res = await _api.convertProspectToStudent(p.id, c.id);
-                                    if (res != null && mounted) {
-                                      if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                                        checkAndShowGoogleSyncError(
-                                          context,
-                                          entityType: 'Allievo',
-                                          name: res.nomeCompleto,
-                                          error: res.googleSyncError,
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
-                                        );
-                                      }
-                                      _fetchIscritti(c.id);
-                                      _loadAll();
-                                    }
+                                    await mostraConversioneAllievoDialog(
+                                      context,
+                                      prospect: p,
+                                      corsoId: c.id,
+                                      corsoNome: '${c.scuolaNome} ${c.livello}',
+                                      onCompleted: () {
+                                        _fetchIscritti(c.id);
+                                        _loadAll();
+                                      },
+                                    );
                                   } else if (value == 'iban') {
                                     mostraInviaIstruzioniPagamentoDialog(context, p, api: _api);
                                   } else if (value == 'edit') {
@@ -2192,23 +2186,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                       icon: const Icon(Icons.school, size: 15),
                                       label: const Text('Converti ad Allievo', style: TextStyle(fontSize: 11)),
                                       onPressed: () async {
-                                        final res = await _api.convertProspectToStudent(p.id, c.id);
-                                        if (res != null && mounted) {
-                                          if (res.googleSyncError != null && res.googleSyncError!.isNotEmpty) {
-                                            checkAndShowGoogleSyncError(
-                                              context,
-                                              entityType: 'Allievo',
-                                              name: res.nomeCompleto,
-                                              error: res.googleSyncError,
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('${p.nomeCompleto} iscritto al corso come allievo effettivo!')),
-                                            );
-                                          }
-                                          _fetchIscritti(c.id);
-                                          _loadAll();
-                                        }
+                                        await mostraConversioneAllievoDialog(
+                                          context,
+                                          prospect: p,
+                                          corsoId: c.id,
+                                          corsoNome: '${c.scuolaNome} ${c.livello}',
+                                          onCompleted: () {
+                                            _fetchIscritti(c.id);
+                                            _loadAll();
+                                          },
+                                        );
                                       },
                                     ),
                                   ),

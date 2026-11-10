@@ -35,6 +35,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
   final TextEditingController _folderTessereNomeController = TextEditingController();
   final TextEditingController _folderVerbaliIdController = TextEditingController();
   final TextEditingController _folderVerbaliNomeController = TextEditingController();
+  final TextEditingController _folderLibroSociIdController = TextEditingController();
+  final TextEditingController _folderLibroSociNomeController = TextEditingController();
 
   static const String _uriLocalhost = 'http://localhost:8082/api/google-drive/oauth-callback/';
   static const String _uri127 = 'http://127.0.0.1:8082/api/google-drive/oauth-callback/';
@@ -56,6 +58,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     _folderTessereNomeController.dispose();
     _folderVerbaliIdController.dispose();
     _folderVerbaliNomeController.dispose();
+    _folderLibroSociIdController.dispose();
+    _folderLibroSociNomeController.dispose();
     super.dispose();
   }
 
@@ -77,6 +81,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             _folderTessereNomeController.text = config.folderTessereNome;
             _folderVerbaliIdController.text = config.folderVerbaliId;
             _folderVerbaliNomeController.text = config.folderVerbaliNome;
+            _folderLibroSociIdController.text = config.folderLibroSociId;
+            _folderLibroSociNomeController.text = config.folderLibroSociNome;
           }
           _loading = false;
         });
@@ -502,19 +508,26 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isRicevute = targetType == 'ricevute';
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
+    final isLibroSoci = targetType == 'libro_soci';
 
     final String? currentFolderId = isRicevute
         ? _config?.folderRicevuteId
-        : (isTessere ? _config?.folderTessereId : _config?.folderVerbaliId);
+        : (isTessere
+            ? _config?.folderTessereId
+            : (isLibroSoci ? _config?.folderLibroSociId : _config?.folderVerbaliId));
     final String? currentFolderName = isRicevute
         ? _config?.folderRicevuteNome
-        : (isTessere ? _config?.folderTessereNome : _config?.folderVerbaliNome);
+        : (isTessere
+            ? _config?.folderTessereNome
+            : (isLibroSoci ? _config?.folderLibroSociNome : _config?.folderVerbaliNome));
 
     String dialogTitle = 'Seleziona Cartella per le RICEVUTE';
     if (isTessere) {
       dialogTitle = 'Seleziona Cartella per le TESSERE';
     } else if (isVerbali) {
-      dialogTitle = 'Seleziona Cartella per i VERBALI';
+      dialogTitle = 'Seleziona Cartella per VERBALE DI RENDICONTO ECONOMICO';
+    } else if (isLibroSoci) {
+      dialogTitle = 'Seleziona Cartella per il LIBRO SOCI';
     }
 
     final selected = await showDialog<dynamic>(
@@ -548,12 +561,18 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           'folder_tessere_nome': selected.name,
         };
         targetLabel = 'Tessere';
+      } else if (isLibroSoci) {
+        updateData = {
+          'folder_libro_soci_id': selected.id,
+          'folder_libro_soci_nome': selected.name,
+        };
+        targetLabel = 'Libro Soci';
       } else {
         updateData = {
           'folder_verbali_id': selected.id,
           'folder_verbali_nome': selected.name,
         };
-        targetLabel = 'Verbali';
+        targetLabel = 'Verbale di Rendiconto Economico';
       }
 
       final res = await _api.updateGoogleDriveConfig(updateData);
@@ -585,6 +604,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isRicevute = targetType == 'ricevute';
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
+    final isLibroSoci = targetType == 'libro_soci';
 
     String targetLabel = 'Ricevute';
     String targetArticle = 'le ricevute';
@@ -592,8 +612,11 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
       targetLabel = 'Tessere';
       targetArticle = 'le tessere';
     } else if (isVerbali) {
-      targetLabel = 'Verbali';
-      targetArticle = 'i verbali';
+      targetLabel = 'Verbale di Rendiconto Economico';
+      targetArticle = 'il verbale di rendiconto economico';
+    } else if (isLibroSoci) {
+      targetLabel = 'Libro Soci';
+      targetArticle = 'il libro soci';
     }
 
     final conf = await showDialog<bool>(
@@ -621,6 +644,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         updateData = {'folder_ricevute_id': '', 'folder_ricevute_nome': ''};
       } else if (isTessere) {
         updateData = {'folder_tessere_id': '', 'folder_tessere_nome': ''};
+      } else if (isLibroSoci) {
+        updateData = {'folder_libro_soci_id': '', 'folder_libro_soci_nome': ''};
       } else {
         updateData = {'folder_verbali_id': '', 'folder_verbali_nome': ''};
       }
@@ -1545,7 +1570,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare ricevute, tessere e verbali.',
+              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare ricevute, tessere, verbali di rendiconto economico e libro soci.',
               style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -1578,15 +1603,29 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
 
             const SizedBox(height: 20),
 
-            // Card Cartella Verbali
+            // Card Cartella Verbale di Rendiconto Economico
             _buildFolderCard(
-              title: 'Cartella Verbali',
-              description: 'Cartella Google Drive per l\'archiviazione dei verbali di assemblea e direttivo.',
+              title: 'Cartella Verbale di Rendiconto Economico',
+              description: 'Cartella Google Drive per l\'archiviazione dei verbali di assemblea e rendiconto economico.',
               icon: Icons.article_outlined,
               color: Colors.amber,
               folderId: _config?.folderVerbaliId ?? '',
               folderName: _config?.folderVerbaliNome ?? '',
               targetType: 'verbali',
+              isConfigured: isConfigured,
+            ),
+
+            const SizedBox(height: 20),
+
+            // Card Cartella Libro Soci
+            _buildFolderCard(
+              title: 'Cartella Libro Soci',
+              description: 'Cartella Google Drive per l\'archiviazione e l\'esportazione del Libro Soci.',
+              icon: Icons.menu_book_outlined,
+              color: Colors.indigo,
+              folderId: _config?.folderLibroSociId ?? '',
+              folderName: _config?.folderLibroSociNome ?? '',
+              targetType: 'libro_soci',
               isConfigured: isConfigured,
             ),
           ],

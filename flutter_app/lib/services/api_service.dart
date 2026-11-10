@@ -47,6 +47,20 @@ class ApiService {
   }
   Map<String, String> getHeaders() => _headers;
 
+  Map<String, dynamic> _safeJsonMap(http.Response res) {
+    try {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return {'success': false, 'error': 'Risposta non valida dal server'};
+    } catch (_) {
+      final raw = utf8.decode(res.bodyBytes);
+      final preview = raw.length > 200 ? '${raw.substring(0, 200)}...' : raw;
+      return {'success': false, 'error': 'Errore HTTP ${res.statusCode}: $preview'};
+    }
+  }
+
   Future<bool> login(String username, String password) async {
     try {
       final url = Uri.parse('$baseUrl/api/auth/login/');
@@ -340,6 +354,31 @@ class ApiService {
       return Allievo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>> convertProspectStatus(String allievoId, String corsoId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/convert-status/'),
+        headers: _headers,
+        body: jsonEncode({'corso_id': corsoId}),
+      );
+      return _safeJsonMap(res);
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> addAllievoToWhatsAppGroups(String allievoId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/add-to-whatsapp-groups/'),
+        headers: _headers,
+      );
+      return _safeJsonMap(res);
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
   }
 
   Future<bool> setPartner(String allievoId, String? partnerId) async {
@@ -1354,10 +1393,11 @@ class ApiService {
     return {'success': false, 'error': res.body};
   }
 
-  Future<Map<String, dynamic>> syncAllievoToGoogleContacts(String allievoId) async {
+  Future<Map<String, dynamic>> syncAllievoToGoogleContacts(String allievoId, {bool cleanPotenziale = false}) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/allievi/$allievoId/sync-google-contacts/'),
       headers: _headers,
+      body: jsonEncode({'clean_potenziale': cleanPotenziale}),
     );
     if (res.statusCode == 200) {
       return jsonDecode(utf8.decode(res.bodyBytes));
@@ -1523,18 +1563,19 @@ class ApiService {
     required String telefono,
     String? messaggio,
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/allievi/$allievoId/send-istruzioni-pagamento/'),
-      headers: _headers,
-      body: jsonEncode({
-        'telefono': telefono,
-        if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
-      }),
-    );
-    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
-      return jsonDecode(utf8.decode(res.bodyBytes));
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/send-istruzioni-pagamento/'),
+        headers: _headers,
+        body: jsonEncode({
+          'telefono': telefono,
+          if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
+        }),
+      );
+      return _safeJsonMap(res);
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
-    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
 
   Future<Map<String, dynamic>> sendModuloTesseramentoWhatsApp({
@@ -1542,18 +1583,19 @@ class ApiService {
     required String telefono,
     String? messaggio,
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/allievi/$allievoId/send-modulo-tesseramento/'),
-      headers: _headers,
-      body: jsonEncode({
-        'telefono': telefono,
-        if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
-      }),
-    );
-    if (res.statusCode == 200 || res.statusCode == 400 || res.statusCode == 500) {
-      return jsonDecode(utf8.decode(res.bodyBytes));
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/send-modulo-tesseramento/'),
+        headers: _headers,
+        body: jsonEncode({
+          'telefono': telefono,
+          if (messaggio != null && messaggio.isNotEmpty) 'messaggio': messaggio,
+        }),
+      );
+      return _safeJsonMap(res);
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
-    return {'success': false, 'error': 'Errore HTTP ${res.statusCode}'};
   }
 
   // ─── Bilancio: Prima Nota Cassa ────────────────────────────

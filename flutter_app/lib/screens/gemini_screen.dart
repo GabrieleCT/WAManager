@@ -648,9 +648,26 @@ class _GeminiScreenState extends State<GeminiScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Log totali registrati: ${_logs.length} (mostrati: ${filteredLogs.length})',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                    Row(
+                      children: [
+                        Text(
+                          'Log registrati (ultime 12h): ${_logs.length} (mostrati: ${filteredLogs.length})',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.blueGrey.shade200),
+                          ),
+                          child: Text(
+                            'Retention 12 ore',
+                            style: TextStyle(fontSize: 10, color: Colors.blueGrey.shade700, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
                     ),
                     if (_selectedCorsoId != null || _selectedEsito != null || _searchQuery.isNotEmpty)
                       InkWell(

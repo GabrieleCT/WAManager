@@ -998,6 +998,8 @@ class GoogleDriveConfig {
   final String folderTessereNome;
   final String folderVerbaliId;
   final String folderVerbaliNome;
+  final String folderLibroSociId;
+  final String folderLibroSociNome;
   final bool isActive;
   final String? lastTestedAt;
   final String lastTestStatus;
@@ -1027,6 +1029,8 @@ class GoogleDriveConfig {
     this.folderTessereNome = '',
     this.folderVerbaliId = '',
     this.folderVerbaliNome = '',
+    this.folderLibroSociId = '',
+    this.folderLibroSociNome = '',
     required this.isActive,
     this.lastTestedAt,
     required this.lastTestStatus,
@@ -1060,6 +1064,8 @@ class GoogleDriveConfig {
       folderTessereNome: json['folder_tessere_nome'] ?? '',
       folderVerbaliId: json['folder_verbali_id'] ?? '',
       folderVerbaliNome: json['folder_verbali_nome'] ?? '',
+      folderLibroSociId: json['folder_libro_soci_id'] ?? '',
+      folderLibroSociNome: json['folder_libro_soci_nome'] ?? '',
       isActive: json['is_active'] ?? true,
       lastTestedAt: json['last_tested_at'],
       lastTestStatus: json['last_test_status'] ?? '',

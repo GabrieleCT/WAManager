@@ -1,5 +1,6 @@
 import uuid
 import re
+import datetime
 from django.db import models
 from django.db.models.signals import pre_delete, pre_save, post_save, post_delete
 from django.dispatch import receiver
@@ -353,14 +354,14 @@ class Allievo(models.Model):
                 Presenza.objects.get_or_create(
                     lezione=lez,
                     allievo=self,
-                    defaults={'presente': False, 'fonte': 'manuale', 'is_jolly': False}
+                    defaults={'presente': None, 'fonte': 'manuale', 'is_jolly': False}
                 )
         elif not vecchio_corso_id and self.corso_id:
             for lez in Lezione.objects.filter(corso_id=self.corso_id):
                 Presenza.objects.get_or_create(
                     lezione=lez,
                     allievo=self,
-                    defaults={'presente': False, 'fonte': 'manuale', 'is_jolly': False}
+                    defaults={'presente': None, 'fonte': 'manuale', 'is_jolly': False}
                 )
         elif vecchio_corso_id and not self.corso_id:
             Presenza.objects.filter(
@@ -764,6 +765,8 @@ class SondaggioMattutinoConfig(models.Model):
         return f"Sondaggio {c_str} ({self.orario}) - Attivo: {self.is_active}"
 
 class GeminiLog(models.Model):
+    RETENTION_HOURS = 12
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     timestamp = models.DateTimeField(auto_now_add=True)
     corso = models.ForeignKey(Corso, on_delete=models.SET_NULL, null=True, blank=True, related_name='gemini_logs')
@@ -782,6 +785,16 @@ class GeminiLog(models.Model):
         verbose_name = "Log Gemini"
         verbose_name_plural = "Log Gemini"
         ordering = ['-timestamp']
+
+    @classmethod
+    def cleanup_expired(cls):
+        """
+        Cancella automaticamente tutti i log più vecchi di RETENTION_HOURS (12 ore).
+        Restituisce il numero di record eliminati.
+        """
+        cutoff = timezone.now() - datetime.timedelta(hours=cls.RETENTION_HOURS)
+        deleted_count, _ = cls.objects.filter(timestamp__lt=cutoff).delete()
+        return deleted_count
 
     def __str__(self):
         soggetto = self.allievo if self.allievo else (self.mittente or "Sconosciuto")
@@ -925,8 +938,10 @@ class GoogleDriveConfig(models.Model):
     folder_ricevute_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Ricevute")
     folder_tessere_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Tessere")
     folder_tessere_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Tessere")
-    folder_verbali_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Verbali")
-    folder_verbali_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbali")
+    folder_verbali_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Verbale di Rendiconto Economico")
+    folder_verbali_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbale di Rendiconto Economico")
+    folder_libro_soci_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Libro Soci")
+    folder_libro_soci_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Libro Soci")
     is_active = models.BooleanField(default=True, help_text="Stato attivazione integrazione Google Drive")
     last_tested_at = models.DateTimeField(null=True, blank=True)
     last_test_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error'

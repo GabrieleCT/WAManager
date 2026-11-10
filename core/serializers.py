@@ -680,6 +680,7 @@ class GoogleDriveConfigSerializer(serializers.ModelSerializer):
             'folder_id', 'folder_ricevute_id', 'folder_ricevute_nome',
             'folder_tessere_id', 'folder_tessere_nome',
             'folder_verbali_id', 'folder_verbali_nome',
+            'folder_libro_soci_id', 'folder_libro_soci_nome',
             'is_active', 'last_tested_at',
             'last_test_status', 'last_test_message',
             'created_at', 'updated_at'

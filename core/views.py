@@ -711,6 +711,12 @@ def whatsapp_message_webhook(request):
             )
         )
 
+        # Pulizia automatica log oltre retention 12 ore
+        try:
+            GeminiLog.cleanup_expired()
+        except Exception as e:
+            logger.warning(f"Errore cleanup retention GeminiLog: {e}")
+
         # Avvia retry asincrono in background dopo 2 minuti (fino a 3 tentativi) se errore transitorio (es. 503, 429)
         if esito == "ERRORE" and api_key and any(k in risposta_ai for k in ("503", "429", "Timeout", "UNAVAILABLE")):
             start_background_retry(log_entry.id, delay_seconds=120, max_attempts=3)
