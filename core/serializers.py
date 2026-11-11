@@ -169,7 +169,8 @@ class AllievoSerializer(serializers.ModelSerializer):
     numero_tessera_acsi = serializers.CharField(required=False, allow_blank=True, default='')
     numero_tessera = serializers.CharField(source='numero_tessera_acsi', required=False, allow_blank=True)
     tessera_associativa = serializers.CharField(required=False, allow_blank=True, default='')
-    data_emissione_tessera = serializers.DateField(required=False, allow_null=True)
+    data_ammissione = serializers.DateField(required=False, allow_null=True)
+    scadenza_certificato_medico = serializers.DateField(required=False, allow_null=True)
     stato_tessera = serializers.CharField(read_only=True)
 
     class Meta:
@@ -182,7 +183,8 @@ class AllievoSerializer(serializers.ModelSerializer):
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
             'corso_gruppo_whatsapp', 'corso_has_whatsapp',
             'email', 'data_nascita', 'comune_nascita', 'provincia_nascita', 'codice_fiscale',
-            'numero_tessera_acsi', 'numero_tessera', 'tessera_associativa', 'data_emissione_tessera', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
+            'numero_tessera_acsi', 'numero_tessera', 'tessera_associativa', 'data_ammissione',
+            'scadenza_certificato_medico', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
             'created_at', 'updated_at'
         ]
 
@@ -220,9 +222,10 @@ class AllievoSerializer(serializers.ModelSerializer):
                 data['tesserato_altra_asd'] = True
                 data['numero_tessera_acsi'] = ''
                 data['numero_tessera'] = ''
-                data['data_emissione_tessera'] = None
-            if data.get('data_emissione_tessera') == '':
-                data['data_emissione_tessera'] = None
+            if data.get('data_ammissione') == '':
+                data['data_ammissione'] = None
+            if data.get('scadenza_certificato_medico') == '':
+                data['scadenza_certificato_medico'] = None
         return super().to_internal_value(data)
 
     def create(self, validated_data):

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
+import '../widgets/invia_modulo_tesseramento_dialog.dart';
+import '../widgets/data_ammissione_field.dart';
+import '../widgets/manual_date_field.dart';
 
 class _UpperCaseTextFormatter extends TextInputFormatter {
   @override
@@ -18,68 +19,6 @@ class _UpperCaseTextFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: newValue.text.toUpperCase(),
       selection: newValue.selection,
-    );
-  }
-}
-
-class _Date8InputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    String digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (digits.length > 8) {
-      digits = digits.substring(0, 8);
-    }
-
-    final buffer = StringBuffer();
-    for (int i = 0; i < digits.length; i++) {
-      if (i == 2 || i == 4) {
-        buffer.write('/');
-      }
-      buffer.write(digits[i]);
-    }
-
-    if ((digits.length == 2 || digits.length == 4) &&
-        newValue.text.endsWith('/') &&
-        !oldValue.text.endsWith('/')) {
-      buffer.write('/');
-    }
-
-    final string = buffer.toString();
-
-    int selectionIndex = newValue.selection.end;
-    if (selectionIndex < 0) selectionIndex = 0;
-    if (selectionIndex > newValue.text.length) selectionIndex = newValue.text.length;
-
-    int digitsBeforeCursor = 0;
-    for (int i = 0; i < selectionIndex; i++) {
-      if (RegExp(r'\d').hasMatch(newValue.text[i])) {
-        digitsBeforeCursor++;
-      }
-    }
-
-    int newCursorPos = 0;
-    int countedDigits = 0;
-    while (newCursorPos < string.length && countedDigits < digitsBeforeCursor) {
-      if (RegExp(r'\d').hasMatch(string[newCursorPos])) {
-        countedDigits++;
-      }
-      newCursorPos++;
-    }
-
-    if (newCursorPos < string.length && string[newCursorPos] == '/' && (countedDigits == 2 || countedDigits == 4)) {
-      newCursorPos++;
-    }
-
-    if (newCursorPos > string.length) {
-      newCursorPos = string.length;
-    }
-
-    return TextEditingValue(
-      text: string,
-      selection: TextSelection.collapsed(offset: newCursorPos),
     );
   }
 }
@@ -108,6 +47,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
   String _filterWaCorso = 'tutti';  // 'tutti', 'si', 'no'
   String _filterNonPagato = 'tutti'; // 'tutti', 'T1', 'T2', 'T3'
   String _filterStatoTessera = 'tutti'; // 'tutti', 'ok', 'scaduta', 'non_tesserato'
+  String _filterCertificatoMedico = 'tutti'; // 'tutti', 'senza', 'valido', 'scaduto', 'presente'
   bool _syncingWhatsapp = false;
 
   String get _currentActiveTrimestre {
@@ -147,6 +87,13 @@ class _AllieviScreenState extends State<AllieviScreen> {
         if (_filterStatoTessera == 'esterno' && !a.isTesseratoEsterno) return false;
         if (_filterStatoTessera == 'scaduta' && !a.hasTesseraScaduta) return false;
         if (_filterStatoTessera == 'non_tesserato' && !a.isNonTesserato) return false;
+      }
+
+      if (_filterCertificatoMedico != 'tutti') {
+        if (_filterCertificatoMedico == 'senza' && !a.isSenzaCertificatoMedico) return false;
+        if (_filterCertificatoMedico == 'valido' && !a.isCertificatoMedicoValido) return false;
+        if (_filterCertificatoMedico == 'scaduto' && !a.isCertificatoMedicoScaduto) return false;
+        if (_filterCertificatoMedico == 'presente' && !a.hasCertificatoMedico) return false;
       }
 
       return true;
@@ -550,14 +497,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
     final comuneNascitaController = TextEditingController(text: (allievo?.comuneNascita ?? '').toUpperCase());
     final provinciaNascitaController = TextEditingController(text: (allievo?.provinciaNascita ?? '').toUpperCase());
     final codiceFiscaleController = TextEditingController(text: (allievo?.codiceFiscale ?? '').toUpperCase());
-    String initialDataNascitaStr = '';
-    if (allievo?.dataNascita != null && allievo!.dataNascita!.isNotEmpty) {
-      final parsed = DateTime.tryParse(allievo.dataNascita!);
-      if (parsed != null) {
-        initialDataNascitaStr = DateFormat('dd/MM/yyyy').format(parsed);
-      }
-    }
-    final dataNascitaController = TextEditingController(text: initialDataNascitaStr);
+    final dataNascitaController = TextEditingController(
+      text: formatIsoDateToItalian(allievo?.dataNascita),
+    );
+    final scadenzaCertificatoController = TextEditingController(
+      text: formatIsoDateToItalian(allievo?.scadenzaCertificatoMedico),
+    );
     // Calcolo locale del progressivo per Tessera Associativa (max + 1)
     int maxAss = 0;
     for (final a in _allievi) {
@@ -594,9 +539,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
     tesseraAssociativaController.addListener(() {
       if (dialogSetState != null) dialogSetState!(() {});
     });
-    DateTime? dataEmissione = (allievo?.dataEmissioneTessera != null && allievo!.dataEmissioneTessera!.isNotEmpty)
-        ? DateTime.tryParse(allievo.dataEmissioneTessera!)
+    DateTime? dataAmmissione = (allievo?.dataAmmissione != null && allievo!.dataAmmissione!.isNotEmpty)
+        ? DateTime.tryParse(allievo.dataAmmissione!)
         : null;
+    final dataAmmissioneController = TextEditingController(
+      text: dataAmmissione != null ? DateFormat('dd/MM/yyyy').format(dataAmmissione) : '',
+    );
 
     String ruolo = allievo?.ruolo ?? 'leader';
     String livello = allievo?.livello ?? 'principiante';
@@ -801,7 +749,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                               controller: dataNascitaController,
                               keyboardType: TextInputType.number,
                               inputFormatters: [
-                                _Date8InputFormatter(),
+                                Date8InputFormatter(),
                               ],
                               decoration: const InputDecoration(
                                 labelText: 'Data di Nascita',
@@ -911,7 +859,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         controller: dataNascitaController,
                         keyboardType: TextInputType.number,
                         inputFormatters: [
-                          _Date8InputFormatter(),
+                          Date8InputFormatter(),
                         ],
                         decoration: const InputDecoration(
                           labelText: 'Data di Nascita',
@@ -1100,7 +1048,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             ),
                           ),
                           if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty) ...[
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 8),
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
                               child: buildSuggerimentoBadge(
@@ -1109,6 +1057,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
                               ),
                             ),
                           ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DataAmmissioneField(
+                              controller: dataAmmissioneController,
+                              value: dataAmmissione,
+                              onChanged: (d) => setDlgState(() => dataAmmissione = d),
+                            ),
+                          ),
                         ],
                       ),
                     ] else ...[
@@ -1130,6 +1086,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
                           ),
                         ),
+                      const SizedBox(height: 12),
+                      DataAmmissioneField(
+                        controller: dataAmmissioneController,
+                        value: dataAmmissione,
+                        onChanged: (d) => setDlgState(() => dataAmmissione = d),
+                      ),
                     ],
                     const SizedBox(height: 12),
                     Container(
@@ -1150,7 +1112,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         ),
                         subtitle: Text(
                           tesseratoAltraAsd
-                              ? 'Allievo tesserato esternamente. Numero e data emissione ACSI disabilitati.'
+                              ? 'Allievo tesserato esternamente. Numero tessera ACSI disabilitato.'
                               : 'Seleziona se l\'allievo ha già una tessera attiva rilasciata da un\'altra ASD.',
                           style: TextStyle(fontSize: 11, color: tesseratoAltraAsd ? Colors.teal.shade800 : Colors.grey.shade600),
                         ),
@@ -1159,7 +1121,6 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             tesseratoAltraAsd = val ?? false;
                             if (tesseratoAltraAsd) {
                               tesseraAcsiController.clear();
-                              dataEmissione = null;
                             }
                           });
                         },
@@ -1176,66 +1137,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         fillColor: tesseratoAltraAsd ? Colors.grey.shade100 : null,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Opacity(
-                      opacity: tesseratoAltraAsd ? 0.5 : 1.0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: tesseratoAltraAsd ? Colors.grey.shade100 : Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
-                          title: Text(
-                            tesseratoAltraAsd
-                                ? 'Non richiesta (Tesserato con altra ASD)'
-                                : (dataEmissione == null
-                                    ? 'Nessuna data di emissione'
-                                    : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}'),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: (tesseratoAltraAsd || dataEmissione == null) ? Colors.grey.shade600 : Colors.black87,
-                              fontWeight: (!tesseratoAltraAsd && dataEmissione != null) ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                          trailing: tesseratoAltraAsd
-                              ? null
-                              : Wrap(
-                                  spacing: 4,
-                                  children: [
-                                    if (dataEmissione != null)
-                                      IconButton(
-                                        icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                        tooltip: 'Rimuovi data emissione',
-                                        onPressed: () => setDlgState(() => dataEmissione = null),
-                                      ),
-                                    ElevatedButton.icon(
-                                      icon: const Icon(Icons.edit_calendar, size: 16),
-                                      label: const Text('Data', style: TextStyle(fontSize: 12)),
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                      onPressed: () async {
-                                        final picked = await showDatePicker(
-                                          context: ctx,
-                                          initialDate: dataEmissione ?? DateTime.now(),
-                                          firstDate: DateTime(2000),
-                                          lastDate: DateTime(2100),
-                                        );
-                                        if (picked != null) {
-                                          setDlgState(() => dataEmissione = picked);
-                                        }
-                                      },
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
+                    const SizedBox(height: 16),
+                    ManualDateField(
+                      controller: scadenzaCertificatoController,
+                      labelText: 'Scadenza Certificato Medico',
+                      hintText: 'GG/MM/AAAA (8 cifre)',
+                      helperText: 'Lascia vuoto se senza certificato medico',
+                      prefixIcon: Icons.medical_information_outlined,
+                      clearTooltip: 'Rimuovi scadenza certificato medico',
                     ),
                     if (allievo != null && allievo.partnerId != null) ...[
                       const SizedBox(height: 20),
@@ -1431,35 +1340,41 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         final cognomeTrimmed = cognomeController.text.trim();
                         if (nomeTrimmed.isEmpty || cognomeTrimmed.isEmpty) return;
 
-                        String? dataNascitaIso;
-                        final rawDateStr = dataNascitaController.text.trim();
-                        if (rawDateStr.isNotEmpty) {
-                          final parts = rawDateStr.split('/');
-                          if (parts.length == 3 && parts[0].length == 2 && parts[1].length == 2 && parts[2].length == 4) {
-                            final d = int.tryParse(parts[0]);
-                            final m = int.tryParse(parts[1]);
-                            final y = int.tryParse(parts[2]);
-                            if (d != null && m != null && y != null && m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= DateTime.now().year) {
-                              try {
-                                final dt = DateTime(y, m, d);
-                                if (dt.year == y && dt.month == m && dt.day == d) {
-                                  dataNascitaIso = DateFormat('yyyy-MM-dd').format(dt);
-                                }
-                              } catch (_) {}
-                            }
+                        final parsedNascita = parseItalianDateToIso(
+                          dataNascitaController.text,
+                          minYear: 1900,
+                          maxYear: DateTime.now().year,
+                        );
+                        if (!parsedNascita.isValid) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Data di nascita non valida. Inserisci 8 cifre nel formato GG/MM/AAAA (es. 15/05/1990) oppure lascia il campo vuoto.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                           }
-                          if (dataNascitaIso == null) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Data di nascita non valida. Inserisci 8 cifre nel formato GG/MM/AAAA (es. 15/05/1990) oppure lascia il campo vuoto.'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                            return;
-                          }
+                          return;
                         }
+                        final dataNascitaIso = parsedNascita.isoDate;
+
+                        final parsedCertificato = parseItalianDateToIso(
+                          scadenzaCertificatoController.text,
+                          minYear: 2000,
+                          maxYear: 2100,
+                        );
+                        if (!parsedCertificato.isValid) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Scadenza certificato medico non valida. Inserisci 8 cifre nel formato GG/MM/AAAA (es. 31/12/2027) oppure lascia il campo vuoto.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                        final scadenzaCertificatoIso = parsedCertificato.isoDate;
 
                         final emailClean = emailController.text.replaceAll(' ', '').trim().toLowerCase();
                         if (emailClean.isNotEmpty) {
@@ -1498,11 +1413,12 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             'is_prospect': false,
                             'tesserato_altra_asd': tesseratoAltraAsd,
                             'tessera_associativa': tesseraAssociativaController.text.trim(),
+                            'data_ammissione': dataAmmissione != null
+                                ? DateFormat('yyyy-MM-dd').format(dataAmmissione!)
+                                : null,
+                            'scadenza_certificato_medico': scadenzaCertificatoIso,
                             'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
                             'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
-                            'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
-                                ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
-                                : null,
                           };
                           final res = allievo == null
                               ? await _api.createAllievo(data)
@@ -1604,239 +1520,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
   }
 
   Future<void> _mostraInviaModuloTesseramentoDialog(Allievo a) async {
-    final phoneController = TextEditingController(text: a.telefono);
-    final nick = a.nickname.trim().isNotEmpty ? a.nickname.trim() : a.nome.trim();
-    String defaultMsg = 'Gentile $nick, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!';
-    try {
-      final cfg = await _api.getDaemonConfig();
-      if (cfg != null && cfg.moduloTesseramentoTesto.isNotEmpty) {
-        defaultMsg = cfg.moduloTesseramentoTesto
-            .replaceAll('{nickname}', nick)
-            .replaceAll('<nickname>', nick)
-            .replaceAll('{nome}', a.nome)
-            .replaceAll('{cognome}', a.cognome)
-            .replaceAll('{nome_completo}', a.nomeCompleto);
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    final messageController = TextEditingController(text: defaultMsg);
-    bool sending = false;
-    bool loadingPreview = false;
-    String? localError;
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF25D366).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.chat, color: Color(0xFF25D366), size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Invia Modulo Tesseramento', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text(a.nomeCompleto, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (localError != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            localError!,
-                            style: TextStyle(color: Colors.red.shade900, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.picture_as_pdf, color: Colors.indigo, size: 24),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Allegato: Modulo_Tesseramento.pdf',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            Text(
-                              'Allievo: ${a.nomeCompleto} • Stato tessera: ${a.statoTessera}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextField(
-                  controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  enabled: !sending,
-                  decoration: InputDecoration(
-                    labelText: 'Numero di Telefono WhatsApp *',
-                    hintText: 'es. 393401234567 o 3401234567',
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    helperText: a.telefono.isNotEmpty
-                        ? 'Numero registrato per l\'allievo'
-                        : 'Inserisci il numero con prefisso internazionale (es. 39...)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: messageController,
-                  maxLines: 3,
-                  enabled: !sending,
-                  decoration: InputDecoration(
-                    labelText: 'Messaggio di accompagnamento',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: sending ? null : () => Navigator.pop(ctx),
-              child: const Text('Annulla'),
-            ),
-            OutlinedButton.icon(
-              icon: loadingPreview
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.visibility, size: 16),
-              label: const Text('Anteprima PDF'),
-              onPressed: (sending || loadingPreview)
-                  ? null
-                  : () async {
-                      setDlgState(() => loadingPreview = true);
-                      try {
-                        final bytes = await _api.getModuloTesseramentoPdf(a.id);
-                        if (bytes != null && bytes.isNotEmpty) {
-                          await Printing.layoutPdf(
-                            onLayout: (PdfPageFormat format) async => bytes,
-                            name: 'Modulo_Tesseramento_${a.cognome}_${a.nome}.pdf',
-                          );
-                        } else {
-                          setDlgState(() => localError = 'Impossibile caricare il PDF del modulo.');
-                        }
-                      } catch (e) {
-                        setDlgState(() => localError = 'Errore anteprima PDF: $e');
-                      } finally {
-                        setDlgState(() => loadingPreview = false);
-                      }
-                    },
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF25D366),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: sending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.send, size: 18),
-              label: Text(sending ? 'Invio in corso...' : 'Invia PDF via WhatsApp'),
-              onPressed: sending
-                  ? null
-                  : () async {
-                      final phone = phoneController.text.trim();
-                      if (phone.isEmpty) {
-                        setDlgState(() => localError = 'Inserisci un numero di telefono valido.');
-                        return;
-                      }
-
-                      setDlgState(() {
-                        sending = true;
-                        localError = null;
-                      });
-
-                      final res = await _api.sendModuloTesseramentoWhatsApp(
-                        allievoId: a.id,
-                        telefono: phone,
-                        messaggio: messageController.text.trim(),
-                      );
-
-                      if (ctx.mounted) {
-                        if (res['success'] == true) {
-                          Navigator.pop(ctx);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Row(
-                                  children: [
-                                    const Icon(Icons.check_circle, color: Colors.white),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        res['message'] ?? 'Modulo di tesseramento inviato con successo a ${a.nomeCompleto} ($phone)!',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                backgroundColor: Colors.green.shade700,
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
-                          }
-                        } else {
-                          setDlgState(() {
-                            sending = false;
-                            localError = res['error'] ?? 'Errore durante l\'invio del messaggio.';
-                          });
-                        }
-                      }
-                    },
-            ),
-          ],
-        ),
-      ),
-    );
+    await mostraInviaModuloTesseramentoDialog(context, a, api: _api);
   }
 
   Widget _buildStatoTesseraBadge(Allievo a) {
@@ -1874,16 +1558,16 @@ class _AllieviScreenState extends State<AllieviScreen> {
     if (a.tesseraAssociativa.isNotEmpty) {
       tooltip += ' - Tess. Associativa: ${a.tesseraAssociativa}';
     }
+    if (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty) {
+      try {
+        final d = DateTime.parse(a.dataAmmissione!);
+        tooltip += ' - Ammesso il ${DateFormat('dd/MM/yyyy').format(d)}';
+      } catch (_) {}
+    }
     if (!a.isTesseratoEsterno) {
       final acsi = a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera;
       if (acsi.isNotEmpty) {
         tooltip += ' (ACSI: $acsi)';
-      }
-      if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
-        try {
-          final d = DateTime.parse(a.dataEmissioneTessera!);
-          tooltip += ' - Emessa il ${DateFormat('dd/MM/yyyy').format(d)}';
-        } catch (_) {}
       }
     }
 
@@ -2107,15 +1791,19 @@ class _AllieviScreenState extends State<AllieviScreen> {
             a.nomeCompleto,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
-          subtitle: (a.telefono.isNotEmpty || a.email.isNotEmpty)
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    [if (a.telefono.isNotEmpty) '📞 ${a.telefono}', if (a.email.isNotEmpty) '✉️ ${a.email}'].join(' • '),
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                )
-              : null,
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              [
+                if (a.telefono.isNotEmpty) '📞 ${a.telefono}',
+                if (a.email.isNotEmpty) '✉️ ${a.email}',
+                a.hasCertificatoMedico
+                    ? '🩺 Cert: ${formatIsoDateToItalian(a.scadenzaCertificatoMedico)}${a.isCertificatoMedicoScaduto ? " (Scad.)" : ""}'
+                    : '⚠️ Senza cert. medico',
+              ].join(' • '),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2167,15 +1855,19 @@ class _AllieviScreenState extends State<AllieviScreen> {
               Text('🎓 ${a.corsoDescrizione!}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (a.partnerId != null)
               Text('Partner: ${a.partnerNomeCompleto}', style: const TextStyle(fontSize: 12, color: Colors.pink)),
-            if (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
-              Padding(
+            Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
                   [
-                    if (a.tesseraAssociativa.isNotEmpty) '🪪 Tessera Associativa: ${a.tesseraAssociativa}',
+                    if (a.tesseraAssociativa.isNotEmpty || (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty))
+                      '🪪 Tessera Associativa: ${a.tesseraAssociativa.isNotEmpty ? a.tesseraAssociativa : "N/D"}${(a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty) ? " (Ammesso: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataAmmissione!) ?? DateTime.now())})" : ""}',
                     if (a.isTesseratoEsterno) '🏛️ Tesserato con altra ASD'
-                    else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty || (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty))
-                      '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera).isNotEmpty ? (a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera) : "N/D"}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (Emessa: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataEmissioneTessera!) ?? DateTime.now())})" : ""}',
+                    else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                      '💳 ACSI: ${a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera}',
+                    if (a.hasCertificatoMedico)
+                      '🩺 Cert. Medico: ${formatIsoDateToItalian(a.scadenzaCertificatoMedico)}${a.isCertificatoMedicoScaduto ? " (Scaduto)" : ""}'
+                    else
+                      '⚠️ Senza certificato medico',
                   ].join('   •   '),
                   style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
                 ),
@@ -2245,7 +1937,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
         _filterWaScuola != 'tutti' ||
         _filterWaCorso != 'tutti' ||
         _filterNonPagato != 'tutti' ||
-        _filterStatoTessera != 'tutti';
+        _filterStatoTessera != 'tutti' ||
+        _filterCertificatoMedico != 'tutti';
 
     final actionButtons = isMobile ? <Widget>[] : [
       ElevatedButton.icon(
@@ -2522,6 +2215,26 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           onChanged: (v) => setState(() => _filterStatoTessera = v!),
                         );
 
+                        final certificatoMedicoDropdown = DropdownButtonFormField<String>(
+                          value: _filterCertificatoMedico,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Certificato Medico',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            prefixIcon: const Icon(Icons.medical_information_outlined, size: 20, color: Colors.deepOrange),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'tutti', child: Text('Tutti')),
+                            DropdownMenuItem(value: 'senza', child: Text('Senza certificato medico')),
+                            DropdownMenuItem(value: 'valido', child: Text('Certificato valido')),
+                            DropdownMenuItem(value: 'scaduto', child: Text('Certificato scaduto')),
+                            DropdownMenuItem(value: 'presente', child: Text('Con certificato (tutti)')),
+                          ],
+                          onChanged: (v) => setState(() => _filterCertificatoMedico = v!),
+                        );
+
                         if (isCompact) {
                           return Column(
                             children: [
@@ -2544,6 +2257,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                   Expanded(child: waCorsoDropdown),
                                 ],
                               ),
+                              const SizedBox(height: 8),
+                              certificatoMedicoDropdown,
                             ],
                           );
                         } else {
@@ -2556,6 +2271,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                   Expanded(child: corsoDropdown),
                                   const SizedBox(width: 12),
                                   Expanded(child: statoTesseraDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: certificatoMedicoDropdown),
                                 ],
                               ),
                               const SizedBox(height: 8),
@@ -2634,7 +2351,21 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             style: TextStyle(color: Colors.teal.shade900, fontWeight: FontWeight.w600),
                           ),
                         ),
-                        if (_selectedScuolaId != null || _selectedCorsoId != null || _filterWaScuola != 'tutti' || _filterWaCorso != 'tutti' || _filterNonPagato != 'tutti' || _filterStatoTessera != 'tutti')
+                        ActionChip(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: _filterCertificatoMedico == 'senza' ? Colors.deepOrange.shade100 : Colors.deepOrange.shade50,
+                          avatar: Icon(Icons.medical_information_outlined, size: 16, color: Colors.deepOrange.shade800),
+                          label: Text(
+                            'Senza Certificato: ${allieviVisualizzati.where((a) => a.isSenzaCertificatoMedico).length}',
+                            style: TextStyle(color: Colors.deepOrange.shade900, fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _filterCertificatoMedico = _filterCertificatoMedico == 'senza' ? 'tutti' : 'senza';
+                            });
+                          },
+                        ),
+                        if (_selectedScuolaId != null || _selectedCorsoId != null || _filterWaScuola != 'tutti' || _filterWaCorso != 'tutti' || _filterNonPagato != 'tutti' || _filterStatoTessera != 'tutti' || _filterCertificatoMedico != 'tutti')
                           TextButton.icon(
                             icon: const Icon(Icons.filter_alt_off, size: 18),
                             label: const Text('Azzera filtri'),
@@ -2646,6 +2377,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                 _filterWaCorso = 'tutti';
                                 _filterNonPagato = 'tutti';
                                 _filterStatoTessera = 'tutti';
+                                _filterCertificatoMedico = 'tutti';
                               });
                               _loadAllievi();
                             },

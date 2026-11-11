@@ -177,10 +177,17 @@ class Allievo(models.Model):
         verbose_name="Tessera Associativa",
         help_text="Numero progressivo della tessera associativa interna all'ASD"
     )
-    data_emissione_tessera = models.DateField(
+    data_ammissione = models.DateField(
         null=True,
         blank=True,
-        help_text="Data di emissione della tessera"
+        verbose_name="Data Ammissione",
+        help_text="Data di ammissione a socio dell'ASD"
+    )
+    scadenza_certificato_medico = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Scadenza Certificato Medico",
+        help_text="Data di scadenza del certificato medico (vuoto se senza certificato medico)"
     )
     tesserato_altra_asd = models.BooleanField(
         default=False,
@@ -241,15 +248,6 @@ class Allievo(models.Model):
         num_ass = (self.tessera_associativa or '').strip()
         if not num_acsi and not num_ass:
             return 'NON TESSERATO'
-        if self.data_emissione_tessera:
-            from datetime import date, timedelta
-            today = date.today()
-            try:
-                scadenza = self.data_emissione_tessera.replace(year=self.data_emissione_tessera.year + 1)
-            except ValueError:
-                scadenza = self.data_emissione_tessera + timedelta(days=365)
-            if today > scadenza:
-                return 'TESSERA SCADUTA'
         return 'TESSERA OK'
 
     @classmethod
@@ -807,6 +805,7 @@ class DocumentTemplate(models.Model):
         ('ricevuta', 'Template Ricevuta Pagamento'),
         ('modulo_tesseramento', 'Modulo di Tesseramento'),
         ('verbale_rendiconto', 'Verbale Approvazione Rendiconto'),
+        ('verbale_ammissione_socio', 'Verbale di Ammissione Socio'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

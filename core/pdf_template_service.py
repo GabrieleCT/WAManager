@@ -187,9 +187,17 @@ def genera_pdf_modulo_tesseramento(allievo=None):
 
     page.insert_text(pymupdf.Point(45, 180), "1. DATI ANAGRAFICI DEL RICHIEDENTE", fontsize=11, fontname=fontname, color=(0.08, 0.2, 0.4))
 
-    nome_completo = f"{allievo.cognome} {allievo.nome}" if allievo else "________________________________________"
-    telefono = allievo.telefono if (allievo and allievo.telefono) else "________________________________________"
-    corso_nome = f"{allievo.corso.descrizione} ({allievo.corso.scuola.nome})" if (allievo and allievo.corso) else "Tango Argentino"
+    nome_completo = (f"{allievo.cognome} {allievo.nome}".strip() if allievo else "") or "________________________________________"
+    telefono = (
+        allievo.telefono
+        if (allievo and allievo.telefono and str(allievo.telefono).strip().upper() != 'TBD')
+        else "________________________________________"
+    )
+    corso_nome = (
+        f"{allievo.corso.get_livello_display()} ({allievo.corso.scuola.nome})"
+        if (allievo and allievo.corso)
+        else "Tango Argentino"
+    )
 
     y = 205
     page.insert_text(pymupdf.Point(55, y), f"Cognome e Nome:  {nome_completo}", fontsize=11, fontname=fontname)

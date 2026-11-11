@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
+import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
 
 
@@ -408,6 +409,20 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
                   if (editingProspect != null) ...[
                     const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF128C7E),
+                          side: const BorderSide(color: Color(0xFF25D366), width: 1.5),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.chat, size: 20, color: Color(0xFF25D366)),
+                        label: const Text('Invia Modulo Tesseramento via WhatsApp', style: TextStyle(fontWeight: FontWeight.w600)),
+                        onPressed: () => mostraInviaModuloTesseramentoDialog(context, editingProspect, api: _api),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -1011,23 +1026,38 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
+                                icon: const Icon(Icons.description_outlined, color: Color(0xFF128C7E), size: 20),
+                                tooltip: 'Invia Modulo Tesseramento',
+                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                padding: const EdgeInsets.all(4),
+                                onPressed: () => mostraInviaModuloTesseramentoDialog(context, p, api: _api),
+                              ),
+                              IconButton(
                                 icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
                                 tooltip: 'Invia Coordinate Bancarie (IBAN)',
+                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                padding: const EdgeInsets.all(4),
                                 onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, p, api: _api),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                                 tooltip: 'Modifica prospect',
+                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                padding: const EdgeInsets.all(4),
                                 onPressed: () => _showAddEditProspectDialog(p),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                                 tooltip: 'Elimina prospect',
+                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                padding: const EdgeInsets.all(4),
                                 onPressed: () => _deleteProspect(p),
                               ),
                               IconButton(
                                 icon: Icon(Icons.school, color: Theme.of(context).colorScheme.primary, size: 20),
                                 tooltip: 'Iscrivi a Corso (Promuovi)',
+                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                padding: const EdgeInsets.all(4),
                                 onPressed: () => _showConvertDialog(p),
                               ),
                             ],
@@ -1084,6 +1114,17 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                           spacing: 4,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF128C7E),
+                                side: const BorderSide(color: Color(0xFF25D366)),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(Icons.chat, size: 16, color: Color(0xFF25D366)),
+                              label: const Text('Modulo Tesseramento', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () => mostraInviaModuloTesseramentoDialog(context, p, api: _api),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.account_balance_outlined, size: 18, color: Colors.teal),
                               tooltip: 'Invia Coordinate Bancarie (IBAN)',

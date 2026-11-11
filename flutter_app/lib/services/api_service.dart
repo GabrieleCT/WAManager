@@ -252,6 +252,7 @@ class ApiService {
     String? search,
     bool? corsoIsNull,
     String? statoTessera,
+    String? certificatoMedico,
   }) async {
     var queryParams = <String>[];
     if (corsoId != null) queryParams.add('corso=$corsoId');
@@ -261,6 +262,9 @@ class ApiService {
     if (search != null && search.isNotEmpty) queryParams.add('search=${Uri.encodeComponent(search)}');
     if (statoTessera != null && statoTessera.isNotEmpty && statoTessera != 'tutti') {
       queryParams.add('stato_tessera=${Uri.encodeComponent(statoTessera)}');
+    }
+    if (certificatoMedico != null && certificatoMedico.isNotEmpty && certificatoMedico != 'tutti') {
+      queryParams.add('certificato_medico=${Uri.encodeComponent(certificatoMedico)}');
     }
 
     var urlStr = '$baseUrl/api/allievi/';

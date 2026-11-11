@@ -6,7 +6,10 @@ import '../services/pdf_report_service.dart';
 import '../widgets/google_sync_dialog.dart';
 import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
+import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
+import '../widgets/data_ammissione_field.dart';
+import '../widgets/manual_date_field.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -758,9 +761,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
     );
     final tesseraAssociativaController = TextEditingController(text: a.tesseraAssociativa);
     final noteController = TextEditingController(text: a.note);
-    DateTime? dataEmissione = (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty)
-        ? DateTime.tryParse(a.dataEmissioneTessera!)
+    DateTime? dataAmmissione = (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty)
+        ? DateTime.tryParse(a.dataAmmissione!)
         : null;
+    final dataAmmissioneController = TextEditingController(
+      text: dataAmmissione != null ? DateFormat('dd/MM/yyyy').format(dataAmmissione) : '',
+    );
+    final scadenzaCertificatoController = TextEditingController(
+      text: formatIsoDateToItalian(a.scadenzaCertificatoMedico),
+    );
     String ruolo = a.ruolo;
     String livello = a.livello;
     bool tesseratoAltraAsd = a.tesseratoAltraAsd;
@@ -909,7 +918,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           ),
                         ),
                         if (tesseraAssociativaController.text.trim().isEmpty && suggeritoAssociativa.isNotEmpty) ...[
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: buildSuggerimentoBadge(
@@ -918,6 +927,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             ),
                           ),
                         ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DataAmmissioneField(
+                            controller: dataAmmissioneController,
+                            value: dataAmmissione,
+                            onChanged: (d) => setDlgState(() => dataAmmissione = d),
+                          ),
+                        ),
                       ],
                     ),
                   ] else ...[
@@ -939,6 +956,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           onUse: () => setDlgState(() => tesseraAssociativaController.text = suggeritoAssociativa),
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    DataAmmissioneField(
+                      controller: dataAmmissioneController,
+                      value: dataAmmissione,
+                      onChanged: (d) => setDlgState(() => dataAmmissione = d),
+                    ),
                   ],
                   const SizedBox(height: 8),
                   CheckboxListTile(
@@ -946,13 +969,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: const Text('TESSERATO con altra ASD', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.teal)),
-                    subtitle: const Text('Disabilita numero e data emissione ACSI. Risulterà tesserato esterno.', style: TextStyle(fontSize: 11)),
+                    subtitle: const Text('Disabilita numero tessera ACSI. Risulterà tesserato esterno.', style: TextStyle(fontSize: 11)),
                     onChanged: (val) {
                       setDlgState(() {
                         tesseratoAltraAsd = val ?? false;
                         if (tesseratoAltraAsd) {
                           tesseraAcsiController.clear();
-                          dataEmissione = null;
                         }
                       });
                     },
@@ -970,60 +992,14 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       hintText: tesseratoAltraAsd ? 'Disabilitato (tesserato esterno)' : 'Es. PS7546012',
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  IgnorePointer(
-                    ignoring: tesseratoAltraAsd,
-                    child: Opacity(
-                      opacity: tesseratoAltraAsd ? 0.4 : 1.0,
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.calendar_month, color: Colors.blueGrey),
-                        title: Text(
-                          tesseratoAltraAsd
-                              ? 'Data emissione non necessaria (esterno)'
-                              : dataEmissione == null
-                                  ? 'Nessuna data di emissione'
-                                  : 'Data emissione: ${DateFormat('dd/MM/yyyy').format(dataEmissione!)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: (tesseratoAltraAsd || dataEmissione == null) ? Colors.grey.shade600 : Colors.black87,
-                            fontWeight: (!tesseratoAltraAsd && dataEmissione != null) ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: Wrap(
-                          spacing: 4,
-                          children: [
-                            if (dataEmissione != null && !tesseratoAltraAsd)
-                              IconButton(
-                                icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                tooltip: 'Rimuovi data emissione',
-                                onPressed: () => setDlgState(() => dataEmissione = null),
-                              ),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.edit_calendar, size: 16),
-                              label: const Text('Data', style: TextStyle(fontSize: 12)),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: tesseratoAltraAsd
-                                  ? null
-                                  : () async {
-                                      final picked = await showDatePicker(
-                                        context: ctx,
-                                        initialDate: dataEmissione ?? DateTime.now(),
-                                        firstDate: DateTime(2000),
-                                        lastDate: DateTime(2100),
-                                      );
-                                      if (picked != null) {
-                                        setDlgState(() => dataEmissione = picked);
-                                      }
-                                    },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  const SizedBox(height: 12),
+                  ManualDateField(
+                    controller: scadenzaCertificatoController,
+                    labelText: 'Scadenza Certificato Medico',
+                    hintText: 'GG/MM/AAAA (8 cifre)',
+                    helperText: 'Lascia vuoto se senza certificato medico',
+                    prefixIcon: Icons.medical_information_outlined,
+                    clearTooltip: 'Rimuovi scadenza certificato medico',
                   ),
                   if (a.partnerId != null) ...[
                     const SizedBox(height: 12),
@@ -1080,6 +1056,22 @@ class _CorsiScreenState extends State<CorsiScreen> {
                     ? null
                     : () async {
                         if (nomeController.text.trim().isEmpty || cognomeController.text.trim().isEmpty) return;
+                        final parsedCertificato = parseItalianDateToIso(
+                          scadenzaCertificatoController.text,
+                          minYear: 2000,
+                          maxYear: 2100,
+                        );
+                        if (!parsedCertificato.isValid) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Scadenza certificato medico non valida. Inserisci 8 cifre nel formato GG/MM/AAAA (es. 31/12/2027) oppure lascia il campo vuoto.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                          return;
+                        }
                         setDlgState(() => isSaving = true);
                         try {
                           final res = await _api.updateAllievo(a.id, {
@@ -1092,9 +1084,10 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             'numero_tessera_acsi': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
                             'numero_tessera': tesseratoAltraAsd ? '' : tesseraAcsiController.text.trim(),
                             'tessera_associativa': tesseraAssociativaController.text.trim(),
-                            'data_emissione_tessera': (!tesseratoAltraAsd && dataEmissione != null)
-                                ? DateFormat('yyyy-MM-dd').format(dataEmissione!)
+                            'data_ammissione': dataAmmissione != null
+                                ? DateFormat('yyyy-MM-dd').format(dataAmmissione!)
                                 : null,
+                            'scadenza_certificato_medico': parsedCertificato.isoDate,
                             'tesserato_altra_asd': tesseratoAltraAsd,
                           });
                           if (res == null) {
@@ -1359,13 +1352,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
     if (a.tesseraAssociativa.isNotEmpty) {
       tooltip += ' - Tess. Associativa: ${a.tesseraAssociativa}';
     }
+    if (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty) {
+      try {
+        final d = DateTime.parse(a.dataAmmissione!);
+        tooltip += ' - Ammesso il ${DateFormat('dd/MM/yyyy').format(d)}';
+      } catch (_) {}
+    }
     if (!a.isTesseratoEsterno) {
       final acsi = a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera;
       if (acsi.isNotEmpty) {
         tooltip += ' (ACSI: $acsi)';
-      }
-      if (a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty) {
-        tooltip += ' - Emessa: ${a.dataEmissioneTessera}';
       }
     }
 
@@ -1732,19 +1728,23 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: Text(
-                                              [
-                                                if (a.tesseraAssociativa.isNotEmpty) '🪪 Tess. Ass: ${a.tesseraAssociativa}',
-                                                if (a.isTesseratoEsterno) '🏛️ Altra ASD'
-                                                else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
-                                                  '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera)}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
-                                              ].join(' • '),
-                                              style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
-                                            ),
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text(
+                                            [
+                                              if (a.tesseraAssociativa.isNotEmpty || (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty))
+                                                '🪪 Tess. Ass: ${a.tesseraAssociativa.isNotEmpty ? a.tesseraAssociativa : "N/D"}${(a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty) ? " (Amm: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataAmmissione!) ?? DateTime.now())})" : ""}',
+                                              if (a.isTesseratoEsterno) '🏛️ Altra ASD'
+                                              else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                                                '💳 ACSI: ${a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera}',
+                                              if (a.hasCertificatoMedico)
+                                                '🩺 Cert: ${formatIsoDateToItalian(a.scadenzaCertificatoMedico)}${a.isCertificatoMedicoScaduto ? " (Scad.)" : ""}'
+                                              else
+                                                '⚠️ Senza cert. medico',
+                                            ].join(' • '),
+                                            style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
                                           ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -1854,20 +1854,23 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   ],
                                 ],
                               ),
-                              subtitle: (a.tesseraAssociativa.isNotEmpty || a.isTesseratoEsterno || a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
-                                  ? Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Text(
-                                        [
-                                          if (a.tesseraAssociativa.isNotEmpty) '🪪 Tessera Associativa: ${a.tesseraAssociativa}',
-                                          if (a.isTesseratoEsterno) '🏛️ Tesserato altra ASD'
-                                          else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
-                                            '💳 ACSI: ${(a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera)}${a.dataEmissioneTessera != null && a.dataEmissioneTessera!.isNotEmpty ? " (${a.dataEmissioneTessera})" : ""}',
-                                        ].join('   •   '),
-                                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
-                                      ),
-                                    )
-                                  : null,
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  [
+                                    if (a.tesseraAssociativa.isNotEmpty || (a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty))
+                                      '🪪 Tessera Associativa: ${a.tesseraAssociativa.isNotEmpty ? a.tesseraAssociativa : "N/D"}${(a.dataAmmissione != null && a.dataAmmissione!.isNotEmpty) ? " (Ammesso: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(a.dataAmmissione!) ?? DateTime.now())})" : ""}',
+                                    if (a.isTesseratoEsterno) '🏛️ Tesserato altra ASD'
+                                    else if (a.numeroTesseraAcsi.isNotEmpty || a.numeroTessera.isNotEmpty)
+                                      '💳 ACSI: ${a.numeroTesseraAcsi.isNotEmpty ? a.numeroTesseraAcsi : a.numeroTessera}',
+                                    if (a.hasCertificatoMedico)
+                                      '🩺 Cert. Medico: ${formatIsoDateToItalian(a.scadenzaCertificatoMedico)}${a.isCertificatoMedicoScaduto ? " (Scaduto)" : ""}'
+                                    else
+                                      '⚠️ Senza certificato medico',
+                                  ].join('   •   '),
+                                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                                ),
+                              ),
                               trailing: Wrap(
                                 spacing: 6,
                                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -2070,6 +2073,8 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                         _loadAll();
                                       },
                                     );
+                                  } else if (value == 'modulo_tesseramento') {
+                                    mostraInviaModuloTesseramentoDialog(context, p, api: _api);
                                   } else if (value == 'iban') {
                                     mostraInviaIstruzioniPagamentoDialog(context, p, api: _api);
                                   } else if (value == 'edit') {
@@ -2079,6 +2084,16 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                   }
                                 },
                                 itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                    value: 'modulo_tesseramento',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.description_outlined, size: 18, color: Color(0xFF128C7E)),
+                                        SizedBox(width: 8),
+                                        Text('Invia Modulo Tesseramento'),
+                                      ],
+                                    ),
+                                  ),
                                   PopupMenuItem(
                                     value: 'iban',
                                     child: Row(
@@ -2198,6 +2213,15 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                         );
                                       },
                                     ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.description_outlined, size: 18, color: Color(0xFF128C7E)),
+                                    tooltip: 'Invia Modulo Tesseramento a ${p.nomeCompleto}',
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => mostraInviaModuloTesseramentoDialog(context, p, api: _api),
                                   ),
                                   const SizedBox(width: 4),
                                   IconButton(

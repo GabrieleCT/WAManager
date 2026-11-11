@@ -234,6 +234,16 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
       ),
     );
 
+    final verbaleAmmissioneTmpl = _templates.firstWhere(
+      (t) => t.chiave == 'verbale_ammissione_socio',
+      orElse: () => DocumentTemplate(
+        id: '',
+        chiave: 'verbale_ammissione_socio',
+        nome: 'Verbale di Ammissione Socio',
+        descrizione: 'Modello ufficiale di verbale del Consiglio Direttivo per l\'ammissione e l\'iscrizione a libro soci dei nuovi associati.',
+      ),
+    );
+
     return RefreshIndicator(
       onRefresh: _loadTemplates,
       child: SingleChildScrollView(
@@ -272,7 +282,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Carica qui i file PDF o modelli ufficiali dei documenti. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, il modulo di tesseramento per nuove iscrizioni e rinnovi, e il modello di verbale per l\'approvazione del rendiconto economico-finanziario annuale.',
+                              'Carica qui i file PDF o modelli ufficiali dei documenti. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, il modulo di tesseramento per nuove iscrizioni e rinnovi, il modello di verbale per l\'approvazione del rendiconto e il verbale per l\'ammissione di nuovi soci.',
                               style: TextStyle(fontSize: 13, color: Colors.blue.shade900),
                             ),
                           ],
@@ -313,6 +323,15 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                   icon: Icons.gavel_rounded,
                   accentColor: Colors.teal.shade800,
                   badgeLabel: 'Verbale & Bilancio',
+                ),
+                const SizedBox(height: 20),
+
+                // Card 4: Verbale di Ammissione Socio
+                _buildTemplateCard(
+                  tmpl: verbaleAmmissioneTmpl,
+                  icon: Icons.how_to_reg_rounded,
+                  accentColor: Colors.deepPurple.shade700,
+                  badgeLabel: 'Ammissione Soci & Direttivo',
                 ),
               ],
             ),

@@ -372,29 +372,36 @@ class AllievoViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         stato_tessera = self.request.query_params.get('stato_tessera')
         if stato_tessera:
-            from datetime import date, timedelta
             from django.db.models import Q
-            one_year_ago = date.today() - timedelta(days=365)
             st = stato_tessera.lower().strip()
             has_num = (~Q(numero_tessera_acsi='') & Q(numero_tessera_acsi__isnull=False)) | (~Q(tessera_associativa='') & Q(tessera_associativa__isnull=False))
-            not_expired = Q(data_emissione_tessera__isnull=True) | Q(data_emissione_tessera__gte=one_year_ago)
             if 'estern' in st:
                 qs = qs.filter(tesserato_altra_asd=True)
             elif 'ok' in st:
                 qs = qs.filter(
-                    Q(tesserato_altra_asd=True) | (has_num & not_expired)
+                    Q(tesserato_altra_asd=True) | has_num
                 )
             elif 'scadut' in st:
-                qs = qs.filter(tesserato_altra_asd=False).filter(
-                    has_num,
-                    data_emissione_tessera__isnull=False,
-                    data_emissione_tessera__lt=one_year_ago
-                )
+                qs = qs.none()
             elif 'non' in st or 'tesserato' in st:
                 qs = qs.filter(tesserato_altra_asd=False).filter(
                     (Q(numero_tessera_acsi='') | Q(numero_tessera_acsi__isnull=True)) &
                     (Q(tessera_associativa='') | Q(tessera_associativa__isnull=True))
                 )
+
+        certificato_medico = self.request.query_params.get('certificato_medico')
+        if certificato_medico:
+            from django.utils import timezone
+            cm = certificato_medico.lower().strip()
+            today = timezone.localdate()
+            if cm in ('senza', 'assente', 'nessuno', 'none', 'vuoto'):
+                qs = qs.filter(scadenza_certificato_medico__isnull=True)
+            elif cm in ('presente', 'con'):
+                qs = qs.filter(scadenza_certificato_medico__isnull=False)
+            elif cm in ('valido', 'valida'):
+                qs = qs.filter(scadenza_certificato_medico__gte=today)
+            elif cm in ('scaduto', 'scaduta'):
+                qs = qs.filter(scadenza_certificato_medico__lt=today)
         return qs
 
     @action(detail=False, methods=['get'], url_path='next-tessera-associativa')
@@ -959,8 +966,9 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo = self.get_object()
         telefono = request.data.get('telefono') or allievo.telefono
         if not telefono or str(telefono).strip().upper() == 'TBD':
+            label = "Il prospect" if allievo.is_prospect else "L'allievo"
             return Response(
-                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
+                {'success': False, 'error': f"{label} {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1023,8 +1031,9 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo = self.get_object()
         telefono = request.data.get('telefono') or allievo.telefono
         if not telefono or str(telefono).strip().upper() == 'TBD':
+            label = "Il prospect" if allievo.is_prospect else "L'allievo"
             return Response(
-                {'success': False, 'error': f"L'allievo {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
+                {'success': False, 'error': f"{label} {allievo.nome} {allievo.cognome} non ha un numero di telefono WhatsApp valido associato."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1699,7 +1708,8 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
         predefiniti = [
             ('ricevuta', 'Template Ricevuta Pagamento', 'Template PDF utilizzato per la generazione delle ricevute di pagamento quote e corsi.'),
             ('modulo_tesseramento', 'Modulo di Tesseramento', 'Modulo PDF ufficiale per la richiesta o rinnovo del tesseramento degli allievi.'),
-            ('verbale_rendiconto', 'Verbale Approvazione Rendiconto', 'Modello di verbale assembleare per l\'approvazione del rendiconto economico-finanziario annuale.')
+            ('verbale_rendiconto', 'Verbale Approvazione Rendiconto', 'Modello di verbale assembleare per l\'approvazione del rendiconto economico-finanziario annuale.'),
+            ('verbale_ammissione_socio', 'Verbale di Ammissione Socio', 'Modello di verbale del Consiglio Direttivo per l\'ammissione e iscrizione a libro soci dei nuovi associati.')
         ]
         for chiave, nome, desc in predefiniti:
             DocumentTemplate.objects.get_or_create(

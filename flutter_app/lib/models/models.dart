@@ -204,7 +204,8 @@ class Allievo {
   final String numeroTessera;
   final String numeroTesseraAcsi;
   final String tesseraAssociativa;
-  final String? dataEmissioneTessera;
+  final String? dataAmmissione;
+  final String? scadenzaCertificatoMedico;
   final bool tesseratoAltraAsd;
   final String statoTessera;
   final String email;
@@ -249,7 +250,8 @@ class Allievo {
     this.numeroTessera = '',
     this.numeroTesseraAcsi = '',
     this.tesseraAssociativa = '',
-    this.dataEmissioneTessera,
+    this.dataAmmissione,
+    this.scadenzaCertificatoMedico,
     this.tesseratoAltraAsd = false,
     this.statoTessera = 'NON TESSERATO',
     this.googleContactId,
@@ -269,6 +271,21 @@ class Allievo {
       numeroTessera.trim().isNotEmpty ||
       numeroTesseraAcsi.trim().isNotEmpty ||
       tesseraAssociativa.trim().isNotEmpty;
+
+  bool get hasCertificatoMedico =>
+      scadenzaCertificatoMedico != null && scadenzaCertificatoMedico!.trim().isNotEmpty;
+  bool get isSenzaCertificatoMedico => !hasCertificatoMedico;
+  DateTime? get scadenzaCertificatoMedicoDate =>
+      hasCertificatoMedico ? DateTime.tryParse(scadenzaCertificatoMedico!.trim()) : null;
+  bool get isCertificatoMedicoScaduto {
+    final dt = scadenzaCertificatoMedicoDate;
+    if (dt == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return DateTime(dt.year, dt.month, dt.day).isBefore(today);
+  }
+  bool get isCertificatoMedicoValido =>
+      hasCertificatoMedico && scadenzaCertificatoMedicoDate != null && !isCertificatoMedicoScaduto;
 
   String get sortName {
     final myName = '$cognome $nome'.toLowerCase().trim();
@@ -319,7 +336,8 @@ class Allievo {
       numeroTesseraAcsi: json['numero_tessera_acsi'] ?? json['numero_tessera'] ?? '',
       tesseraAssociativa: json['tessera_associativa'] ?? '',
       numeroTessera: json['numero_tessera_acsi'] ?? json['numero_tessera'] ?? '',
-      dataEmissioneTessera: json['data_emissione_tessera'],
+      dataAmmissione: json['data_ammissione'],
+      scadenzaCertificatoMedico: json['scadenza_certificato_medico'],
       tesseratoAltraAsd: json['tesserato_altra_asd'] == true || json['tesserato_altra_asd'] == 1 || json['tesserato_altra_asd'] == 'true',
       statoTessera: json['stato_tessera'] ?? 'NON TESSERATO',
       dataNascita: json['data_nascita'],
@@ -353,7 +371,8 @@ class Allievo {
     'numero_tessera_acsi': numeroTesseraAcsi,
     'numero_tessera': numeroTesseraAcsi.isNotEmpty ? numeroTesseraAcsi : numeroTessera,
     'tessera_associativa': tesseraAssociativa,
-    'data_emissione_tessera': dataEmissioneTessera,
+    'data_ammissione': dataAmmissione,
+    'scadenza_certificato_medico': scadenzaCertificatoMedico,
   };
 }
 
