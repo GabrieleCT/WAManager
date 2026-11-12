@@ -200,3 +200,64 @@ class AllievoCertificatoMedicoTests(TestCase):
             {r["id"] for r in res_presente.json()},
             {str(valido.id), str(scaduto.id)},
         )
+
+
+class AggiungiJollyLezioneTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="admin_jolly", password="secret")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    @patch("core.api_views.send_whatsapp_message", return_value={"success": True})
+    def test_aggiungi_jolly_sets_pending_status_and_sends_whatsapp(self, mock_send):
+        from core.models import Scuola, Corso, Lezione, Presenza
+        from datetime import time
+
+        scuola = Scuola.objects.create(nome="Sede Centro")
+        corso = Corso.objects.create(
+            scuola=scuola,
+            livello="principiante",
+            giorno_settimana="lunedi",
+            orario=time(20, 30),
+        )
+        lezione = Lezione.objects.create(
+            corso=corso,
+            data=date(2026, 11, 12),
+            titolo="Lezione 1",
+        )
+        allievo = Allievo.objects.create(
+            nome="Chiara",
+            cognome="Bianchi",
+            nickname="Chiary",
+            ruolo="follower",
+            telefono="+393331234567",
+        )
+
+        res = self.client.post(
+            f"/api/lezioni/{lezione.id}/aggiungi-jolly/",
+            {
+                "allievo_id": str(allievo.id),
+                "invia_whatsapp": True,
+                "testo": "Ciao {nickname}, riesci a venire come Jolly stasera?",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertIsNone(data["presente"])
+        self.assertTrue(data["is_jolly"])
+        self.assertTrue(data["whatsapp"]["success"])
+        self.assertEqual(
+            data["whatsapp"]["messaggio"],
+            "Ciao Chiary, riesci a venire come Jolly stasera?",
+        )
+
+        presenza = Presenza.objects.get(lezione=lezione, allievo=allievo)
+        self.assertIsNone(presenza.presente)
+        self.assertTrue(presenza.is_jolly)
+        mock_send.assert_called_once_with(
+            to="+393331234567",
+            message="Ciao Chiary, riesci a venire come Jolly stasera?",
+            is_group=False,
+        )

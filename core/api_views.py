@@ -1143,7 +1143,10 @@ class LezioneViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='aggiungi-jolly')
     def aggiungi_jolly(self, request, pk=None):
-        """Aggiunge un allievo (jolly) alle presenze della lezione e lo segna presente."""
+        """
+        Aggiunge un allievo come Jolly alle presenze della lezione in stato di attesa risposta (presente=None)
+        e, se richiesto, invia contestualmente il messaggio WhatsApp.
+        """
         lezione = self.get_object()
         allievo_id = request.data.get('allievo_id')
         if not allievo_id:
@@ -1155,10 +1158,58 @@ class LezioneViewSet(viewsets.ModelViewSet):
         presenza, created = Presenza.objects.update_or_create(
             lezione=lezione,
             allievo=allievo,
-            defaults={'presente': True, 'fonte': 'manuale', 'is_jolly': True}
+            defaults={'presente': None, 'fonte': 'manuale', 'is_jolly': True}
         )
+
+        testo_raw = (request.data.get('testo') or '').strip()
+        invia_wa_raw = request.data.get('invia_whatsapp', None)
+        invia_wa = bool(invia_wa_raw) if invia_wa_raw is not None else bool(testo_raw)
+
+        whatsapp_info = None
+        if invia_wa:
+            telefono = (allievo.telefono or '').strip()
+            if not telefono or telefono.upper() == 'TBD':
+                whatsapp_info = {
+                    'attempted': False,
+                    'success': False,
+                    'error': f"Nessun numero di telefono valido registrato per {allievo.nome} {allievo.cognome}.",
+                }
+            else:
+                nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
+                if not testo_raw:
+                    cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+                    testo_raw = (
+                        cfg.jolly_testo
+                        if (cfg and cfg.jolly_testo)
+                        else "Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺"
+                    )
+                msg_finale = (
+                    testo_raw
+                    .replace('{nickname}', nick)
+                    .replace('<nickname>', nick)
+                    .replace('<nome_allievo>', nick)
+                    .replace('{nome_allievo}', nick)
+                    .replace('{allievo}', nick)
+                    .replace('{nome}', nick)
+                    .replace('<nome>', nick)
+                )
+                wa_res = send_whatsapp_message(
+                    to=telefono,
+                    message=msg_finale,
+                    is_group=False,
+                )
+                whatsapp_info = {
+                    'attempted': True,
+                    'success': bool(wa_res.get('success')),
+                    'messaggio': msg_finale,
+                    'error': wa_res.get('error'),
+                }
+
         serializer = PresenzaSerializer(presenza)
-        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        payload = dict(serializer.data)
+        if whatsapp_info is not None:
+            payload['whatsapp'] = whatsapp_info
+        return Response(payload, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
     def perform_create(self, serializer):

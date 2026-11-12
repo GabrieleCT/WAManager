@@ -646,13 +646,33 @@ class ApiService {
     return res.statusCode == 200;
   }
 
-  Future<bool> aggiungiJollyLezione(String lezioneId, String allievoId) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/lezioni/$lezioneId/aggiungi-jolly/'),
-      headers: _headers,
-      body: jsonEncode({'allievo_id': allievoId}),
-    );
-    return res.statusCode == 200 || res.statusCode == 201;
+  Future<Map<String, dynamic>> aggiungiJollyLezione(
+    String lezioneId,
+    String allievoId, {
+    String? testo,
+    bool inviaWhatsapp = true,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/lezioni/$lezioneId/aggiungi-jolly/'),
+        headers: _headers,
+        body: jsonEncode({
+          'allievo_id': allievoId,
+          'invia_whatsapp': inviaWhatsapp,
+          if (testo != null) 'testo': testo,
+        }),
+      );
+      final body = res.bodyBytes.isNotEmpty
+          ? jsonDecode(utf8.decode(res.bodyBytes))
+          : <String, dynamic>{};
+      final ok = res.statusCode == 200 || res.statusCode == 201;
+      return {
+        'success': ok,
+        if (body is Map<String, dynamic>) ...body,
+      };
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
   }
 
   Future<bool> deletePresenza(String id) async {

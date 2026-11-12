@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/pdf_report_service.dart';
+import '../widgets/aggiungi_jolly_dialog.dart';
 
 class PresenzeScreen extends StatefulWidget {
   final String? initialLezioneId;
@@ -583,7 +584,7 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
   }
 
 
-  void _showAddJollyDialog() {
+  Future<void> _showAddJollyDialog() async {
     if (_selectedLezione == null) return;
 
     final presentiLeader = _presenze.where((p) => p.presente == true && p.allievoRuolo == 'leader').length;
@@ -597,198 +598,44 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       infoBilanciamento = 'I ruoli sono attualmente in parità ($presentiLeader Leader e $presentiFollower Follower).';
     }
 
-    showDialog(
+    final res = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) {
-        bool loading = true;
-        List<Jolly> jollyList = [];
-        List<Allievo> allieviList = [];
-        String? selectedAllievoId;
-        bool adding = false;
-        String? errorMsg;
-
-        return StatefulBuilder(
-          builder: (ctx, setDlgState) {
-            if (loading) {
-              Future.wait([
-                _api.getJolly(),
-                _api.getAllievi(isProspect: false),
-              ]).then((results) {
-                if (ctx.mounted) {
-                  final jList = results[0] as List<Jolly>;
-                  jList.sort((a, b) => a.priorita.compareTo(b.priorita));
-                  final aList = results[1] as List<Allievo>;
-                  setDlgState(() {
-                    jollyList = jList;
-                    allieviList = aList;
-                    loading = false;
-                    final candidateJolly = jList.where(
-                      (j) => !_presenze.any((p) => p.allievoId == j.allievoId && p.presente == true)
-                    ).toList();
-                    if (candidateJolly.isNotEmpty) {
-                      selectedAllievoId = candidateJolly.first.allievoId;
-                    } else if (jList.isNotEmpty) {
-                      selectedAllievoId = jList.first.allievoId;
-                    } else if (aList.isNotEmpty) {
-                      selectedAllievoId = aList.first.id;
-                    }
-                  });
-                }
-              }).catchError((err) {
-                if (ctx.mounted) {
-                  setDlgState(() {
-                    loading = false;
-                    errorMsg = 'Errore nel caricamento: $err';
-                  });
-                }
-              });
-            }
-
-            final items = <DropdownMenuItem<String>>[];
-            if (jollyList.isNotEmpty) {
-              for (final j in jollyList) {
-                final giaPresente = _presenze.any((p) => p.allievoId == j.allievoId && p.presente == true);
-                items.add(DropdownMenuItem(
-                  value: j.allievoId,
-                  child: Text(
-                    '⭐ [P${j.priorita}] ${j.allievoNome} (${j.allievoRuolo.toUpperCase()})${giaPresente ? " - Già Presente" : ""}',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: giaPresente ? Colors.grey : Colors.purple.shade900,
-                    ),
-                  ),
-                ));
-              }
-            }
-
-            final altriAllievi = allieviList.where((a) => !jollyList.any((j) => j.allievoId == a.id)).toList();
-            for (final a in altriAllievi) {
-              final giaPresente = _presenze.any((p) => p.allievoId == a.id && p.presente == true);
-              items.add(DropdownMenuItem(
-                value: a.id,
-                child: Text(
-                  '👤 ${a.nomeCompleto} (${a.ruolo.toUpperCase()})${giaPresente ? " - Già Presente" : ""}',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: giaPresente ? Colors.grey : Colors.black87,
-                  ),
-                ),
-              ));
-            }
-
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.star, color: Colors.amber),
-                  SizedBox(width: 8),
-                  Text('Aggiungi Jolly alla Lezione'),
-                ],
-              ),
-              content: SizedBox(
-                width: 500,
-                child: loading
-                    ? const Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : errorMsg != null
-                        ? Text(errorMsg!, style: const TextStyle(color: Colors.red))
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.amber.shade300),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.lightbulb_outline, size: 20, color: Colors.amber.shade900),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        infoBilanciamento,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.amber.shade900,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              DropdownButtonFormField<String>(
-                                value: selectedAllievoId,
-                                isExpanded: true,
-                                decoration: InputDecoration(
-                                  labelText: 'Seleziona Allievo / Jolly da aggiungere *',
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                  helperText: 'I Jolly registrati hanno la precedenza (⭐)',
-                                ),
-                                items: items,
-                                onChanged: (val) {
-                                  setDlgState(() => selectedAllievoId = val);
-                                },
-                              ),
-                            ],
-                          ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Annulla'),
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.shade800,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: adding
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.add_task, size: 18),
-                  label: const Text('Aggiungi e Segna Presente'),
-                  onPressed: (adding || loading || selectedAllievoId == null)
-                      ? null
-                      : () async {
-                          setDlgState(() => adding = true);
-                          final ok = await _api.aggiungiJollyLezione(_selectedLezione!.id, selectedAllievoId!);
-                          if (ctx.mounted) {
-                            Navigator.pop(ctx);
-                          }
-                          if (ok) {
-                            await _loadPresenze(_selectedLezione!.id);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Jolly aggiunto alla lezione e conteggiato tra i presenti!'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            }
-                          } else {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Errore durante l\'aggiunta del Jolly.'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (_) => AggiungiJollyDialog(
+        lezione: _selectedLezione!,
+        presenze: _presenze,
+        scuole: _scuole,
+        infoBilanciamento: infoBilanciamento,
+      ),
     );
+
+    if (res == null || !mounted) return;
+    if (res['success'] == true) {
+      await _loadPresenze(_selectedLezione!.id);
+      if (!mounted) return;
+      final wa = res['whatsapp'] as Map<String, dynamic>?;
+      String msg;
+      Color bg;
+      if (wa == null) {
+        msg = 'Jolly aggiunto in attesa di risposta.';
+        bg = Colors.green;
+      } else if (wa['success'] == true) {
+        msg = 'Jolly aggiunto in attesa di risposta e messaggio WhatsApp inviato!';
+        bg = Colors.green;
+      } else {
+        msg = 'Jolly aggiunto in attesa di risposta, ma invio WhatsApp fallito: ${wa['error'] ?? 'errore sconosciuto'}';
+        bg = Colors.orange.shade800;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: bg),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['error']?.toString() ?? 'Errore durante l\'aggiunta del Jolly.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // ignore: unused_element
