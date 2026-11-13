@@ -941,6 +941,8 @@ class GoogleDriveConfig(models.Model):
     folder_verbali_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbale di Rendiconto Economico")
     folder_libro_soci_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Libro Soci")
     folder_libro_soci_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Libro Soci")
+    folder_certificati_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Certificati Medici")
+    folder_certificati_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Certificati Medici")
     is_active = models.BooleanField(default=True, help_text="Stato attivazione integrazione Google Drive")
     last_tested_at = models.DateTimeField(null=True, blank=True)
     last_test_status = models.CharField(max_length=50, blank=True, default='')  # 'success', 'error'

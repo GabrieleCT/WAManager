@@ -2005,4 +2005,62 @@ class ApiService {
       return {'success': false, 'error': e.toString()};
     }
   }
+
+  // ─── Import Documenti Allievo su Google Drive ────────────────────────────
+  Future<Map<String, dynamic>> getAllievoWhatsappMedia(String allievoId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/api/allievi/$allievoId/whatsapp-media/'),
+        headers: _headers,
+      );
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+      return {'success': false, 'files': [], 'error': 'Errore HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'success': false, 'files': [], 'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> importDocumentoDrive({
+    required String allievoId,
+    required String tipoDocumento, // 'tesseramento' | 'certificati'
+    required bool convertToPdf,
+    required String filename,
+    List<String>? whatsappFiles,
+    List<Map<String, dynamic>>? manualFiles, // [{'name': String, 'bytes': List<int>}]
+    String? scadenzaCertificatoMedico,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/allievi/$allievoId/import-documento-drive/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+
+    request.fields['tipo_documento'] = tipoDocumento;
+    request.fields['convert_to_pdf'] = convertToPdf ? 'true' : 'false';
+    request.fields['filename'] = filename;
+    if (scadenzaCertificatoMedico != null && scadenzaCertificatoMedico.isNotEmpty) {
+      request.fields['scadenza_certificato_medico'] = scadenzaCertificatoMedico;
+    }
+    if (whatsappFiles != null && whatsappFiles.isNotEmpty) {
+      request.fields['whatsapp_files'] = jsonEncode(whatsappFiles);
+    }
+
+    if (manualFiles != null) {
+      for (final mf in manualFiles) {
+        final bytes = mf['bytes'] as List<int>?;
+        final name = (mf['name'] as String?) ?? 'file';
+        if (bytes != null && bytes.isNotEmpty) {
+          request.files.add(http.MultipartFile.fromBytes('files', bytes, filename: name));
+        }
+      }
+    }
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 }

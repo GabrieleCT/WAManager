@@ -93,7 +93,7 @@ void main() {
     expect(find.text('Allievi'), findsWidgets);
     expect(find.text('Prospect'), findsWidgets);
     expect(find.text('Coppie'), findsWidgets);
-    expect(find.text('Jolly'), findsWidgets);
+    expect(find.text('Import Documenti'), findsWidgets);
     expect(find.text('Sincronizzazione'), findsNothing);
 
     // Desktop test
@@ -105,6 +105,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Import Documenti'), findsWidgets);
     expect(find.text('Sincronizzazione'), findsOneWidget);
   });
 }

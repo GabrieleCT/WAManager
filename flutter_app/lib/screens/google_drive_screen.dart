@@ -37,6 +37,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
   final TextEditingController _folderVerbaliNomeController = TextEditingController();
   final TextEditingController _folderLibroSociIdController = TextEditingController();
   final TextEditingController _folderLibroSociNomeController = TextEditingController();
+  final TextEditingController _folderCertificatiIdController = TextEditingController();
+  final TextEditingController _folderCertificatiNomeController = TextEditingController();
 
   static const String _uriLocalhost = 'http://localhost:8082/api/google-drive/oauth-callback/';
   static const String _uri127 = 'http://127.0.0.1:8082/api/google-drive/oauth-callback/';
@@ -60,6 +62,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     _folderVerbaliNomeController.dispose();
     _folderLibroSociIdController.dispose();
     _folderLibroSociNomeController.dispose();
+    _folderCertificatiIdController.dispose();
+    _folderCertificatiNomeController.dispose();
     super.dispose();
   }
 
@@ -83,6 +87,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             _folderVerbaliNomeController.text = config.folderVerbaliNome;
             _folderLibroSociIdController.text = config.folderLibroSociId;
             _folderLibroSociNomeController.text = config.folderLibroSociNome;
+            _folderCertificatiIdController.text = config.folderCertificatiId;
+            _folderCertificatiNomeController.text = config.folderCertificatiNome;
           }
           _loading = false;
         });
@@ -509,17 +515,26 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
     final isLibroSoci = targetType == 'libro_soci';
+    final isCertificati = targetType == 'certificati';
 
     final String? currentFolderId = isRicevute
         ? _config?.folderRicevuteId
         : (isTessere
             ? _config?.folderTessereId
-            : (isLibroSoci ? _config?.folderLibroSociId : _config?.folderVerbaliId));
+            : (isLibroSoci
+                ? _config?.folderLibroSociId
+                : (isCertificati
+                    ? _config?.folderCertificatiId
+                    : _config?.folderVerbaliId)));
     final String? currentFolderName = isRicevute
         ? _config?.folderRicevuteNome
         : (isTessere
             ? _config?.folderTessereNome
-            : (isLibroSoci ? _config?.folderLibroSociNome : _config?.folderVerbaliNome));
+            : (isLibroSoci
+                ? _config?.folderLibroSociNome
+                : (isCertificati
+                    ? _config?.folderCertificatiNome
+                    : _config?.folderVerbaliNome)));
 
     String dialogTitle = 'Seleziona Cartella per le RICEVUTE';
     if (isTessere) {
@@ -528,6 +543,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
       dialogTitle = 'Seleziona Cartella per VERBALE DI RENDICONTO ECONOMICO';
     } else if (isLibroSoci) {
       dialogTitle = 'Seleziona Cartella per il LIBRO SOCI';
+    } else if (isCertificati) {
+      dialogTitle = 'Seleziona Cartella per i CERTIFICATI MEDICI';
     }
 
     final selected = await showDialog<dynamic>(
@@ -567,6 +584,12 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           'folder_libro_soci_nome': selected.name,
         };
         targetLabel = 'Libro Soci';
+      } else if (isCertificati) {
+        updateData = {
+          'folder_certificati_id': selected.id,
+          'folder_certificati_nome': selected.name,
+        };
+        targetLabel = 'Certificati Medici';
       } else {
         updateData = {
           'folder_verbali_id': selected.id,
@@ -605,6 +628,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
     final isLibroSoci = targetType == 'libro_soci';
+    final isCertificati = targetType == 'certificati';
 
     String targetLabel = 'Ricevute';
     String targetArticle = 'le ricevute';
@@ -617,6 +641,9 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     } else if (isLibroSoci) {
       targetLabel = 'Libro Soci';
       targetArticle = 'il libro soci';
+    } else if (isCertificati) {
+      targetLabel = 'Certificati Medici';
+      targetArticle = 'i certificati medici';
     }
 
     final conf = await showDialog<bool>(
@@ -646,6 +673,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         updateData = {'folder_tessere_id': '', 'folder_tessere_nome': ''};
       } else if (isLibroSoci) {
         updateData = {'folder_libro_soci_id': '', 'folder_libro_soci_nome': ''};
+      } else if (isCertificati) {
+        updateData = {'folder_certificati_id': '', 'folder_certificati_nome': ''};
       } else {
         updateData = {'folder_verbali_id': '', 'folder_verbali_nome': ''};
       }
@@ -851,15 +880,17 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                       ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))]
                       : null,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     Icon(
                       Icons.account_circle,
                       size: 20,
                       color: _selectedAuthTab == 'oauth' ? Colors.blue.shade700 : Colors.grey.shade600,
                     ),
-                    const SizedBox(width: 8),
                     Text(
                       'Account Google Personale (OAuth 2.0)',
                       style: TextStyle(
@@ -868,7 +899,6 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                         fontSize: 14,
                       ),
                     ),
-                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -1113,15 +1143,23 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        const Icon(Icons.security, size: 20, color: Colors.blue),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Credenziali App Google OAuth 2.0 (Client ID & Secret)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.security, size: 20, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text(
+                              'Credenziali App Google OAuth 2.0 (Client ID & Secret)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
                         ),
-                        const Spacer(),
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1570,7 +1608,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare ricevute, tessere, verbali di rendiconto economico e libro soci.',
+              'Sfoglia l\'alberatura delle tue cartelle e seleziona dove archiviare ricevute, tessere, verbali di rendiconto economico, libro soci e certificati medici.',
               style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -1628,6 +1666,20 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
               targetType: 'libro_soci',
               isConfigured: isConfigured,
             ),
+
+            const SizedBox(height: 20),
+
+            // Card Cartella Certificati Medici
+            _buildFolderCard(
+              title: 'Cartella Certificati Medici',
+              description: 'Cartella Google Drive per l\'archiviazione e la gestione dei certificati medici degli allievi.',
+              icon: Icons.medical_information_outlined,
+              color: Colors.deepOrange,
+              folderId: _config?.folderCertificatiId ?? '',
+              folderName: _config?.folderCertificatiNome ?? '',
+              targetType: 'certificati',
+              isConfigured: isConfigured,
+            ),
           ],
         ),
       ),
@@ -1675,7 +1727,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 4,
                       children: [
                         Text(
                           title,
@@ -1685,7 +1740,6 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                             color: color.shade900,
                           ),
                         ),
-                        const SizedBox(width: 10),
                         if (hasFolder)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1830,11 +1884,13 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
               children: [
                 Icon(Icons.help_outline, color: Colors.blueGrey.shade800),
                 const SizedBox(width: 10),
-                Text(
-                  _selectedAuthTab == 'oauth'
-                      ? 'Guida: Come creare il Client ID OAuth 2.0 su Google Cloud Console'
-                      : 'Come condividere le cartelle con il Service Account',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade900),
+                Expanded(
+                  child: Text(
+                    _selectedAuthTab == 'oauth'
+                        ? 'Guida: Come creare il Client ID OAuth 2.0 su Google Cloud Console'
+                        : 'Come condividere le cartelle con il Service Account',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade900),
+                  ),
                 ),
               ],
             ),

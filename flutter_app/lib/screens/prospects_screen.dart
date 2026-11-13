@@ -578,69 +578,103 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
 
   void _showConvertDialog(Allievo prospect) {
-
     String? selectedCorsoId = prospect.corsoId ?? (_corsi.isNotEmpty ? _corsi.first.id : null);
-
-
+    bool inviaModuloTesseramento = true;
 
     showDialog(
-
       context: context,
-
       builder: (ctx) => StatefulBuilder(
-
         builder: (ctx, setDlgState) => AlertDialog(
-
-          title: Text('Iscrivi ${prospect.nomeCompleto} ad un Corso'),
-
-          content: Column(
-
-            mainAxisSize: MainAxisSize.min,
-
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
             children: [
-
-              const Text('Seleziona il corso a cui iscrivere l\'allievo per completare la conversione da Prospect ad Allievo Effettivo:'),
-
-              const SizedBox(height: 16),
-
-              DropdownButtonFormField<String>(
-
-                initialValue: selectedCorsoId,
-
-                decoration: const InputDecoration(labelText: 'Corso di destinazione *'),
-
-                items: _corsi.map((c) {
-
-                  return DropdownMenuItem(
-
-                    value: c.id,
-
-                    child: Text('${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'),
-
-                  );
-
-                }).toList(),
-
-                onChanged: (v) => setDlgState(() => selectedCorsoId = v),
-
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.school, color: Colors.green.shade800, size: 24),
               ),
-
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Iscrivi ${prospect.nomeCompleto} ad un Corso',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
-
           ),
-
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Seleziona il corso a cui iscrivere l\'allievo per completare la conversione da Prospect ad Allievo Effettivo:',
+                  style: TextStyle(fontSize: 13.5, color: Colors.black87),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedCorsoId,
+                  decoration: const InputDecoration(
+                    labelText: 'Corso di destinazione *',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                  items: _corsi.map((c) {
+                    return DropdownMenuItem(
+                      value: c.id,
+                      child: Text(
+                        '${c.scuolaNome} - ${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})',
+                        style: const TextStyle(fontSize: 13.5),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setDlgState(() => selectedCorsoId = v),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: CheckboxListTile(
+                    value: inviaModuloTesseramento,
+                    onChanged: (val) {
+                      setDlgState(() {
+                        inviaModuloTesseramento = val ?? true;
+                      });
+                    },
+                    dense: true,
+                    activeColor: Colors.green.shade700,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Invia modulo di tesseramento via WhatsApp',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                    ),
+                    subtitle: const Text(
+                      'Genera il PDF precompilato e lo invia automaticamente su WhatsApp',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           actions: [
-
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-
             ElevatedButton.icon(
-
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-
-              icon: const Icon(Icons.check),
-
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              icon: const Icon(Icons.check, size: 18),
               label: const Text('Conferma Iscrizione'),
-
               onPressed: () async {
                 if (selectedCorsoId == null) return;
                 Navigator.pop(ctx);
@@ -650,18 +684,14 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                   prospect: prospect,
                   corsoId: selectedCorsoId!,
                   corsoNome: corsoObj != null ? '${corsoObj.scuolaNome} ${corsoObj.livelloDisplay}' : null,
+                  inviaModuloTesseramento: inviaModuloTesseramento,
                   onCompleted: () => _loadData(),
                 );
               },
-
             ),
-
           ],
-
         ),
-
       ),
-
     );
 
   }

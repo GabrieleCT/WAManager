@@ -435,6 +435,8 @@ class AllievoViewSet(viewsets.ModelViewSet):
             allievo.corso = corso
             allievo.livello = corso.livello
             allievo.is_prospect = False
+            allievo.tessera_associativa = ''
+            allievo.numero_tessera_acsi = ''
 
             if allievo.note and re.search(r'\bpotenzial[ei]\b', allievo.note, flags=re.IGNORECASE):
                 from .google_contacts_service import remove_potenziale_from_note
@@ -536,6 +538,8 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo.corso = corso
         allievo.livello = corso.livello
         allievo.is_prospect = False
+        allievo.tessera_associativa = ''
+        allievo.numero_tessera_acsi = ''
 
         # Pulisce la parola "potenziale" dalle note locali se presente
         if allievo.note and re.search(r'\bpotenzial[ei]\b', allievo.note, flags=re.IGNORECASE):
@@ -1074,6 +1078,220 @@ class AllievoViewSet(viewsets.ModelViewSet):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
             return Response({'success': False, 'error': f"Errore invio WhatsApp: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'], url_path='whatsapp-media')
+    def get_whatsapp_media(self, request, pk=None):
+        """
+        Restituisce i file multimediali e documenti ricevuti via WhatsApp dall'allievo/prospect.
+        """
+        allievo = self.get_object()
+        phone = (allievo.telefono or '').strip()
+        from .wa_client import get_whatsapp_contact_media
+        media_res = get_whatsapp_contact_media(phone)
+        return Response({
+            'success': True,
+            'allievo_id': allievo.id,
+            'allievo_nome': f"{allievo.nome} {allievo.cognome}".strip(),
+            'telefono': phone,
+            'files': media_res.get('files', [])
+        })
+
+    @action(detail=True, methods=['post'], url_path='import-documento-drive')
+    def import_documento_drive(self, request, pk=None):
+        """
+        Carica su Google Drive uno o più documenti/immagini dell'allievo (da WhatsApp o upload manuale),
+        con eventuale unione in un unico file PDF.
+        """
+        import io
+        import json
+        from PIL import Image
+        import pypdf
+        from googleapiclient.http import MediaIoBaseUpload
+
+        allievo = self.get_object()
+        tipo_documento = request.data.get('tipo_documento', 'tesseramento')
+        convert_to_pdf = str(request.data.get('convert_to_pdf', 'true')).lower() in ('1', 'true', 'yes')
+        custom_filename = (request.data.get('filename') or '').strip()
+
+        # Determina la cartella Google Drive corretta
+        config = GoogleDriveConfig.objects.first()
+        if not config or not config.is_configured:
+            return Response({
+                'success': False,
+                'error': 'Google Drive non configurato. Vai in Impostazioni > Google Drive per collegare il tuo account.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if tipo_documento == 'certificati':
+            target_folder_id = config.folder_certificati_id or config.folder_id
+            folder_label = config.folder_certificati_nome or 'Cartella Certificati Medici'
+            tipo_label = 'Certificato Medico'
+        else:
+            target_folder_id = config.folder_tessere_id or config.folder_id
+            folder_label = config.folder_tessere_nome or 'Cartella Moduli Tesseramento'
+            tipo_label = 'Modulo di Tesseramento'
+
+        if not target_folder_id:
+            return Response({
+                'success': False,
+                'error': f"Nessuna cartella di destinazione configurata su Google Drive per '{tipo_label}'. Impostala in Impostazioni > Google Drive."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Raccoglie i file: da upload multipart o referenze ai file WhatsApp
+        files_data = [] # List of tuples: (filename, bytes, mimetype)
+
+        # 1. File caricati direttamente via multipart
+        for uploaded in request.FILES.getlist('files'):
+            files_data.append((uploaded.name, uploaded.read(), uploaded.content_type or 'application/octet-stream'))
+
+        # 2. File WhatsApp selezionati per nome
+        wa_files_raw = request.data.get('whatsapp_files')
+        if wa_files_raw:
+            if isinstance(wa_files_raw, str):
+                try:
+                    wa_filenames = json.loads(wa_files_raw)
+                except Exception:
+                    wa_filenames = [f.strip() for f in wa_files_raw.split(',') if f.strip()]
+            elif isinstance(wa_files_raw, list):
+                wa_filenames = wa_files_raw
+            else:
+                wa_filenames = []
+
+            from .wa_client import fetch_whatsapp_media_file
+            phone = (allievo.telefono or '').strip()
+            for fname in wa_filenames:
+                b = fetch_whatsapp_media_file(phone, fname)
+                if b:
+                    files_data.append((fname, b, 'application/octet-stream'))
+
+        if not files_data:
+            return Response({
+                'success': False,
+                'error': 'Nessun file selezionato per il caricamento.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Genera il nome base pulito (default Nome_Cognome)
+        clean_nome = "".join(c for c in (allievo.nome or '') if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        clean_cognome = "".join(c for c in (allievo.cognome or '') if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        default_base_name = f"{clean_nome}_{clean_cognome}".strip('_') or 'Documento'
+
+        try:
+            drive_service = get_google_drive_service(config)
+            uploaded_results = []
+
+            if convert_to_pdf:
+                # Se convert_to_pdf è True, unisci tutti i file/immagini in un unico PDF
+                writer = pypdf.PdfWriter()
+                for fname, fbytes, _ in files_data:
+                    # Se è già un PDF, leggilo con pypdf
+                    if fbytes.startswith(b'%PDF'):
+                        reader = pypdf.PdfReader(io.BytesIO(fbytes))
+                        for page in reader.pages:
+                            writer.add_page(page)
+                    else:
+                        # Tratta come immagine (JPEG, PNG, WebP, etc.)
+                        try:
+                            img = Image.open(io.BytesIO(fbytes)).convert('RGB')
+                            img_pdf_buf = io.BytesIO()
+                            img.save(img_pdf_buf, format='PDF')
+                            reader = pypdf.PdfReader(io.BytesIO(img_pdf_buf.getvalue()))
+                            for page in reader.pages:
+                                writer.add_page(page)
+                        except Exception as e_img:
+                            logger.warning(f"Impossibile convertire file {fname} in immagine PDF: {e_img}")
+
+                final_pdf_buf = io.BytesIO()
+                writer.write(final_pdf_buf)
+                final_pdf_bytes = final_pdf_buf.getvalue()
+
+                if not final_pdf_bytes:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossibile generare il PDF unificato dai file forniti.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                final_filename = custom_filename or f"{default_base_name}.pdf"
+                if not final_filename.lower().endswith('.pdf'):
+                    final_filename += '.pdf'
+
+                file_metadata = {
+                    'name': final_filename,
+                    'parents': [target_folder_id],
+                    'description': f"{tipo_label} per {allievo.nome} {allievo.cognome}"
+                }
+                media = MediaIoBaseUpload(io.BytesIO(final_pdf_bytes), mimetype='application/pdf', resumable=True)
+                uploaded = drive_service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink',
+                    supportsAllDrives=True
+                ).execute()
+
+                uploaded_results.append({
+                    'id': uploaded.get('id'),
+                    'name': uploaded.get('name'),
+                    'webViewLink': uploaded.get('webViewLink')
+                })
+            else:
+                # Carica i file singolarmente
+                for idx, (fname, fbytes, fmimetype) in enumerate(files_data):
+                    ext = ''
+                    if '.' in fname:
+                        ext = '.' + fname.split('.')[-1]
+                    elif fbytes.startswith(b'%PDF'):
+                        ext = '.pdf'
+                    elif fbytes.startswith(b'\xff\xd8\xff'):
+                        ext = '.jpg'
+                    elif fbytes.startswith(b'\x89PNG'):
+                        ext = '.png'
+
+                    if custom_filename:
+                        base = custom_filename
+                        if ext and not base.lower().endswith(ext.lower()):
+                            out_name = f"{base}_{idx+1}{ext}" if len(files_data) > 1 else f"{base}{ext}"
+                        else:
+                            out_name = f"{base}_{idx+1}" if len(files_data) > 1 else base
+                    else:
+                        out_name = f"{default_base_name}_{idx+1}{ext}" if len(files_data) > 1 else f"{default_base_name}{ext}"
+
+                    mtype = 'application/pdf' if ext == '.pdf' else ('image/jpeg' if ext in ('.jpg', '.jpeg') else (fmimetype or 'application/octet-stream'))
+                    file_metadata = {
+                        'name': out_name,
+                        'parents': [target_folder_id],
+                        'description': f"{tipo_label} per {allievo.nome} {allievo.cognome}"
+                    }
+                    media = MediaIoBaseUpload(io.BytesIO(fbytes), mimetype=mtype, resumable=True)
+                    uploaded = drive_service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields='id, name, webViewLink',
+                        supportsAllDrives=True
+                    ).execute()
+                    uploaded_results.append({
+                        'id': uploaded.get('id'),
+                        'name': uploaded.get('name'),
+                        'webViewLink': uploaded.get('webViewLink')
+                    })
+
+            # Se è stato specificato o aggiornato il certificato medico con una data di scadenza
+            scadenza_certificato = request.data.get('scadenza_certificato_medico')
+            if scadenza_certificato and tipo_documento == 'certificati':
+                try:
+                    allievo.scadenza_certificato_medico = scadenza_certificato
+                    allievo.save(update_fields=['scadenza_certificato_medico'])
+                except Exception:
+                    pass
+
+            return Response({
+                'success': True,
+                'message': f"Documento caricato con successo su Google Drive nella cartella '{folder_label}'!",
+                'uploaded_files': uploaded_results,
+                'folder_nome': folder_label,
+                'tipo_documento': tipo_documento
+            })
+        except Exception as e:
+            logger.error(f"Errore caricamento su Google Drive: {e}")
+            return Response({'success': False, 'error': f"Errore caricamento su Google Drive: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 class JollyViewSet(viewsets.ModelViewSet):
@@ -2894,7 +3112,9 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             'folder_verbali_id',
             'folder_verbali_nome',
             'folder_libro_soci_id',
-            'folder_libro_soci_nome'
+            'folder_libro_soci_nome',
+            'folder_certificati_id',
+            'folder_certificati_nome'
         ]
         for f in folder_fields:
             if f in request.data:

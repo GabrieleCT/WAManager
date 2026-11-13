@@ -1,5 +1,5 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, getAggregateVotesInPollMessage, decryptPollVote } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, getAggregateVotesInPollMessage, decryptPollVote, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -9,6 +9,10 @@ const path = require('path');
 const LOG_FILE = path.join(__dirname, 'gateway.log');
 const POLLS_FILE = path.join(__dirname, 'baileys_polls.json');
 const LID_CACHE_FILE = path.join(__dirname, 'lid_cache.json');
+const INBOUND_MEDIA_DIR = path.join(__dirname, 'inbound_media');
+if (!fs.existsSync(INBOUND_MEDIA_DIR)) {
+    try { fs.mkdirSync(INBOUND_MEDIA_DIR, { recursive: true }); } catch (_) {}
+}
 let lidToPhoneMap = new Map();
 if (fs.existsSync(LID_CACHE_FILE)) {
     try {
@@ -216,6 +220,79 @@ async function connectToWhatsApp() {
 
             const remoteJid = msg.key.remoteJid || '';
 
+            // Estrazione sicura del messaggio interno
+            let innerMsg = msg.message;
+            if (innerMsg.ephemeralMessage) innerMsg = innerMsg.ephemeralMessage.message;
+            if (innerMsg.viewOnceMessage) innerMsg = innerMsg.viewOnceMessage.message;
+            if (innerMsg.viewOnceMessageV2) innerMsg = innerMsg.viewOnceMessageV2.message;
+            if (innerMsg.documentWithCaptionMessage) innerMsg = innerMsg.documentWithCaptionMessage.message;
+
+            // Salva allegati multimediali (immagini e documenti) inviati dagli allievi (chat 1:1 o gruppi)
+            try {
+                const isIncoming = !msg.key.fromMe;
+                const hasMedia = innerMsg && (innerMsg.imageMessage || innerMsg.documentMessage);
+                if (isIncoming && hasMedia) {
+                    let sender = msg.key.participant || remoteJid;
+                    let realPhone = sender;
+                    if (realPhone.includes('@lid') && lidToPhoneMap.has(realPhone)) {
+                        realPhone = lidToPhoneMap.get(realPhone);
+                    }
+                    let cleanPhone = String(realPhone || '').split('@')[0].replace(/\D/g, '');
+                    if (cleanPhone) {
+                        const contactMediaDir = path.join(INBOUND_MEDIA_DIR, cleanPhone);
+                        if (!fs.existsSync(contactMediaDir)) {
+                            fs.mkdirSync(contactMediaDir, { recursive: true });
+                        }
+                        const isDoc = !!innerMsg.documentMessage;
+                        const mediaMsg = isDoc ? innerMsg.documentMessage : innerMsg.imageMessage;
+                        let ext = 'jpg';
+                        if (isDoc) {
+                            const origName = mediaMsg.fileName || '';
+                            if (origName.includes('.')) {
+                                ext = origName.split('.').pop().toLowerCase();
+                            } else if (mediaMsg.mimetype === 'application/pdf') {
+                                ext = 'pdf';
+                            } else {
+                                ext = 'bin';
+                            }
+                        } else if (mediaMsg.mimetype) {
+                            if (mediaMsg.mimetype.includes('png')) ext = 'png';
+                            else if (mediaMsg.mimetype.includes('webp')) ext = 'webp';
+                            else ext = 'jpg';
+                        }
+                        const msgTimestamp = Number(msg.messageTimestamp) ? Number(msg.messageTimestamp) * 1000 : Date.now();
+                        const safeMsgId = (msg.key.id || 'msg_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
+                        const targetFile = path.join(contactMediaDir, `${msgTimestamp}_${safeMsgId}.${ext}`);
+                        if (!fs.existsSync(targetFile)) {
+                            downloadMediaMessage(msg, 'buffer', {}, {
+                                logger: pino({ level: 'silent' }),
+                                reuploadRequest: (msg) => sock.updateMediaMessage(msg)
+                            }).then(buffer => {
+                                if (buffer && buffer.length > 0) {
+                                    fs.writeFileSync(targetFile, buffer);
+                                    const metaFile = targetFile + '.meta.json';
+                                    const metaData = {
+                                        id: msg.key.id,
+                                        timestamp: msgTimestamp,
+                                        fileName: mediaMsg.fileName || path.basename(targetFile),
+                                        mimetype: mediaMsg.mimetype || (isDoc ? 'application/pdf' : 'image/jpeg'),
+                                        caption: mediaMsg.caption || '',
+                                        size: buffer.length,
+                                        sender: cleanPhone
+                                    };
+                                    fs.writeFileSync(metaFile, JSON.stringify(metaData, null, 2));
+                                    logToFile(`[INBOUND MEDIA] Salvato allegato per ${cleanPhone}: ${path.basename(targetFile)} (${buffer.length} bytes)`);
+                                }
+                            }).catch(err => {
+                                logToFile(`[INBOUND MEDIA] Errore download media per ${cleanPhone}: ${err.message}`);
+                            });
+                        }
+                    }
+                }
+            } catch (errMedia) {
+                logToFile(`[INBOUND MEDIA] Errore elaborazione media: ${errMedia.message}`);
+            }
+
             // VERIFICA RIGOROSA: Intercetta SOLO i messaggi inviati nei 7 gruppi dei corsi!
             // I gruppi generali della scuola (es. San Donato 120363421055382619@g.us, Ripamonti),
             // le chat personali 1:1 e qualsiasi altro gruppo vengono TOTALMENTE IGNORATI.
@@ -230,11 +307,6 @@ async function connectToWhatsApp() {
             }
 
             // 1. Estrazione del testo (gestisce conversation, extendedTextMessage, immagini/video/documenti con didascalia, ephemeral, viewOnce)
-            let innerMsg = msg.message;
-            if (innerMsg.ephemeralMessage) innerMsg = innerMsg.ephemeralMessage.message;
-            if (innerMsg.viewOnceMessage) innerMsg = innerMsg.viewOnceMessage.message;
-            if (innerMsg.viewOnceMessageV2) innerMsg = innerMsg.viewOnceMessageV2.message;
-            if (innerMsg.documentWithCaptionMessage) innerMsg = innerMsg.documentWithCaptionMessage.message;
 
             const text = (
                 innerMsg.conversation ||
@@ -1252,4 +1324,91 @@ app.all(['/api/groups/resolve', '/api/groups/resolve/'], async (req, res) => {
         });
     }
 });
+
+// Endpoint per elencare i media ricevuti da un contatto (per il wizard di importazione documenti)
+app.get('/api/media/contact/:phone', (req, res) => {
+    try {
+        let cleanPhone = String(req.params.phone || '').split('@')[0].replace(/\D/g, '');
+        if (cleanPhone.startsWith('00')) cleanPhone = cleanPhone.slice(2);
+        if (cleanPhone.length in [9, 10] && cleanPhone.startsWith('3')) cleanPhone = '39' + cleanPhone;
+
+        const candidateFolders = new Set();
+        candidateFolders.add(cleanPhone);
+        if (cleanPhone.startsWith('39')) {
+            candidateFolders.add(cleanPhone.slice(2));
+        } else {
+            candidateFolders.add('39' + cleanPhone);
+        }
+
+        const results = [];
+        for (const f of candidateFolders) {
+            const dir = path.join(INBOUND_MEDIA_DIR, f);
+            if (fs.existsSync(dir)) {
+                const files = fs.readdirSync(dir);
+                for (const file of files) {
+                    if (file.endsWith('.meta.json')) continue;
+                    const fullPath = path.join(dir, file);
+                    const stats = fs.statSync(fullPath);
+                    let meta = null;
+                    const metaPath = fullPath + '.meta.json';
+                    if (fs.existsSync(metaPath)) {
+                        try {
+                            meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                        } catch (_) {}
+                    }
+                    const ext = path.extname(file).toLowerCase();
+                    const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'].includes(ext);
+                    const isPdf = ext === '.pdf';
+                    results.push({
+                        id: file,
+                        fileName: meta?.fileName || file,
+                        fileSize: stats.size,
+                        timestamp: meta?.timestamp || stats.mtimeMs,
+                        isImage: isImage,
+                        isPdf: isPdf,
+                        mimetype: meta?.mimetype || (isPdf ? 'application/pdf' : 'image/jpeg'),
+                        caption: meta?.caption || '',
+                        downloadUrl: `/api/media/contact/${cleanPhone}/file/${encodeURIComponent(file)}`
+                    });
+                }
+            }
+        }
+
+        results.sort((a, b) => b.timestamp - a.timestamp);
+        res.json({ success: true, phone: cleanPhone, files: results });
+    } catch (err) {
+        logToFile(`Errore endpoint /api/media/contact/:phone: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Endpoint per scaricare un singolo file media ricevuto da un contatto
+app.get('/api/media/contact/:phone/file/:filename', (req, res) => {
+    try {
+        let cleanPhone = String(req.params.phone || '').split('@')[0].replace(/\D/g, '');
+        const filename = path.basename(req.params.filename);
+
+        const candidateFolders = [cleanPhone];
+        if (cleanPhone.startsWith('39')) candidateFolders.push(cleanPhone.slice(2));
+        else candidateFolders.push('39' + cleanPhone);
+
+        let targetPath = null;
+        for (const f of candidateFolders) {
+            const p = path.join(INBOUND_MEDIA_DIR, f, filename);
+            if (fs.existsSync(p)) {
+                targetPath = p;
+                break;
+            }
+        }
+
+        if (!targetPath) {
+            return res.status(404).send('File non trovato');
+        }
+
+        res.sendFile(targetPath);
+    } catch (err) {
+        res.status(500).send('Errore server: ' + err.message);
+    }
+});
+
 

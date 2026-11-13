@@ -686,7 +686,7 @@ def export_global(request):
     for s in SondaggioMattutinoConfig.objects.select_related('corso').all():
         ws.append([
             str(s.id),
-            str(s.corso.id),
+            str(s.corso.id) if s.corso else "",
             s.testo,
             "Sì" if s.is_active else "No"
         ])
@@ -1060,12 +1060,13 @@ def import_global(request):
         # 9. Sondaggi Mattutini
         sondaggi_count = 0
         for r in get_rows("SondaggiMattutini"):
-            if not r or len(r) < 3 or not r[1]:
+            if not r or len(r) < 3 or not r[0]:
                 continue
             try:
+                corso_id_val = str(r[1]).strip() if len(r) > 1 and r[1] and str(r[1]).strip() != "None" else None
                 is_act = str(r[3]).strip().lower() not in ['no', 'false', '0'] if len(r) > 3 and r[3] is not None else True
                 SondaggioMattutinoConfig.objects.update_or_create(id=r[0], defaults={
-                    'corso_id': r[1],
+                    'corso_id': corso_id_val,
                     'testo': str(r[2]),
                     'is_active': is_act
                 })

@@ -234,3 +234,33 @@ def cleanup_whatsapp_contact(phone: str, group_ids: list = None, remove_from_all
     except Exception as e:
         logger.error(f"Errore chiamata cleanup WhatsApp per {phone}: {e}")
         return {"success": False, "error": str(e)}
+
+
+def get_whatsapp_contact_media(phone: str) -> dict:
+    """
+    Recupera l'elenco dei media/documenti ricevuti via WhatsApp dal contatto specificato.
+    """
+    try:
+        clean = (phone or "").strip()
+        if not clean:
+            return {"success": True, "files": []}
+        r = requests.get(f"{GATEWAY_BASE}/api/media/contact/{clean}", timeout=8)
+        if r.status_code == 200:
+            return r.json()
+        return {"success": True, "files": []}
+    except Exception as e:
+        return {"success": False, "files": [], "error": str(e)}
+
+
+def fetch_whatsapp_media_file(phone: str, filename: str) -> bytes:
+    """
+    Recupera i byte di un file media scaricato dal contatto specificato.
+    """
+    try:
+        clean = (phone or "").strip()
+        r = requests.get(f"{GATEWAY_BASE}/api/media/contact/{clean}/file/{filename}", timeout=15)
+        if r.status_code == 200:
+            return r.content
+        return b""
+    except Exception:
+        return b""

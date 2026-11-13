@@ -27,6 +27,7 @@ Future<void> mostraConversioneAllievoDialog(
   required Allievo prospect,
   required String corsoId,
   String? corsoNome,
+  bool inviaModuloTesseramento = true,
   VoidCallback? onCompleted,
 }) async {
   await showDialog(
@@ -36,6 +37,7 @@ Future<void> mostraConversioneAllievoDialog(
       prospect: prospect,
       corsoId: corsoId,
       corsoNome: corsoNome,
+      inviaModuloTesseramento: inviaModuloTesseramento,
       onCompleted: onCompleted,
     ),
   );
@@ -45,12 +47,14 @@ class _ConvertProspectDialog extends StatefulWidget {
   final Allievo prospect;
   final String corsoId;
   final String? corsoNome;
+  final bool inviaModuloTesseramento;
   final VoidCallback? onCompleted;
 
   const _ConvertProspectDialog({
     required this.prospect,
     required this.corsoId,
     this.corsoNome,
+    this.inviaModuloTesseramento = true,
     this.onCompleted,
   });
 
@@ -82,7 +86,9 @@ class _ConvertProspectDialogState extends State<_ConvertProspectDialog> {
       ),
       _ConversionStep(
         title: '4. Invio del modulo di tesseramento',
-        defaultDescription: 'Generazione PDF e invio modulo tesseramento via WhatsApp',
+        defaultDescription: widget.inviaModuloTesseramento
+            ? 'Generazione PDF e invio modulo tesseramento via WhatsApp'
+            : 'Invio modulo di tesseramento escluso su richiesta',
       ),
     ];
 
@@ -181,43 +187,50 @@ class _ConvertProspectDialogState extends State<_ConvertProspectDialog> {
     }
 
     // ─── STEP 4: Invio modulo di tesseramento via WhatsApp ──────────
-    setState(() {
-      _steps[3].status = StepStateStatus.inProgress;
-      _steps[3].detail = 'Generazione PDF e invio modulo tesseramento in corso...';
-    });
-
-    Map<String, dynamic> step4Res;
-    try {
-      final tel = widget.prospect.telefono.trim();
-      if (tel.isEmpty || tel.toUpperCase() == 'TBD') {
-        step4Res = {
-          'success': false,
-          'skipped': true,
-          'error': 'Nessun numero di telefono associato: modulo non inviato via WhatsApp.',
-        };
-      } else {
-        step4Res = await _api.sendModuloTesseramentoWhatsApp(
-          allievoId: widget.prospect.id,
-          telefono: tel,
-        );
-      }
-    } catch (e) {
-      step4Res = {'success': false, 'error': e.toString()};
-    }
-
-    if (!mounted) return;
-
-    if (step4Res['success'] == true) {
+    if (!widget.inviaModuloTesseramento) {
       setState(() {
-        _steps[3].status = StepStateStatus.success;
-        _steps[3].detail = step4Res['message'] ?? 'Modulo di tesseramento inviato con successo via WhatsApp!';
+        _steps[3].status = StepStateStatus.warning;
+        _steps[3].detail = 'Invio modulo di tesseramento escluso su richiesta dell\'utente.';
       });
     } else {
-      final isSkipped = step4Res['skipped'] == true;
       setState(() {
-        _steps[3].status = isSkipped ? StepStateStatus.warning : StepStateStatus.error;
-        _steps[3].detail = step4Res['error'] ?? step4Res['message'] ?? 'Invio modulo tesseramento non riuscito.';
+        _steps[3].status = StepStateStatus.inProgress;
+        _steps[3].detail = 'Generazione PDF e invio modulo tesseramento in corso...';
       });
+
+      Map<String, dynamic> step4Res;
+      try {
+        final tel = widget.prospect.telefono.trim();
+        if (tel.isEmpty || tel.toUpperCase() == 'TBD') {
+          step4Res = {
+            'success': false,
+            'skipped': true,
+            'error': 'Nessun numero di telefono associato: modulo non inviato via WhatsApp.',
+          };
+        } else {
+          step4Res = await _api.sendModuloTesseramentoWhatsApp(
+            allievoId: widget.prospect.id,
+            telefono: tel,
+          );
+        }
+      } catch (e) {
+        step4Res = {'success': false, 'error': e.toString()};
+      }
+
+      if (!mounted) return;
+
+      if (step4Res['success'] == true) {
+        setState(() {
+          _steps[3].status = StepStateStatus.success;
+          _steps[3].detail = step4Res['message'] ?? 'Modulo di tesseramento inviato con successo via WhatsApp!';
+        });
+      } else {
+        final isSkipped = step4Res['skipped'] == true;
+        setState(() {
+          _steps[3].status = isSkipped ? StepStateStatus.warning : StepStateStatus.error;
+          _steps[3].detail = step4Res['error'] ?? step4Res['message'] ?? 'Invio modulo tesseramento non riuscito.';
+        });
+      }
     }
 
     setState(() {

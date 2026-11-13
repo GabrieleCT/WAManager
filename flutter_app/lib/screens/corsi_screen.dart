@@ -91,6 +91,100 @@ class _CorsiScreenState extends State<CorsiScreen> {
     }
   }
 
+  Future<void> _confermaConversioneProspect(Allievo p, Corso c) async {
+    bool inviaModulo = true;
+    final procedi = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.school, color: Colors.green.shade800, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Iscrivi ${p.nomeCompleto}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Vuoi iscrivere ${p.nomeCompleto} come allievo effettivo per il corso:\n${c.scuolaNome} - ${c.livello}?',
+                style: const TextStyle(fontSize: 13.5),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: CheckboxListTile(
+                  value: inviaModulo,
+                  onChanged: (val) => setDlgState(() => inviaModulo = val ?? true),
+                  dense: true,
+                  activeColor: Colors.green.shade700,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text(
+                    'Invia modulo di tesseramento via WhatsApp',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                  ),
+                  subtitle: const Text(
+                    'Genera il PDF precompilato e lo invia automaticamente',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('Conferma Iscrizione'),
+              onPressed: () => Navigator.pop(dlgCtx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (procedi == true && mounted) {
+      await mostraConversioneAllievoDialog(
+        context,
+        prospect: p,
+        corsoId: c.id,
+        corsoNome: '${c.scuolaNome} ${c.livello}',
+        inviaModuloTesseramento: inviaModulo,
+        onCompleted: () {
+          _fetchIscritti(c.id);
+          _loadAll();
+        },
+      );
+    }
+  }
+
   String _normalizeGiorno(String? g) {
     if (g == null) return 'LUNEDI';
     final u = g.toUpperCase().trim();
@@ -2063,16 +2157,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                 constraints: const BoxConstraints(),
                                 onSelected: (value) async {
                                   if (value == 'convert') {
-                                    await mostraConversioneAllievoDialog(
-                                      context,
-                                      prospect: p,
-                                      corsoId: c.id,
-                                      corsoNome: '${c.scuolaNome} ${c.livello}',
-                                      onCompleted: () {
-                                        _fetchIscritti(c.id);
-                                        _loadAll();
-                                      },
-                                    );
+                                    await _confermaConversioneProspect(p, c);
                                   } else if (value == 'modulo_tesseramento') {
                                     mostraInviaModuloTesseramentoDialog(context, p, api: _api);
                                   } else if (value == 'iban') {
@@ -2200,18 +2285,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                                       ),
                                       icon: const Icon(Icons.school, size: 15),
                                       label: const Text('Converti ad Allievo', style: TextStyle(fontSize: 11)),
-                                      onPressed: () async {
-                                        await mostraConversioneAllievoDialog(
-                                          context,
-                                          prospect: p,
-                                          corsoId: c.id,
-                                          corsoNome: '${c.scuolaNome} ${c.livello}',
-                                          onCompleted: () {
-                                            _fetchIscritti(c.id);
-                                            _loadAll();
-                                          },
-                                        );
-                                      },
+                                      onPressed: () => _confermaConversioneProspect(p, c),
                                     ),
                                   ),
                                   const SizedBox(width: 4),
