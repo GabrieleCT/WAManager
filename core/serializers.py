@@ -216,8 +216,11 @@ class AllievoSerializer(serializers.ModelSerializer):
                     data['numero_tessera_acsi'] = ''
             elif 'numero_tessera' in data:
                 data['numero_tessera_acsi'] = data['numero_tessera'] or ''
-            if 'tessera_associativa' in data and data['tessera_associativa'] is None:
-                data['tessera_associativa'] = ''
+            if 'tessera_associativa' in data:
+                if data['tessera_associativa'] is None:
+                    data['tessera_associativa'] = ''
+                else:
+                    data['tessera_associativa'] = str(data['tessera_associativa']).strip()
             if data.get('tesserato_altra_asd') in [True, 'true', 'True', 1, '1']:
                 data['tesserato_altra_asd'] = True
                 data['numero_tessera_acsi'] = ''
@@ -227,6 +230,20 @@ class AllievoSerializer(serializers.ModelSerializer):
             if data.get('scadenza_certificato_medico') == '':
                 data['scadenza_certificato_medico'] = None
         return super().to_internal_value(data)
+
+    def validate_tessera_associativa(self, value):
+        val = (value or '').strip()
+        if not val:
+            return ''
+        qs = Allievo.objects.filter(tessera_associativa__iexact=val)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            altro = qs.first()
+            raise serializers.ValidationError(
+                f"Il numero di tessera associativa '{val}' è già assegnato a {altro.nome} {altro.cognome}."
+            )
+        return val
 
     def create(self, validated_data):
         if not validated_data.get('is_prospect') and not validated_data.get('tessera_associativa'):

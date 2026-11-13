@@ -1,36 +1,62 @@
 version: '3.8'
 
 services:
+  # Database PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: wamanager_db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-wamanager}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-wamanager}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
   # Backend Django (API)
   backend:
     build: .
+    container_name: wamanager_backend
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
              gunicorn wamanager.wsgi:application --bind 0.0.0.0:8000"
     ports:
       - "8082:8000"
     environment:
-      # If you want to use Postgres, change this to a postgres:// URL
-      - DATABASE_URL=sqlite:////app/db.sqlite3
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/wamanager}
       - GATEWAY_BASE_URL=http://gateway:4002
     volumes:
-      - ./db.sqlite3:/app/db.sqlite3
+      - media_data:/app/media
     restart: always
 
   # Worker Django-Q (Per operazioni in background / sondaggi programmati)
   worker:
     build: .
+    container_name: wamanager_worker
+    depends_on:
+      db:
+        condition: service_healthy
     command: python manage.py qcluster
     environment:
-      - DATABASE_URL=sqlite:////app/db.sqlite3
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/wamanager}
       - GATEWAY_BASE_URL=http://gateway:4002
     volumes:
-      - ./db.sqlite3:/app/db.sqlite3
+      - media_data:/app/media
     restart: always
 
   # WhatsApp Gateway (Node.js)
   gateway:
     build: ./wa-gateway
+    container_name: wamanager_gateway
     ports:
       - "4002:4002"
     volumes:
@@ -42,9 +68,12 @@ services:
     build:
       context: ./flutter_app
       dockerfile: Dockerfile
+    container_name: wamanager_frontend
     ports:
       - "8080:80"
     restart: always
 
 volumes:
+  postgres_data:
+  media_data:
   wa_session_data:

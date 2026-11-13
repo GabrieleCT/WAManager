@@ -482,9 +482,10 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
                           if (res == null) {
                             if (mounted) {
+                              final errMsg = _api.lastAllievoError ?? 'Errore durante il salvataggio del prospect. Verifica i dati inseriti.';
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Errore durante il salvataggio del prospect. Verifica i dati inseriti.'),
+                                SnackBar(
+                                  content: Text(errMsg),
                                   backgroundColor: Colors.red,
                                 ),
                               );

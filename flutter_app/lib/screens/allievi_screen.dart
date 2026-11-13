@@ -1426,9 +1426,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
                           if (res == null) {
                             if (mounted) {
+                              final errMsg = _api.lastAllievoError ?? "Errore durante il salvataggio dell'allievo. Verifica i dati inseriti.";
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Errore durante il salvataggio dell'allievo. Verifica i dati inseriti."),
+                                SnackBar(
+                                  content: Text(errMsg),
                                   backgroundColor: Colors.red,
                                 ),
                               );

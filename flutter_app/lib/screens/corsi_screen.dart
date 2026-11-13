@@ -1186,8 +1186,9 @@ class _CorsiScreenState extends State<CorsiScreen> {
                           });
                           if (res == null) {
                             if (mounted) {
+                              final errMsg = _api.lastAllievoError ?? "Errore durante l'aggiornamento di ${a.isProspect ? 'questo prospect' : 'questo allievo'}.";
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Errore durante l'aggiornamento di ${a.isProspect ? 'questo prospect' : 'questo allievo'}."), backgroundColor: Colors.red),
+                                SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
                               );
                             }
                             return;

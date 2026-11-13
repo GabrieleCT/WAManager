@@ -306,19 +306,45 @@ class ApiService {
     return '1';
   }
 
+  String? lastAllievoError;
+
+  String _extractErrorMessage(http.Response res) {
+    try {
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['detail'] != null) return decoded['detail'].toString();
+        if (decoded['error'] != null) return decoded['error'].toString();
+        final msgs = <String>[];
+        decoded.forEach((key, val) {
+          if (val is List) {
+            msgs.add(val.map((e) => e.toString()).join(' '));
+          } else if (val is String) {
+            msgs.add(val);
+          }
+        });
+        if (msgs.isNotEmpty) return msgs.join('\n');
+      }
+    } catch (_) {}
+    return 'Errore durante l\'operazione (HTTP ${res.statusCode})';
+  }
+
   Future<Allievo?> createAllievo(Map<String, dynamic> data) async {
+    lastAllievoError = null;
     final res = await http.post(Uri.parse('$baseUrl/api/allievi/'), headers: _headers, body: jsonEncode(data));
     if (res.statusCode == 201) {
       return Allievo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
+    lastAllievoError = _extractErrorMessage(res);
     return null;
   }
 
   Future<Allievo?> updateAllievo(String id, Map<String, dynamic> data) async {
+    lastAllievoError = null;
     final res = await http.patch(Uri.parse('$baseUrl/api/allievi/$id/'), headers: _headers, body: jsonEncode(data));
     if (res.statusCode == 200) {
       return Allievo.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
+    lastAllievoError = _extractErrorMessage(res);
     return null;
   }
 

@@ -450,5 +450,44 @@ class ImportDocumentiDriveTests(TestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+    def test_duplicate_tessera_associativa_validation(self):
+        # 1. Crea primo allievo con tessera 123
+        Allievo.objects.create(
+            nome="Mario",
+            cognome="Rossi",
+            ruolo="leader",
+            tessera_associativa="123"
+        )
+
+        # 2. Tentativo di creare secondo allievo con stessa tessera 123
+        serializer = AllievoSerializer(data={
+            "nome": "Luigi",
+            "cognome": "Verdi",
+            "ruolo": "leader",
+            "tessera_associativa": "123"
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tessera_associativa", serializer.errors)
+        self.assertIn("già assegnato", str(serializer.errors["tessera_associativa"]))
+
+        # 3. Aggiornamento dello stesso allievo (nessun errore su se stesso)
+        mario = Allievo.objects.get(tessera_associativa="123")
+        update_serializer = AllievoSerializer(instance=mario, data={
+            "nome": "Mario Modificato",
+            "tessera_associativa": "123"
+        }, partial=True)
+        self.assertTrue(update_serializer.is_valid(), update_serializer.errors)
+
+        # 4. Tessera vuota o whitespace è consentita per più allievi
+        serializer_blank = AllievoSerializer(data={
+            "nome": "Prospect1",
+            "cognome": "Test",
+            "ruolo": "leader",
+            "is_prospect": True,
+            "tessera_associativa": ""
+        })
+        self.assertTrue(serializer_blank.is_valid(), serializer_blank.errors)
+
+
 
 

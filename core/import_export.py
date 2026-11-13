@@ -103,8 +103,11 @@ def export_allievi(request):
         qs = qs.filter(is_prospect=(is_prospect.lower() in ['true', '1']))
 
     headers = [
-        'ID', 'Cognome', 'Nome', 'Ruolo', 'Telefono', 'Livello',
-        'Scuola', 'Corso', 'Anno Accademico', 'Recensione', 'Prospect', 'Attivo', 'Note'
+        'ID', 'Cognome', 'Nome', 'Nickname', 'Ruolo', 'Telefono', 'Livello',
+        'Scuola', 'Corso', 'Anno Accademico', 'Tessera Associativa', 'Data Ammissione',
+        'Scadenza Certificato Medico', 'Numero Tessera ACSI', 'Tesserato Altra ASD',
+        'Email', 'Codice Fiscale', 'Data Nascita', 'Comune Nascita', 'Provincia Nascita',
+        'Recensione', 'Prospect', 'Attivo', 'Note', 'WhatsApp Scuola', 'WhatsApp Corso'
     ]
     rows = []
     for a in qs:
@@ -112,16 +115,29 @@ def export_allievi(request):
             str(a.id),
             a.cognome,
             a.nome,
+            a.nickname,
             a.get_ruolo_display(),
             a.telefono,
             a.get_livello_display(),
             a.corso.scuola.nome if a.corso else '',
             f"{a.corso.get_livello_display()} ({a.corso.orario.strftime('%H:%M')})" if a.corso else '',
             a.corso.anno_accademico if a.corso else '',
+            a.tessera_associativa or '',
+            a.data_ammissione.strftime('%Y-%m-%d') if a.data_ammissione else '',
+            a.scadenza_certificato_medico.strftime('%Y-%m-%d') if a.scadenza_certificato_medico else '',
+            a.numero_tessera_acsi or '',
+            'Sì' if a.tesserato_altra_asd else 'No',
+            a.email or '',
+            a.codice_fiscale or '',
+            a.data_nascita.strftime('%Y-%m-%d') if a.data_nascita else '',
+            a.comune_nascita or '',
+            a.provincia_nascita or '',
             a.get_recensione_display(),
             'Sì' if a.is_prospect else 'No',
             'Sì' if a.is_active else 'No',
-            a.note
+            a.note or '',
+            'Sì' if a.in_gruppo_scuola_whatsapp else 'No',
+            'Sì' if a.in_gruppo_corso_whatsapp else 'No'
         ])
 
     return _build_tabular_response(headers, rows, f'allievi_{datetime.date.today()}', fmt)
@@ -540,7 +556,10 @@ def import_pagamenti(request):
 
 from .models import (
     Scuola, Corso, Argomento, Allievo, Jolly, Lezione, Presenza, Pagamento,
-    SondaggioMattutinoConfig, Role, Level, Recensione, Trimestre
+    SondaggioMattutinoConfig, Ricevuta, MovimentoPrimaNota, CategoriaBilancio,
+    ConfigurazioneASD, MembroDirettivo, ContatoreRicevute, DocumentTemplate,
+    GoogleDriveConfig, GoogleContactsConfig, MessageTemplate,
+    Role, Level, Recensione, Trimestre
 )
 
 @csrf_exempt
@@ -611,13 +630,21 @@ def export_global(request):
 
     # 4. Allievi
     ws = wb.create_sheet("Allievi")
-    ws.append(["ID", "Nome", "Cognome", "Telefono", "Ruolo", "Livello", "Corso ID", "Partner ID", "Prospect", "Recensione", "Attivo", "Note", "WhatsApp Scuola"])
+    ws.append([
+        "ID", "Nome", "Cognome", "Nickname", "Telefono", "Ruolo", "Livello",
+        "Corso ID", "Partner ID", "Prospect", "Recensione", "Attivo",
+        "Tessera Associativa", "Data Ammissione", "Scadenza Certificato Medico",
+        "Numero Tessera ACSI", "Tesserato Altra ASD", "Email", "Codice Fiscale",
+        "Data Nascita", "Comune Nascita", "Provincia Nascita", "Note",
+        "WhatsApp Scuola", "WhatsApp Corso", "Google Contact ID"
+    ])
     for a in Allievo.objects.select_related('corso', 'partner').all():
         ws.append([
             str(a.id),
             a.nome,
             a.cognome,
-            a.telefono,
+            a.nickname or "",
+            a.telefono or "",
             a.ruolo,
             a.livello,
             str(a.corso.id) if a.corso else "",
@@ -625,22 +652,23 @@ def export_global(request):
             "Sì" if a.is_prospect else "No",
             a.recensione,
             "Sì" if a.is_active else "No",
-            a.note,
-            "Sì" if a.in_gruppo_scuola_whatsapp else "No"
+            a.tessera_associativa or "",
+            a.data_ammissione.strftime('%Y-%m-%d') if a.data_ammissione else "",
+            a.scadenza_certificato_medico.strftime('%Y-%m-%d') if a.scadenza_certificato_medico else "",
+            a.numero_tessera_acsi or "",
+            "Sì" if a.tesserato_altra_asd else "No",
+            a.email or "",
+            a.codice_fiscale or "",
+            a.data_nascita.strftime('%Y-%m-%d') if a.data_nascita else "",
+            a.comune_nascita or "",
+            a.provincia_nascita or "",
+            a.note or "",
+            "Sì" if a.in_gruppo_scuola_whatsapp else "No",
+            "Sì" if a.in_gruppo_corso_whatsapp else "No",
+            a.google_contact_id or ""
         ])
 
-    # 5. Jolly
-    ws = wb.create_sheet("Jolly")
-    ws.append(["ID", "Allievo ID", "Allievo Nome", "Priorità"])
-    for j in Jolly.objects.select_related('allievo').all():
-        ws.append([
-            str(j.id),
-            str(j.allievo.id),
-            f"{j.allievo.nome} {j.allievo.cognome}",
-            j.priorita
-        ])
-
-    # 6. Lezioni
+    # 5. Lezioni
     ws = wb.create_sheet("Lezioni")
     ws.append(["ID", "Corso ID", "Data", "Titolo", "Argomento ID"])
     for l in Lezione.objects.select_related('corso', 'argomento').all():
@@ -652,7 +680,7 @@ def export_global(request):
             str(l.argomento.id) if l.argomento else ""
         ])
 
-    # 7. Presenze
+    # 6. Presenze
     ws = wb.create_sheet("Presenze")
     ws.append(["ID", "Allievo ID", "Lezione ID", "Presente", "Fonte", "Jolly", "Data Registrazione"])
     for p in Presenza.objects.all():
@@ -666,9 +694,9 @@ def export_global(request):
             p.timestamp.strftime('%Y-%m-%d %H:%M') if p.timestamp else ""
         ])
 
-    # 8. Pagamenti
+    # 7. Pagamenti
     ws = wb.create_sheet("Pagamenti")
-    ws.append(["ID", "Allievo ID", "Corso ID", "Importo", "Trimestre", "Data Pagamento", "Note"])
+    ws.append(["ID", "Allievo ID", "Corso ID", "Importo", "Trimestre", "Data Pagamento", "Causale", "Note"])
     for p in Pagamento.objects.all():
         ws.append([
             str(p.id),
@@ -677,18 +705,207 @@ def export_global(request):
             float(p.importo),
             p.trimestre,
             p.data_pagamento.strftime('%Y-%m-%d') if p.data_pagamento else "",
+            getattr(p, 'causale', '') or "",
             p.note
         ])
 
-    # 9. Sondaggi Mattutini
+    # 8. Ricevute
+    ws = wb.create_sheet("Ricevute")
+    ws.append([
+        "ID", "Numero", "Anno", "Data", "Intestatario", "Causale", "Importo",
+        "Allievo ID", "Pagamento ID", "Inviata WhatsApp", "Data Invio WhatsApp",
+        "Caricata Drive", "Data Caricamento Drive", "Drive File ID", "Note"
+    ])
+    for r in Ricevuta.objects.select_related('allievo', 'pagamento').all():
+        ws.append([
+            str(r.id),
+            r.numero,
+            r.anno,
+            r.data.strftime('%Y-%m-%d') if r.data else "",
+            r.intestatario or "",
+            r.causale or "",
+            float(r.importo),
+            str(r.allievo_id) if r.allievo_id else "",
+            str(r.pagamento_id) if r.pagamento_id else "",
+            "Sì" if r.inviata_whatsapp else "No",
+            r.data_invio_whatsapp.strftime('%Y-%m-%d %H:%M') if r.data_invio_whatsapp else "",
+            "Sì" if r.caricata_drive else "No",
+            r.data_caricamento_drive.strftime('%Y-%m-%d %H:%M') if r.data_caricamento_drive else "",
+            r.drive_file_id or "",
+            r.note or ""
+        ])
+
+    # 9. Prima Nota / Movimenti Cassa
+    ws = wb.create_sheet("PrimaNota")
+    ws.append(["ID", "Numero Progressivo", "Data", "Descrizione", "Categoria", "Tipo", "Importo", "Note"])
+    for m in MovimentoPrimaNota.objects.all():
+        ws.append([
+            str(m.id),
+            m.numero_progressivo,
+            m.data.strftime('%Y-%m-%d') if m.data else "",
+            m.descrizione,
+            m.categoria or "",
+            m.tipo,
+            float(m.importo),
+            m.note or ""
+        ])
+
+    # 10. Categorie Bilancio
+    ws = wb.create_sheet("CategorieBilancio")
+    ws.append(["ID", "Nome", "Tipo", "Descrizione", "Colore", "Ordine"])
+    for cb in CategoriaBilancio.objects.all():
+        ws.append([
+            str(cb.id),
+            cb.nome,
+            cb.tipo,
+            cb.descrizione or "",
+            cb.colore or "",
+            cb.ordine
+        ])
+
+    # 11. Membri Direttivo
+    ws = wb.create_sheet("MembriDirettivo")
+    ws.append(["ID", "Ruolo", "Nome", "Cognome", "Codice Fiscale", "Data Nascita", "Luogo Nascita", "Telefono", "Email", "Ordine"])
+    for md in MembroDirettivo.objects.all():
+        ws.append([
+            str(md.id),
+            md.ruolo,
+            md.nome,
+            md.cognome,
+            md.codice_fiscale or "",
+            md.data_nascita.strftime('%Y-%m-%d') if md.data_nascita else "",
+            md.luogo_nascita or "",
+            md.telefono or "",
+            md.email or "",
+            md.ordine
+        ])
+
+    # 12. Configurazione ASD
+    ws = wb.create_sheet("ConfigurazioneASD")
+    ws.append(["ID", "Nome", "Codice Fiscale", "Partita IVA", "Sede Legale", "Sede Operativa", "Telefono", "Email", "PEC", "Sito Web", "Codice Affiliazione", "IBAN"])
+    for asd in ConfigurazioneASD.objects.all():
+        ws.append([
+            str(asd.id),
+            asd.nome,
+            asd.codice_fiscale or "",
+            asd.partita_iva or "",
+            asd.sede_legale or "",
+            asd.sede_operativa or "",
+            asd.telefono or "",
+            asd.email or "",
+            asd.pec or "",
+            asd.sito_web or "",
+            asd.codice_affiliazione or "",
+            asd.iban or ""
+        ])
+
+    # 13. Sondaggi Mattutini e Messaggistica
     ws = wb.create_sheet("SondaggiMattutini")
-    ws.append(["ID", "Corso ID", "Testo", "Attivo"])
+    ws.append([
+        "ID", "Corso ID", "Orario", "Giorni Settimana", "Testo", "Is Poll",
+        "Poll Opzione 1", "Poll Opzione 2", "Ore Ascolto", "Attivo",
+        "Sollecito Attivo", "Sollecito Orario", "Sollecito Ore Attesa", "Sollecito Testo",
+        "Jolly Testo", "Modulo Tesseramento Testo", "Ricevuta Testo", "Istruzioni Pagamento Testo"
+    ])
     for s in SondaggioMattutinoConfig.objects.select_related('corso').all():
         ws.append([
             str(s.id),
             str(s.corso.id) if s.corso else "",
-            s.testo,
-            "Sì" if s.is_active else "No"
+            s.orario or "08:00",
+            s.giorni_settimana or "",
+            s.testo or "",
+            "Sì" if s.is_poll else "No",
+            s.poll_opzione_1 or "",
+            s.poll_opzione_2 or "",
+            s.ore_ascolto_risposte or 5,
+            "Sì" if s.is_active else "No",
+            "Sì" if getattr(s, 'sollecito_attivo', False) else "No",
+            getattr(s, 'sollecito_orario', '') or "",
+            getattr(s, 'sollecito_ore_attesa', 0) or 0,
+            getattr(s, 'sollecito_testo', '') or "",
+            getattr(s, 'jolly_testo', '') or "",
+            getattr(s, 'modulo_tesseramento_testo', '') or "",
+            getattr(s, 'ricevuta_testo', '') or "",
+            getattr(s, 'istruzioni_pagamento_testo', '') or ""
+        ])
+
+    # 14. Document Templates
+    ws = wb.create_sheet("DocumentTemplates")
+    ws.append(["ID", "Chiave", "Nome", "Descrizione"])
+    for dt in DocumentTemplate.objects.all():
+        ws.append([
+            str(dt.id),
+            dt.chiave,
+            dt.nome,
+            dt.descrizione or ""
+        ])
+
+    # 15. Message Templates
+    ws = wb.create_sheet("MessageTemplates")
+    ws.append(["ID", "Name", "Body"])
+    for mt in MessageTemplate.objects.all():
+        ws.append([
+            str(mt.id),
+            mt.name,
+            mt.body
+        ])
+
+    # 16. Google Drive Config
+    ws = wb.create_sheet("GoogleDriveConfig")
+    ws.append([
+        "ID", "Auth Type", "User Email", "Folder Root ID",
+        "Folder Ricevute ID", "Folder Ricevute Nome",
+        "Folder Tessere ID", "Folder Tessere Nome",
+        "Folder Verbali ID", "Folder Verbali Nome",
+        "Folder Libro Soci ID", "Folder Libro Soci Nome",
+        "Folder Certificati ID", "Folder Certificati Nome",
+        "Attivo", "Ultimo Test Status", "Ultimo Test Messaggio"
+    ])
+    for gd in GoogleDriveConfig.objects.all():
+        ws.append([
+            str(gd.id),
+            gd.auth_type,
+            gd.oauth_user_email or gd.client_email or "",
+            gd.folder_id or "",
+            gd.folder_ricevute_id or "",
+            gd.folder_ricevute_nome or "",
+            gd.folder_tessere_id or "",
+            gd.folder_tessere_nome or "",
+            gd.folder_verbali_id or "",
+            gd.folder_verbali_nome or "",
+            gd.folder_libro_soci_id or "",
+            gd.folder_libro_soci_nome or "",
+            gd.folder_certificati_id or "",
+            gd.folder_certificati_nome or "",
+            "Sì" if gd.is_active else "No",
+            gd.last_test_status or "",
+            gd.last_test_message or ""
+        ])
+
+    # 17. Google Contacts Config
+    ws = wb.create_sheet("GoogleContactsConfig")
+    ws.append([
+        "ID", "User Email", "Sync Group Name", "Attivo",
+        "Ultimo Sync Status", "Ultimo Sync Summary"
+    ])
+    for gc in GoogleContactsConfig.objects.all():
+        ws.append([
+            str(gc.id),
+            gc.user_email or "",
+            gc.sync_group_name or "",
+            "Sì" if gc.is_active else "No",
+            gc.last_sync_status or "",
+            gc.last_sync_summary or ""
+        ])
+
+    # 18. Contatore Ricevute
+    ws = wb.create_sheet("ContatoreRicevute")
+    ws.append(["ID", "Anno", "Ultimo Numero"])
+    for cr in ContatoreRicevute.objects.all():
+        ws.append([
+            str(cr.id),
+            cr.anno,
+            cr.ultimo_numero
         ])
 
     output = io.BytesIO()
@@ -897,8 +1114,10 @@ def import_global(request):
             if not r or len(r) < 4 or not r[1]:
                 continue
             try:
-                # Colonne: [ID, Nome, Cognome, Telefono, Ruolo, Livello, Corso ID, (Partner ID), Prospect, Recensione, Attivo, Note]
-                ruolo_str = str(r[4]).strip().lower() if len(r) > 4 and r[4] else 'leader'
+                # Supporta sia il nuovo schema completo a 26 colonne sia il vecchio a 12/13 colonne
+                is_extended_schema = len(r) >= 20 and any(h in str(r) for h in ['-']) or len(r) > 15
+                
+                ruolo_str = str(r[5] if is_extended_schema else r[4]).strip().lower()
                 if 'foll' in ruolo_str:
                     ruolo_val = 'follower'
                 elif 'both' in ruolo_str or 'entrambi' in ruolo_str:
@@ -906,50 +1125,88 @@ def import_global(request):
                 else:
                     ruolo_val = 'leader'
 
-                livello_val = normalize_level(r[5] if len(r) > 5 else None)
-                corso_id = str(r[6]).strip() if len(r) > 6 and r[6] else None
-                if corso_id == "" or corso_id == "None":
-                    corso_id = None
+                livello_val = normalize_level(r[6] if is_extended_schema else (r[5] if len(r) > 5 else None))
+                corso_id_raw = r[7] if is_extended_schema else (r[6] if len(r) > 6 else None)
+                corso_id = str(corso_id_raw).strip() if corso_id_raw and str(corso_id_raw).strip() != "None" else None
 
-                # Verifica se la colonna 7 è Partner ID o Prospect
-                col7 = str(r[7]).strip() if len(r) > 7 and r[7] is not None else ""
-                has_partner_col = False
-                partner_id = None
-                if len(r) > 11 or (len(col7) > 10 and '-' in col7):
-                    has_partner_col = True
-                    partner_id = col7 if col7 and col7 != "None" else None
+                if is_extended_schema:
+                    partner_raw = r[8] if len(r) > 8 else None
+                    partner_id = str(partner_raw).strip() if partner_raw and str(partner_raw).strip() != "None" else None
+                    is_prosp = str(r[9]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 9 and r[9] is not None else False
+                    rec_str = str(r[10]).strip().lower() if len(r) > 10 and r[10] else 'no'
+                    rec_val = 'si' if rec_str in ['si', 'sì', 'true', '1'] else 'no'
+                    is_act = str(r[11]).strip().lower() not in ['no', 'false', '0'] if len(r) > 11 and r[11] is not None else True
+                    
+                    tess_ass = str(r[12]).strip() if len(r) > 12 and r[12] else ""
+                    dt_amm = parse_date(r[13]) if len(r) > 13 else None
+                    scad_med = parse_date(r[14]) if len(r) > 14 else None
+                    tess_acsi = str(r[15]).strip() if len(r) > 15 and r[15] else ""
+                    tess_altra = str(r[16]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 16 and r[16] is not None else False
+                    email_val = str(r[17]).strip() if len(r) > 17 and r[17] else ""
+                    cf_val = str(r[18]).strip() if len(r) > 18 and r[18] else ""
+                    dt_nasc = parse_date(r[19]) if len(r) > 19 else None
+                    comune_nasc = str(r[20]).strip() if len(r) > 20 and r[20] else ""
+                    prov_nasc = str(r[21]).strip() if len(r) > 21 and r[21] else ""
+                    note_val = str(r[22]).strip() if len(r) > 22 and r[22] else ""
+                    in_wa_scuola = str(r[23]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 23 and r[23] is not None else False
+                    in_wa_corso = str(r[24]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 24 and r[24] is not None else False
+                    g_contact_id = str(r[25]).strip() if len(r) > 25 and r[25] else ""
+                    nick_val = str(r[3]).strip() if len(r) > 3 and r[3] else ""
 
-                offset = 1 if has_partner_col else 0
-                prospect_idx = 7 + offset
-                recensione_idx = 8 + offset
-                attivo_idx = 9 + offset
-                note_idx = 10 + offset
-
-                is_prosp = str(r[prospect_idx]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > prospect_idx and r[prospect_idx] is not None else False
-                rec_str = str(r[recensione_idx]).strip().lower() if len(r) > recensione_idx and r[recensione_idx] else 'no'
-                if rec_str in ['si', 'sì', 'true', '1']:
-                    rec_val = 'si'
+                    defaults = {
+                        'nome': str(r[1]).strip(),
+                        'cognome': str(r[2]).strip() if len(r) > 2 and r[2] else "",
+                        'nickname': nick_val,
+                        'telefono': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                        'ruolo': ruolo_val,
+                        'livello': livello_val,
+                        'corso_id': corso_id,
+                        'is_prospect': is_prosp,
+                        'recensione': rec_val,
+                        'is_active': is_act,
+                        'tessera_associativa': tess_ass,
+                        'data_ammissione': dt_amm,
+                        'scadenza_certificato_medico': scad_med,
+                        'numero_tessera_acsi': tess_acsi,
+                        'tesserato_altra_asd': tess_altra,
+                        'email': email_val,
+                        'codice_fiscale': cf_val,
+                        'data_nascita': dt_nasc,
+                        'comune_nascita': comune_nasc,
+                        'provincia_nascita': prov_nasc,
+                        'note': note_val,
+                        'in_gruppo_scuola_whatsapp': in_wa_scuola,
+                        'in_gruppo_corso_whatsapp': in_wa_corso,
+                        'google_contact_id': g_contact_id,
+                    }
                 else:
-                    rec_val = 'no'
+                    # Formato legacy
+                    col7 = str(r[7]).strip() if len(r) > 7 and r[7] is not None else ""
+                    has_partner_col = len(r) > 11 or (len(col7) > 10 and '-' in col7)
+                    partner_id = col7 if has_partner_col and col7 and col7 != "None" else None
+                    offset = 1 if has_partner_col else 0
+                    is_prosp = str(r[7 + offset]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > (7 + offset) and r[7 + offset] is not None else False
+                    rec_str = str(r[8 + offset]).strip().lower() if len(r) > (8 + offset) and r[8 + offset] else 'no'
+                    rec_val = 'si' if rec_str in ['si', 'sì', 'true', '1'] else 'no'
+                    is_act = str(r[9 + offset]).strip().lower() not in ['no', 'false', '0'] if len(r) > (9 + offset) and r[9 + offset] is not None else True
+                    note_val = str(r[10 + offset]).strip() if len(r) > (10 + offset) and r[10 + offset] else ""
+                    in_wa = str(r[11 + offset]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > (11 + offset) and r[11 + offset] is not None else False
 
-                is_act = str(r[attivo_idx]).strip().lower() not in ['no', 'false', '0'] if len(r) > attivo_idx and r[attivo_idx] is not None else True
-                note_val = str(r[note_idx]).strip() if len(r) > note_idx and r[note_idx] else ""
-                wa_idx = 11 + offset
-                in_wa = str(r[wa_idx]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > wa_idx and r[wa_idx] is not None else False
+                    defaults = {
+                        'nome': str(r[1]).strip(),
+                        'cognome': str(r[2]).strip() if len(r) > 2 and r[2] else "",
+                        'telefono': str(r[3]).strip() if len(r) > 3 and r[3] else "",
+                        'ruolo': ruolo_val,
+                        'livello': livello_val,
+                        'corso_id': corso_id,
+                        'is_prospect': is_prosp,
+                        'recensione': rec_val,
+                        'is_active': is_act,
+                        'note': note_val,
+                        'in_gruppo_scuola_whatsapp': in_wa
+                    }
 
-                Allievo.objects.update_or_create(id=r[0], defaults={
-                    'nome': str(r[1]).strip(),
-                    'cognome': str(r[2]).strip() if len(r) > 2 and r[2] else "",
-                    'telefono': str(r[3]).strip() if len(r) > 3 and r[3] else "",
-                    'ruolo': ruolo_val,
-                    'livello': livello_val,
-                    'corso_id': corso_id,
-                    'is_prospect': is_prosp,
-                    'recensione': rec_val,
-                    'is_active': is_act,
-                    'note': note_val,
-                    'in_gruppo_scuola_whatsapp': in_wa
-                })
+                Allievo.objects.update_or_create(id=r[0], defaults=defaults)
                 allievi_count += 1
                 if partner_id:
                     partner_pairs.append((str(r[0]), partner_id))
@@ -964,23 +1221,7 @@ def import_global(request):
             except Exception:
                 pass
 
-        # 5. Jolly
-        jolly_count = 0
-        for r in get_rows("Jolly"):
-            if not r or len(r) < 2 or not r[1]:
-                continue
-            try:
-                prio = int(r[3]) if len(r) > 3 and r[3] else 1
-                Jolly.objects.update_or_create(id=r[0], defaults={
-                    'allievo_id': r[1],
-                    'priorita': prio,
-                })
-                jolly_count += 1
-            except Exception:
-                pass
-        stats['jolly'] = jolly_count
-
-        # 6. Lezioni
+        # 5. Lezioni
         lezioni_count = 0
         for r in get_rows("Lezioni"):
             if not r or len(r) < 3 or not r[1]:
@@ -1002,7 +1243,7 @@ def import_global(request):
                 pass
         stats['lezioni'] = lezioni_count
 
-        # 7. Presenze
+        # 6. Presenze
         presenze_count = 0
         for r in get_rows("Presenze"):
             if not r or len(r) < 3 or not r[1] or not r[2]:
@@ -1025,7 +1266,7 @@ def import_global(request):
                 pass
         stats['presenze'] = presenze_count
 
-        # 8. Pagamenti
+        # 7. Pagamenti
         pag_count = 0
         for r in get_rows("Pagamenti"):
             if not r or len(r) < 3 or not r[1]:
@@ -1042,7 +1283,8 @@ def import_global(request):
                     trim_val = 'T1'
 
                 data_obj = parse_date(r[5]) if len(r) > 5 else datetime.date.today()
-                note_val = str(r[6]).strip() if len(r) > 6 and r[6] else ""
+                causale_val = str(r[6]).strip() if len(r) > 7 and r[6] else ""
+                note_val = str(r[7]).strip() if len(r) > 7 and r[7] else (str(r[6]).strip() if len(r) > 6 and r[6] else "")
 
                 Pagamento.objects.update_or_create(id=r[0], defaults={
                     'allievo_id': r[1],
@@ -1050,6 +1292,7 @@ def import_global(request):
                     'importo': importo_val,
                     'trimestre': trim_val,
                     'data_pagamento': data_obj or datetime.date.today(),
+                    'causale': causale_val,
                     'note': note_val
                 })
                 pag_count += 1
@@ -1057,19 +1300,158 @@ def import_global(request):
                 pass
         stats['pagamenti'] = pag_count
 
-        # 9. Sondaggi Mattutini
+        # 8. Ricevute
+        ricevute_count = 0
+        for r in get_rows("Ricevute"):
+            if not r or len(r) < 4 or not r[0]:
+                continue
+            try:
+                Ricevuta.objects.update_or_create(id=r[0], defaults={
+                    'numero': int(r[1]),
+                    'anno': int(r[2]),
+                    'data': parse_date(r[3]) or datetime.date.today(),
+                    'intestatario': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                    'causale': str(r[5]).strip() if len(r) > 5 and r[5] else "",
+                    'importo': float(str(r[6]).replace(',', '.')) if len(r) > 6 and r[6] else 0.0,
+                    'allievo_id': str(r[7]).strip() if len(r) > 7 and r[7] and str(r[7]).strip() != "None" else None,
+                    'pagamento_id': str(r[8]).strip() if len(r) > 8 and r[8] and str(r[8]).strip() != "None" else None,
+                    'inviata_whatsapp': str(r[9]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 9 and r[9] is not None else False,
+                    'caricata_drive': str(r[11]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 11 and r[11] is not None else False,
+                    'drive_file_id': str(r[13]).strip() if len(r) > 13 and r[13] else "",
+                    'note': str(r[14]).strip() if len(r) > 14 and r[14] else ""
+                })
+                ricevute_count += 1
+            except Exception:
+                pass
+        stats['ricevute'] = ricevute_count
+
+        # 9. Prima Nota / Movimenti Cassa
+        movimenti_count = 0
+        for r in get_rows("PrimaNota"):
+            if not r or len(r) < 5 or not r[0]:
+                continue
+            try:
+                MovimentoPrimaNota.objects.update_or_create(id=r[0], defaults={
+                    'numero_progressivo': int(r[1]),
+                    'data': parse_date(r[2]) or datetime.date.today(),
+                    'descrizione': str(r[3]).strip(),
+                    'categoria': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                    'tipo': str(r[5]).strip().lower() if len(r) > 5 and r[5] else "entrata",
+                    'importo': float(str(r[6]).replace(',', '.')) if len(r) > 6 and r[6] else 0.0,
+                    'note': str(r[7]).strip() if len(r) > 7 and r[7] else ""
+                })
+                movimenti_count += 1
+            except Exception:
+                pass
+        stats['movimenti_prima_nota'] = movimenti_count
+
+        # 10. Categorie Bilancio
+        cat_count = 0
+        for r in get_rows("CategorieBilancio"):
+            if not r or len(r) < 3 or not r[0]:
+                continue
+            try:
+                CategoriaBilancio.objects.update_or_create(id=r[0], defaults={
+                    'nome': str(r[1]).strip(),
+                    'tipo': str(r[2]).strip().lower(),
+                    'descrizione': str(r[3]).strip() if len(r) > 3 and r[3] else "",
+                    'colore': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                    'ordine': int(r[5]) if len(r) > 5 and r[5] else 0
+                })
+                cat_count += 1
+            except Exception:
+                pass
+        stats['categorie_bilancio'] = cat_count
+
+        # 11. Membri Direttivo
+        membri_count = 0
+        for r in get_rows("MembriDirettivo"):
+            if not r or len(r) < 4 or not r[0]:
+                continue
+            try:
+                MembroDirettivo.objects.update_or_create(id=r[0], defaults={
+                    'ruolo': str(r[1]).strip().lower(),
+                    'nome': str(r[2]).strip(),
+                    'cognome': str(r[3]).strip(),
+                    'codice_fiscale': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                    'data_nascita': parse_date(r[5]) if len(r) > 5 else None,
+                    'luogo_nascita': str(r[6]).strip() if len(r) > 6 and r[6] else "",
+                    'telefono': str(r[7]).strip() if len(r) > 7 and r[7] else "",
+                    'email': str(r[8]).strip() if len(r) > 8 and r[8] else "",
+                    'ordine': int(r[9]) if len(r) > 9 and r[9] else 0
+                })
+                membri_count += 1
+            except Exception:
+                pass
+        stats['membri_direttivo'] = membri_count
+
+        # 12. Configurazione ASD
+        asd_count = 0
+        for r in get_rows("ConfigurazioneASD"):
+            if not r or len(r) < 2 or not r[0]:
+                continue
+            try:
+                ConfigurazioneASD.objects.update_or_create(id=r[0], defaults={
+                    'nome': str(r[1]).strip(),
+                    'codice_fiscale': str(r[2]).strip() if len(r) > 2 and r[2] else "",
+                    'partita_iva': str(r[3]).strip() if len(r) > 3 and r[3] else "",
+                    'sede_legale': str(r[4]).strip() if len(r) > 4 and r[4] else "",
+                    'sede_operativa': str(r[5]).strip() if len(r) > 5 and r[5] else "",
+                    'telefono': str(r[6]).strip() if len(r) > 6 and r[6] else "",
+                    'email': str(r[7]).strip() if len(r) > 7 and r[7] else "",
+                    'pec': str(r[8]).strip() if len(r) > 8 and r[8] else "",
+                    'sito_web': str(r[9]).strip() if len(r) > 9 and r[9] else "",
+                    'codice_affiliazione': str(r[10]).strip() if len(r) > 10 and r[10] else "",
+                    'iban': str(r[11]).strip() if len(r) > 11 and r[11] else ""
+                })
+                asd_count += 1
+            except Exception:
+                pass
+        stats['configurazione_asd'] = asd_count
+
+        # 13. Sondaggi Mattutini e Messaggistica
         sondaggi_count = 0
         for r in get_rows("SondaggiMattutini"):
             if not r or len(r) < 3 or not r[0]:
                 continue
             try:
                 corso_id_val = str(r[1]).strip() if len(r) > 1 and r[1] and str(r[1]).strip() != "None" else None
-                is_act = str(r[3]).strip().lower() not in ['no', 'false', '0'] if len(r) > 3 and r[3] is not None else True
-                SondaggioMattutinoConfig.objects.update_or_create(id=r[0], defaults={
+                defaults = {
                     'corso_id': corso_id_val,
-                    'testo': str(r[2]),
-                    'is_active': is_act
-                })
+                }
+                if len(r) > 9:
+                    defaults.update({
+                        'orario': str(r[2]).strip() if r[2] else '08:00',
+                        'giorni_settimana': str(r[3]).strip() if r[3] else '0,1,2,3,4,5,6',
+                        'testo': str(r[4]),
+                        'is_poll': str(r[5]).strip().lower() in ['si', 'sì', 'true', '1'] if len(r) > 5 and r[5] is not None else True,
+                        'poll_opzione_1': str(r[6]).strip() if len(r) > 6 and r[6] else "Ci sono! 🕺💃",
+                        'poll_opzione_2': str(r[7]).strip() if len(r) > 7 and r[7] else "Non ci sono 🚫",
+                        'ore_ascolto_risposte': int(r[8]) if len(r) > 8 and r[8] else 5,
+                        'is_active': str(r[9]).strip().lower() not in ['no', 'false', '0'] if len(r) > 9 and r[9] is not None else True,
+                    })
+                    if len(r) > 14:
+                        defaults.update({
+                            'sollecito_attivo': str(r[10]).strip().lower() in ['si', 'sì', 'true', '1'] if r[10] is not None else False,
+                            'sollecito_orario': str(r[11]).strip() if r[11] else "14:00",
+                            'sollecito_ore_attesa': int(r[12]) if r[12] else 5,
+                            'sollecito_testo': str(r[13]) if r[13] else "",
+                            'jolly_testo': str(r[14]) if r[14] else "",
+                        })
+                    if len(r) > 17:
+                        defaults.update({
+                            'modulo_tesseramento_testo': str(r[15]) if r[15] else "",
+                            'ricevuta_testo': str(r[16]) if r[16] else "",
+                            'istruzioni_pagamento_testo': str(r[17]) if r[17] else ""
+                        })
+                else:
+                    # Formato legacy a 4 colonne
+                    defaults.update({
+                        'testo': str(r[2]),
+                        'is_active': str(r[3]).strip().lower() not in ['no', 'false', '0'] if len(r) > 3 and r[3] is not None else True
+                    })
+
+                SondaggioMattutinoConfig.objects.update_or_create(id=r[0], defaults=defaults)
                 sondaggi_count += 1
             except Exception:
                 pass
