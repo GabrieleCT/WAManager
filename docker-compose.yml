@@ -27,7 +27,8 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -c "python manage.py migrate &&
+      sh -c "python manage.py collectstatic --noinput &&
+             python manage.py migrate &&
              gunicorn wamanager.wsgi:application --bind 0.0.0.0:8000"
     ports:
       - "8082:8000"
