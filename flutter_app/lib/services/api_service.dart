@@ -10,7 +10,7 @@ class ApiService {
   ApiService._internal();
 
   // URL del backend Django (modificabile se si testa da emulatore Android o IP LAN)
-  String baseUrl = 'http://localhost:50082';
+  String baseUrl = 'http://localhost:8000';
   String? _token;
 
   Future<void> init() async {
@@ -19,16 +19,16 @@ class ApiService {
     if (kIsWeb) {
       final uri = Uri.base;
       if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
-        baseUrl = '${uri.scheme}://${uri.host}:50082';
+        baseUrl = '${uri.scheme}://${uri.host}:8000';
       } else {
-        baseUrl = 'http://localhost:50082';
+        baseUrl = 'http://localhost:8000';
       }
     } else {
       final savedUrl = prefs.getString('api_base_url');
       if (savedUrl != null && savedUrl.isNotEmpty) {
         baseUrl = savedUrl;
       } else {
-        baseUrl = 'http://localhost:50082';
+        baseUrl = 'http://localhost:8000';
       }
     }
   }

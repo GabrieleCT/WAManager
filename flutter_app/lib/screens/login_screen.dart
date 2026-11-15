@@ -26,7 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (kIsWeb) {
       final uri = Uri.base;
       if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
-        api.baseUrl = '${uri.scheme}://${uri.host}:50082';
+        api.baseUrl = '${uri.scheme}://${uri.host}:8000';
       }
     }
     _urlController.text = api.baseUrl;
@@ -44,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final uri = Uri.base;
         if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
           if (_urlController.text.trim().isEmpty || _urlController.text.contains('localhost') || _urlController.text.contains('127.0.0.1')) {
-            _urlController.text = '${uri.scheme}://${uri.host}:50082';
+            _urlController.text = '${uri.scheme}://${uri.host}:8000';
           }
         }
       }
