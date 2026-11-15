@@ -582,6 +582,10 @@ def export_global(request):
             '-e', 'contenttypes',
             '-e', 'auth.permission',
             '-e', 'django_q.task',
+            '-e', 'django_q.schedule',
+            '-e', 'django_q.ormq',
+            '-e', 'sessions',
+            '-e', 'authtoken.token',
             indent=2,
             stdout=out
         )
@@ -958,15 +962,32 @@ def import_global(request):
                     'error': 'Formato JSON non valido: il dump deve essere una lista di record Django fixture.'
                 }, status=400)
 
+            # Escludiamo modelli di sessione/token o permessi per evitare conflitti di chiavi uniche
+            # in particolare authtoken.token che causerebbe duplicate key su user_id
+            IGNORED_MODELS = {
+                'authtoken.token',
+                'sessions.session',
+                'contenttypes.contenttype',
+                'auth.permission',
+                'django_q.task',
+                'django_q.schedule',
+                'django_q.ormq',
+            }
+
+            filtered_data = [
+                item for item in data
+                if isinstance(item, dict) and item.get('model', '').lower() not in IGNORED_MODELS
+            ]
+
             stats = {}
-            for item in data:
+            for item in filtered_data:
                 if isinstance(item, dict) and 'model' in item:
                     m = item['model']
                     stats[m] = stats.get(m, 0) + 1
 
             # Scrittura su file temporaneo con codifica utf-8
             with tempfile.NamedTemporaryFile('w', delete=False, suffix='.json', encoding='utf-8') as tmp:
-                tmp.write(text_content)
+                json.dump(filtered_data, tmp, ensure_ascii=False, indent=2)
                 tmp_path = tmp.name
 
             try:
@@ -978,8 +999,8 @@ def import_global(request):
 
             return JsonResponse({
                 'success': True,
-                'messaggio': f'Ripristino completato con successo: {len(data)} oggetti importati/aggiornati.',
-                'totale_oggetti': len(data),
+                'messaggio': f'Ripristino completato con successo: {len(filtered_data)} oggetti importati/aggiornati.',
+                'totale_oggetti': len(filtered_data),
                 'statistiche': stats,
             })
         except Exception as e:
