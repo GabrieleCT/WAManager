@@ -24,6 +24,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 wa-gateway/baileys_auth_info/
+wa-gateway/inbound_media/
 
 # Environments
 .env
