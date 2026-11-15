@@ -992,6 +992,29 @@ def import_global(request):
 
             try:
                 with transaction.atomic():
+                    # Per evitare conflitti di vincoli UNIQUE con record di default creati all'avvio
+                    # (es. CategoriaBilancio.ensure_defaults() con ('nome', 'tipo') o DocumentTemplate chiave)
+                    # puliamo le tabelle di configurazione/categorie se sono presenti nel dump da importare
+                    from .models import (
+                        CategoriaBilancio, DocumentTemplate, ConfigurazioneASD,
+                        MembroDirettivo, ContatoreRicevute, GoogleDriveConfig,
+                        GoogleContactsConfig, SondaggioMattutinoConfig
+                    )
+                    clean_mapping = {
+                        'core.categoriabilancio': CategoriaBilancio,
+                        'core.documenttemplate': DocumentTemplate,
+                        'core.configurazioneasd': ConfigurazioneASD,
+                        'core.membrodirettivo': MembroDirettivo,
+                        'core.contatorericevute': ContatoreRicevute,
+                        'core.googledriveconfig': GoogleDriveConfig,
+                        'core.googlecontactsconfig': GoogleContactsConfig,
+                        'core.sondaggiomattutinoconfig': SondaggioMattutinoConfig,
+                    }
+                    models_in_dump = {item['model'].lower() for item in filtered_data if isinstance(item, dict) and 'model' in item}
+                    for m_name, m_cls in clean_mapping.items():
+                        if m_name in models_in_dump:
+                            m_cls.objects.all().delete()
+
                     call_command('loaddata', tmp_path)
             finally:
                 if os.path.exists(tmp_path):
