@@ -49,11 +49,13 @@ def post_migrate():
     try:
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        if not User.objects.filter(username='admin').exists():
-            User.objects.create_superuser('admin', 'admin@example.com', 'admin')
-            print("[init_db] Superuser 'admin' creato con password 'admin'")
-        else:
-            print("[init_db] Superuser 'admin' gia presente.")
+        user, created = User.objects.get_or_create(username='admin', defaults={'email': 'admin@example.com'})
+        user.set_password('admin')
+        user.is_superuser = True
+        user.is_staff = True
+        user.is_active = True
+        user.save()
+        print(f"[init_db] Superuser 'admin' {'creato' if created else 'aggiornato'} con password 'admin'")
     except Exception as e:
         print(f"[init_db] Errore durante post_migrate: {e}")
 

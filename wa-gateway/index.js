@@ -83,8 +83,8 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 const PORT = 4002;
-const DJANGO_PORT = process.env.DJANGO_PORT || '50082';
-const DJANGO_BASE_URL = process.env.DJANGO_BASE_URL || ('http://127.0.0.1:' + DJANGO_PORT);
+const DJANGO_PORT = process.env.DJANGO_PORT || '8000';
+const DJANGO_BASE_URL = process.env.DJANGO_BASE_URL || (fs.existsSync('/.dockerenv') ? 'http://backend:8000' : ('http://127.0.0.1:' + DJANGO_PORT));
 const DJANGO_WEBHOOK_URL = process.env.DJANGO_WEBHOOK_URL || (DJANGO_BASE_URL + '/api/webhook/poll-vote/');
 
 function logToFile(msg) {

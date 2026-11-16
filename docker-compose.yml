@@ -63,6 +63,10 @@ services:
   gateway:
     build: ./wa-gateway
     container_name: wamanager_gateway
+    environment:
+      - DJANGO_BASE_URL=http://backend:8000
+      - DJANGO_PORT=8000
+      - DJANGO_WEBHOOK_URL=http://backend:8000/api/webhook/poll-vote/
     ports:
       - "4002:4002"
     volumes:
