@@ -613,16 +613,24 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
       await _loadPresenze(_selectedLezione!.id);
       if (!mounted) return;
       final wa = res['whatsapp'] as Map<String, dynamic>?;
+      final int count = (res['count'] as num?)?.toInt() ?? 1;
+      final bool inviaWa = res['invia_whatsapp'] ?? (wa != null);
       String msg;
       Color bg;
-      if (wa == null) {
-        msg = 'Jolly aggiunto in attesa di risposta.';
+      if (!inviaWa || wa == null) {
+        msg = count > 1
+            ? '$count Jolly aggiunti tra le presenze in attesa di risposta.'
+            : 'Jolly aggiunto tra le presenze in attesa di risposta.';
         bg = Colors.green;
       } else if (wa['success'] == true) {
-        msg = 'Jolly aggiunto in attesa di risposta e messaggio WhatsApp inviato!';
+        msg = count > 1
+            ? '$count Jolly aggiunti in attesa e messaggi WhatsApp inviati!'
+            : 'Jolly aggiunto in attesa di risposta e messaggio WhatsApp inviato!';
         bg = Colors.green;
       } else {
-        msg = 'Jolly aggiunto in attesa di risposta, ma invio WhatsApp fallito: ${wa['error'] ?? 'errore sconosciuto'}';
+        msg = count > 1
+            ? '$count Jolly aggiunti in attesa, ma invio WhatsApp fallito per alcuni: ${wa['error'] ?? 'errore invio'}'
+            : 'Jolly aggiunto in attesa di risposta, ma invio WhatsApp fallito: ${wa['error'] ?? 'errore sconosciuto'}';
         bg = Colors.orange.shade800;
       }
       ScaffoldMessenger.of(context).showSnackBar(

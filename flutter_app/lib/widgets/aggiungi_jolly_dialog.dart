@@ -8,6 +8,12 @@ typedef AggiungiJollySubmitCallback = Future<Map<String, dynamic>> Function(
   bool inviaWhatsapp,
 );
 
+typedef AggiungiJollyMultiSubmitCallback = Future<Map<String, dynamic>> Function(
+  List<Allievo> allievi,
+  String testo,
+  bool inviaWhatsapp,
+);
+
 class AggiungiJollyDialog extends StatefulWidget {
   final Lezione lezione;
   final List<Presenza> presenze;
@@ -16,6 +22,7 @@ class AggiungiJollyDialog extends StatefulWidget {
   final List<Allievo>? initialAllievi;
   final String? initialJollyTemplate;
   final AggiungiJollySubmitCallback? onSubmit;
+  final AggiungiJollyMultiSubmitCallback? onMultiSubmit;
 
   const AggiungiJollyDialog({
     super.key,
@@ -26,6 +33,7 @@ class AggiungiJollyDialog extends StatefulWidget {
     this.initialAllievi,
     this.initialJollyTemplate,
     this.onSubmit,
+    this.onMultiSubmit,
   });
 
   @override
@@ -42,6 +50,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
 
   bool _loading = true;
   bool _submitting = false;
+  bool _inviaWhatsapp = true;
   String? _errorMsg;
 
   List<Allievo> _allievi = [];
@@ -49,7 +58,9 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
   String _searchQuery = '';
   String _selectedRuolo = 'tutti';
   String? _selectedScuolaId;
-  Allievo? _selectedAllievo;
+
+  final Set<String> _selectedAllievoIds = <String>{};
+  final Map<String, Allievo> _selectedAllievi = <String, Allievo>{};
 
   @override
   void initState() {
@@ -60,6 +71,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
       _jollyTemplate = (widget.initialJollyTemplate?.trim().isNotEmpty ?? false)
           ? widget.initialJollyTemplate!.trim()
           : _fallbackTemplate;
+      _messageController.text = _jollyTemplate;
       _loading = false;
     } else {
       _loadData();
@@ -90,6 +102,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
       setState(() {
         _allievi = allievi;
         _jollyTemplate = tmpl;
+        _messageController.text = tmpl;
         _loading = false;
       });
     } catch (err) {
@@ -120,6 +133,9 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     return tel.isNotEmpty && tel.toUpperCase() != 'TBD';
   }
 
+  int get _selectedWithPhoneCount =>
+      _selectedAllievi.values.where(_hasValidPhone).length;
+
   List<Allievo> get _filteredAllievi {
     final q = _searchQuery.trim().toLowerCase();
     return _allievi.where((a) {
@@ -142,20 +158,49 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     }).toList();
   }
 
-  void _selectAllievo(Allievo allievo) {
+  void _toggleAllievo(Allievo allievo) {
     setState(() {
-      _selectedAllievo = allievo;
-      _messageController.text = _buildPreviewFor(allievo);
+      if (_selectedAllievoIds.contains(allievo.id)) {
+        _selectedAllievoIds.remove(allievo.id);
+        _selectedAllievi.remove(allievo.id);
+      } else {
+        _selectedAllievoIds.add(allievo.id);
+        _selectedAllievi[allievo.id] = allievo;
+        // Se è il primo o l'unico selezionato, sincronizza l'anteprima
+        if (_selectedAllievi.length == 1) {
+          _messageController.text = _buildPreviewFor(allievo);
+        }
+      }
+    });
+  }
+
+  void _selectAllFiltered(List<Allievo> filtered) {
+    setState(() {
+      for (final a in filtered) {
+        _selectedAllievoIds.add(a.id);
+        _selectedAllievi[a.id] = a;
+      }
+      if (_selectedAllievi.length == 1) {
+        _messageController.text = _buildPreviewFor(_selectedAllievi.values.first);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedAllievoIds.clear();
+      _selectedAllievi.clear();
     });
   }
 
   Future<void> _submit() async {
-    final allievo = _selectedAllievo;
-    if (allievo == null) return;
+    if (_selectedAllievi.isEmpty) return;
 
-    final hasPhone = _hasValidPhone(allievo);
+    final hasAnyPhone = _selectedWithPhoneCount > 0;
+    final shouldSendWa = _inviaWhatsapp && hasAnyPhone;
     final msg = _messageController.text.trim();
-    if (hasPhone && msg.isEmpty) {
+
+    if (shouldSendWa && msg.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Inserisci il testo del messaggio WhatsApp.'),
@@ -166,14 +211,24 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     }
 
     setState(() => _submitting = true);
-    final res = widget.onSubmit != null
-        ? await widget.onSubmit!(allievo, msg, hasPhone)
-        : await _api.aggiungiJollyLezione(
-            widget.lezione.id,
-            allievo.id,
-            testo: msg,
-            inviaWhatsapp: hasPhone,
-          );
+    final res = widget.onMultiSubmit != null
+        ? await widget.onMultiSubmit!(
+            _selectedAllievi.values.toList(),
+            msg,
+            shouldSendWa,
+          )
+        : (widget.onSubmit != null
+            ? await widget.onSubmit!(
+                _selectedAllievi.values.first,
+                msg,
+                shouldSendWa,
+              )
+            : await _api.aggiungiJollyLezione(
+                widget.lezione.id,
+                allievoIds: _selectedAllievoIds.toList(),
+                testo: msg,
+                inviaWhatsapp: shouldSendWa,
+              ));
 
     if (!mounted) return;
     Navigator.pop(context, res);
@@ -182,20 +237,27 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredAllievi;
-    final hasPhone =
-        _selectedAllievo != null && _hasValidPhone(_selectedAllievo!);
+    final selectedCount = _selectedAllievi.length;
+    final withPhoneCount = _selectedWithPhoneCount;
+    final withoutPhoneCount = selectedCount - withPhoneCount;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.star, color: Colors.amber),
-          SizedBox(width: 8),
-          Expanded(child: Text('Aggiungi Jolly alla Lezione')),
+          const Icon(Icons.star, color: Colors.amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              selectedCount > 1
+                  ? 'Aggiungi Jolly alla Lezione ($selectedCount selezionati)'
+                  : 'Aggiungi Jolly alla Lezione',
+            ),
+          ),
         ],
       ),
       content: SizedBox(
-        width: 560,
+        width: 600,
         child: _loading
             ? const Padding(
                 padding: EdgeInsets.all(24.0),
@@ -318,11 +380,57 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Seleziona allievo (${filtered.length}):',
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Seleziona allievi (${filtered.length} filtrati, $selectedCount selezionati):',
+                                style: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Wrap(
+                              spacing: 4,
+                              children: [
+                                if (filtered.isNotEmpty &&
+                                    selectedCount < filtered.length)
+                                  InkWell(
+                                    onTap: () => _selectAllFiltered(filtered),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      child: Text(
+                                        'Seleziona tutti',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (selectedCount > 0)
+                                  InkWell(
+                                    onTap: _clearSelection,
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      child: Text(
+                                        'Deseleziona',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 6),
                         Container(
@@ -346,13 +454,14 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                                   itemBuilder: (_, idx) {
                                     final a = filtered[idx];
                                     final isSelected =
-                                        _selectedAllievo?.id == a.id;
+                                        _selectedAllievoIds.contains(a.id);
                                     final existing = widget.presenze
                                         .where((p) => p.allievoId == a.id)
                                         .firstOrNull;
                                     final giaPresente =
                                         existing?.presente == true;
                                     final giaInLista = existing != null;
+                                    final hasPhone = _hasValidPhone(a);
 
                                     return ListTile(
                                       dense: true,
@@ -360,23 +469,48 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                                       selectedTileColor: Colors.amber.shade50,
                                       leading: Icon(
                                         isSelected
-                                            ? Icons.radio_button_checked
-                                            : Icons.radio_button_off,
+                                            ? Icons.check_box
+                                            : Icons.check_box_outline_blank,
                                         color: isSelected
                                             ? Colors.amber.shade800
                                             : Colors.grey,
-                                        size: 20,
+                                        size: 22,
                                       ),
-                                      title: Text(
-                                        a.nomeCompleto,
-                                        style: TextStyle(
-                                          fontWeight: isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w500,
-                                          color: giaPresente
-                                              ? Colors.grey
-                                              : Colors.black87,
-                                        ),
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              a.nomeCompleto,
+                                              style: TextStyle(
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.w500,
+                                                color: giaPresente
+                                                    ? Colors.grey
+                                                    : Colors.black87,
+                                              ),
+                                            ),
+                                          ),
+                                          if (!hasPhone)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.shade100,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                'No tel',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.orange.shade900,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                       subtitle: Text(
                                         [
@@ -386,6 +520,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                                           if (a.scuolaNome != null &&
                                               a.scuolaNome!.isNotEmpty)
                                             a.scuolaNome!,
+                                          if (hasPhone) a.telefono,
                                           if (giaPresente)
                                             'Già presente'
                                           else if (giaInLista)
@@ -393,47 +528,181 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                                         ].join(' • '),
                                         style: const TextStyle(fontSize: 11),
                                       ),
-                                      onTap: () => _selectAllievo(a),
+                                      onTap: () => _toggleAllievo(a),
                                     );
                                   },
                                 ),
                         ),
-                        if (_selectedAllievo != null) ...[
+                        if (selectedCount > 0) ...[
                           const SizedBox(height: 14),
                           const Divider(),
                           const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(Icons.chat,
-                                  size: 18, color: Color(0xFF25D366)),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  hasPhone
-                                      ? 'Anteprima messaggio WhatsApp per ${_selectedAllievo!.nomeCompleto} (${_selectedAllievo!.telefono}):'
-                                      : 'Messaggio WhatsApp non inviabile (nessun numero valido per ${_selectedAllievo!.nomeCompleto})',
+
+                          // Opzione: inviare o non inviare WhatsApp
+                          Material(
+                            color: _inviaWhatsapp
+                                ? Colors.green.shade50
+                                : Colors.blueGrey.shade50,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(
+                                color: _inviaWhatsapp
+                                    ? Colors.green.shade300
+                                    : Colors.blueGrey.shade200,
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              child: CheckboxListTile(
+                                value: _inviaWhatsapp,
+                                onChanged: (val) =>
+                                    setState(() => _inviaWhatsapp = val ?? true),
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                title: Row(
+                                  children: [
+                                    Icon(
+                                      _inviaWhatsapp
+                                          ? Icons.chat
+                                          : Icons.chat_bubble_outline,
+                                      size: 18,
+                                      color: _inviaWhatsapp
+                                          ? const Color(0xFF25D366)
+                                          : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'Invia messaggio di richiesta disponibilità via WhatsApp',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  _inviaWhatsapp
+                                      ? 'I Jolly verranno inseriti tra le presenze in attesa e riceveranno il messaggio WhatsApp.'
+                                      : 'I Jolly verranno inseriti tra le presenze in attesa di risposta SENZA inviare messaggi WhatsApp.',
                                   style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: hasPhone
-                                        ? Colors.black87
-                                        : Colors.orange.shade900,
+                                    fontSize: 11,
+                                    color: _inviaWhatsapp
+                                        ? Colors.green.shade900
+                                        : Colors.blueGrey.shade800,
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                          if (hasPhone) ...[
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: _messageController,
-                              maxLines: 3,
-                              decoration: InputDecoration(
-                                labelText: 'Testo messaggio (modificabile)',
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                                filled: true,
-                                fillColor: Colors.grey.shade50,
+
+                          const SizedBox(height: 10),
+
+                          if (_inviaWhatsapp) ...[
+                            if (withPhoneCount == 0)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border:
+                                      Border.all(color: Colors.orange.shade300),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded,
+                                        size: 18,
+                                        color: Colors.orange.shade800),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Nessun allievo selezionato ha un numero di telefono registrato: verranno aggiunti senza invio WhatsApp.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.orange.shade900,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.edit_note,
+                                      size: 18, color: Color(0xFF25D366)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      selectedCount == 1
+                                          ? 'Testo messaggio per ${_selectedAllievi.values.first.nomeCompleto}:'
+                                          : 'Testo messaggio WhatsApp ($withPhoneCount destinatari con numero valido):',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: _messageController,
+                                maxLines: 3,
+                                decoration: InputDecoration(
+                                  labelText: 'Testo messaggio (modificabile)',
+                                  hintText: 'Usa {nickname} per personalizzare il nome...',
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade50,
+                                  helperText:
+                                      'Il segnaposto {nickname} verrà sostituito automaticamente per ogni allievo.',
+                                  helperStyle: const TextStyle(fontSize: 10),
+                                ),
+                              ),
+                              if (withoutPhoneCount > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Nota: $withoutPhoneCount allievi senza telefono verranno aggiunti senza messaggio WhatsApp.',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.orange.shade800),
+                                  ),
+                                ),
+                            ],
+                          ] else ...[
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.info_outline,
+                                      size: 20, color: Colors.blue.shade800),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      selectedCount == 1
+                                          ? '${_selectedAllievi.values.first.nomeCompleto} verrà inserito tra le presenze come Jolly "In attesa di risposta".'
+                                          : '$selectedCount allievi selezionati verranno inseriti tra le presenze come Jolly "In attesa di risposta".',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.blue.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -449,7 +718,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
         ),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-            backgroundColor: hasPhone
+            backgroundColor: (_inviaWhatsapp && withPhoneCount > 0)
                 ? Colors.green.shade700
                 : Colors.amber.shade800,
             foregroundColor: Colors.white,
@@ -461,15 +730,24 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2),
                 )
-              : Icon(hasPhone ? Icons.send : Icons.person_add, size: 18),
+              : Icon(
+                  (_inviaWhatsapp && withPhoneCount > 0)
+                      ? Icons.send
+                      : Icons.person_add,
+                  size: 18,
+                ),
           label: Text(
             _submitting
-                ? 'Invio in corso...'
-                : (hasPhone
-                    ? 'Aggiungi e Invia WhatsApp'
-                    : 'Aggiungi come Jolly'),
+                ? 'Operazione in corso...'
+                : (_inviaWhatsapp && withPhoneCount > 0
+                    ? (selectedCount > 1
+                        ? 'Aggiungi ($selectedCount) e Invia WhatsApp'
+                        : 'Aggiungi e Invia WhatsApp')
+                    : (selectedCount > 1
+                        ? 'Aggiungi ($selectedCount) in Attesa'
+                        : 'Aggiungi come Jolly in Attesa')),
           ),
-          onPressed: (_submitting || _loading || _selectedAllievo == null)
+          onPressed: (_submitting || _loading || selectedCount == 0)
               ? null
               : _submit,
         ),

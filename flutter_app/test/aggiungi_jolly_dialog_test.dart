@@ -150,4 +150,110 @@ void main() {
     expect(submittedTesto, 'Ciao Laury, ci sei stasera come Jolly alle 20:30?');
     expect(submittedInviaWa, isTrue);
   });
+
+  testWidgets(
+      'AggiungiJollyDialog supports multi-selection and adding without WhatsApp message',
+      (tester) async {
+    final scuole = [
+      Scuola(id: 's1', nome: 'Sede Centro', sede: 'Milano', gruppoWhatsapp: ''),
+    ];
+    final lezione = Lezione(
+      id: 'l1',
+      corsoId: 'c1',
+      corsoDescrizione: 'Sede Centro - Principianti (20:30)',
+      data: '2026-11-12',
+    );
+    final List<Allievo> allievi = [
+      Allievo(
+        id: 'a1',
+        nome: 'Mario',
+        cognome: 'Rossi',
+        nickname: 'SuperMario',
+        ruolo: 'leader',
+        ruoloDisplay: 'Leader',
+        telefono: '+393331111111',
+        scuolaId: 's1',
+        recensione: 'no',
+        recensioneDisplay: 'No',
+        livello: 'principiante',
+        livelloDisplay: 'Principianti',
+      ),
+      Allievo(
+        id: 'a2',
+        nome: 'Laura',
+        cognome: 'Bianchi',
+        nickname: 'Laury',
+        ruolo: 'follower',
+        ruoloDisplay: 'Follower',
+        telefono: '+393332222222',
+        scuolaId: 's1',
+        recensione: 'no',
+        recensioneDisplay: 'No',
+        livello: 'intermedio',
+        livelloDisplay: 'Intermedio',
+      ),
+    ];
+
+    List<Allievo>? submittedAllievi;
+    String? submittedTesto;
+    bool? submittedInviaWa;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => AggiungiJollyDialog(
+                    lezione: lezione,
+                    presenze: const [],
+                    scuole: scuole,
+                    infoBilanciamento: 'Servono Jolly',
+                    initialAllievi: allievi,
+                    initialJollyTemplate: 'Ciao {nickname}, richiesta jolly',
+                    onMultiSubmit: (list, testo, inviaWa) async {
+                      submittedAllievi = list;
+                      submittedTesto = testo;
+                      submittedInviaWa = inviaWa;
+                      return {'success': true};
+                    },
+                  ),
+                );
+              },
+              child: const Text('Apri Multi'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Apri Multi'));
+    await tester.pumpAndSettle();
+
+    // Select both Mario and Laura
+    await tester.tap(find.text('Mario Rossi'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Laura Bianchi'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aggiungi (2) e Invia WhatsApp'), findsOneWidget);
+
+    // Disable WhatsApp sending
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+
+    // Check button updated to without WhatsApp
+    expect(find.text('Aggiungi (2) in Attesa'), findsOneWidget);
+
+    // Submit
+    await tester.tap(find.text('Aggiungi (2) in Attesa'));
+    await tester.pumpAndSettle();
+
+    expect(submittedAllievi?.length, 2);
+    expect(submittedAllievi?.map((a) => a.id).toSet(), {'a1', 'a2'});
+    expect(submittedInviaWa, isFalse);
+  });
 }

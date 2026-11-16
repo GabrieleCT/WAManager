@@ -263,6 +263,45 @@ class AggiungiJollyLezioneTests(TestCase):
             is_group=False,
         )
 
+    @patch("core.api_views.send_whatsapp_message")
+    def test_aggiungi_jolly_multipli_senza_whatsapp(self, mock_send):
+        from core.models import Scuola, Corso, Lezione, Presenza
+        from datetime import time
+
+        scuola = Scuola.objects.create(nome="Sede Est")
+        corso = Corso.objects.create(
+            scuola=scuola,
+            livello="intermedio",
+            giorno_settimana="martedi",
+            orario=time(21, 00),
+        )
+        lezione = Lezione.objects.create(corso=corso, data=date(2026, 11, 13))
+        a1 = Allievo.objects.create(nome="Paolo", cognome="Verdi", ruolo="leader", telefono="+393331111111")
+        a2 = Allievo.objects.create(nome="Anna", cognome="Neri", ruolo="follower", telefono="+393332222222")
+
+        res = self.client.post(
+            f"/api/lezioni/{lezione.id}/aggiungi-jolly/",
+            {
+                "allievo_ids": [str(a1.id), str(a2.id)],
+                "invia_whatsapp": False,
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["count"], 2)
+        self.assertFalse(data["invia_whatsapp"])
+        mock_send.assert_not_called()
+
+        p1 = Presenza.objects.get(lezione=lezione, allievo=a1)
+        self.assertIsNone(p1.presente)
+        self.assertTrue(p1.is_jolly)
+
+        p2 = Presenza.objects.get(lezione=lezione, allievo=a2)
+        self.assertIsNone(p2.presente)
+        self.assertTrue(p2.is_jolly)
+
 
 class GoogleDriveCertificatiFolderTests(TestCase):
     def setUp(self):

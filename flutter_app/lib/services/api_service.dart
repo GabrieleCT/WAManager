@@ -673,17 +673,22 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> aggiungiJollyLezione(
-    String lezioneId,
-    String allievoId, {
+    String lezioneId, {
+    String? allievoId,
+    List<String>? allievoIds,
     String? testo,
     bool inviaWhatsapp = true,
   }) async {
     try {
+      final List<String> ids = allievoIds != null
+          ? List<String>.from(allievoIds)
+          : (allievoId != null ? [allievoId] : <String>[]);
       final res = await http.post(
         Uri.parse('$baseUrl/api/lezioni/$lezioneId/aggiungi-jolly/'),
         headers: _headers,
         body: jsonEncode({
-          'allievo_id': allievoId,
+          if (allievoId != null) 'allievo_id': allievoId,
+          'allievo_ids': ids,
           'invia_whatsapp': inviaWhatsapp,
           if (testo != null) 'testo': testo,
         }),

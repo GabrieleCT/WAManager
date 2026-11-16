@@ -1362,72 +1362,116 @@ class LezioneViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='aggiungi-jolly')
     def aggiungi_jolly(self, request, pk=None):
         """
-        Aggiunge un allievo come Jolly alle presenze della lezione in stato di attesa risposta (presente=None)
-        e, se richiesto, invia contestualmente il messaggio WhatsApp.
+        Aggiunge uno o più allievi come Jolly alle presenze della lezione in stato di attesa risposta (presente=None)
+        e, se richiesto (invia_whatsapp=True), invia contestualmente il messaggio WhatsApp.
         """
         lezione = self.get_object()
         allievo_id = request.data.get('allievo_id')
-        if not allievo_id:
-            return Response({'error': 'allievo_id obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
-        allievo = Allievo.objects.filter(id=allievo_id).first()
-        if not allievo:
-            return Response({'error': 'Allievo non trovato.'}, status=status.HTTP_404_NOT_FOUND)
+        allievo_ids = request.data.get('allievo_ids')
 
-        presenza, created = Presenza.objects.update_or_create(
-            lezione=lezione,
-            allievo=allievo,
-            defaults={'presente': None, 'fonte': 'manuale', 'is_jolly': True}
-        )
+        ids_to_process = []
+        if isinstance(allievo_ids, list):
+            ids_to_process = [str(i) for i in allievo_ids if i]
+        elif allievo_id:
+            ids_to_process = [str(allievo_id)]
+
+        if not ids_to_process:
+            return Response({'error': 'allievo_id o allievo_ids obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
 
         testo_raw = (request.data.get('testo') or '').strip()
         invia_wa_raw = request.data.get('invia_whatsapp', None)
         invia_wa = bool(invia_wa_raw) if invia_wa_raw is not None else bool(testo_raw)
 
-        whatsapp_info = None
-        if invia_wa:
-            telefono = (allievo.telefono or '').strip()
-            if not telefono or telefono.upper() == 'TBD':
-                whatsapp_info = {
-                    'attempted': False,
-                    'success': False,
-                    'error': f"Nessun numero di telefono valido registrato per {allievo.nome} {allievo.cognome}.",
-                }
-            else:
-                nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
-                if not testo_raw:
-                    cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
-                    testo_raw = (
-                        cfg.jolly_testo
-                        if (cfg and cfg.jolly_testo)
-                        else "Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺"
-                    )
-                msg_finale = (
-                    testo_raw
-                    .replace('{nickname}', nick)
-                    .replace('<nickname>', nick)
-                    .replace('<nome_allievo>', nick)
-                    .replace('{nome_allievo}', nick)
-                    .replace('{allievo}', nick)
-                    .replace('{nome}', nick)
-                    .replace('<nome>', nick)
-                )
-                wa_res = send_whatsapp_message(
-                    to=telefono,
-                    message=msg_finale,
-                    is_group=False,
-                )
-                whatsapp_info = {
-                    'attempted': True,
-                    'success': bool(wa_res.get('success')),
-                    'messaggio': msg_finale,
-                    'error': wa_res.get('error'),
-                }
+        if invia_wa and not testo_raw:
+            cfg = SondaggioMattutinoConfig.objects.filter(corso__isnull=True).first()
+            testo_raw = (
+                cfg.jolly_testo
+                if (cfg and cfg.jolly_testo)
+                else "Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺"
+            )
 
-        serializer = PresenzaSerializer(presenza)
-        payload = dict(serializer.data)
-        if whatsapp_info is not None:
-            payload['whatsapp'] = whatsapp_info
-        return Response(payload, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        presenze_list = []
+        whatsapp_info_list = []
+        any_created = False
+
+        for aid in ids_to_process:
+            allievo = Allievo.objects.filter(id=aid).first()
+            if not allievo:
+                continue
+
+            presenza, created = Presenza.objects.update_or_create(
+                lezione=lezione,
+                allievo=allievo,
+                defaults={'presente': None, 'fonte': 'manuale', 'is_jolly': True}
+            )
+            if created:
+                any_created = True
+            presenze_list.append(presenza)
+
+            if invia_wa:
+                telefono = (allievo.telefono or '').strip()
+                if not telefono or telefono.upper() == 'TBD':
+                    whatsapp_info_list.append({
+                        'allievo_id': str(allievo.id),
+                        'nome': f"{allievo.nome} {allievo.cognome}",
+                        'attempted': False,
+                        'success': False,
+                        'error': f"Nessun numero di telefono valido registrato per {allievo.nome} {allievo.cognome}.",
+                    })
+                else:
+                    nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
+                    msg_finale = (
+                        testo_raw
+                        .replace('{nickname}', nick)
+                        .replace('<nickname>', nick)
+                        .replace('<nome_allievo>', nick)
+                        .replace('{nome_allievo}', nick)
+                        .replace('{allievo}', nick)
+                        .replace('{nome}', nick)
+                        .replace('<nome>', nick)
+                    )
+                    wa_res = send_whatsapp_message(
+                        to=telefono,
+                        message=msg_finale,
+                        is_group=False,
+                    )
+                    whatsapp_info_list.append({
+                        'allievo_id': str(allievo.id),
+                        'nome': f"{allievo.nome} {allievo.cognome}",
+                        'attempted': True,
+                        'success': bool(wa_res.get('success')),
+                        'messaggio': msg_finale,
+                        'error': wa_res.get('error'),
+                    })
+
+        if not presenze_list:
+            return Response({'error': 'Nessun allievo valido trovato.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not isinstance(allievo_ids, list):
+            serializer = PresenzaSerializer(presenze_list[0])
+            payload = dict(serializer.data)
+            payload['success'] = True
+            payload['invia_whatsapp'] = invia_wa
+            if whatsapp_info_list:
+                payload['whatsapp'] = whatsapp_info_list[0]
+            return Response(payload, status=status.HTTP_201_CREATED if any_created else status.HTTP_200_OK)
+
+        all_wa_success = all(w.get('success', False) for w in whatsapp_info_list) if whatsapp_info_list else True
+        payload = {
+            'success': True,
+            'count': len(presenze_list),
+            'invia_whatsapp': invia_wa,
+            'presenze': [PresenzaSerializer(p).data for p in presenze_list],
+            'whatsapp_results': whatsapp_info_list,
+        }
+        if invia_wa:
+            payload['whatsapp'] = {
+                'attempted': True,
+                'success': all_wa_success,
+                'count_sent': sum(1 for w in whatsapp_info_list if w.get('success', False)),
+                'error': None if all_wa_success else "Invio WhatsApp fallito per alcuni allievi.",
+            }
+        return Response(payload, status=status.HTTP_201_CREATED if any_created else status.HTTP_200_OK)
 
 
     def perform_create(self, serializer):
