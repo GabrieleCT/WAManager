@@ -45,17 +45,18 @@ def pre_migrate():
 
 
 def post_migrate():
-    """Assicura che l'utente superuser admin esista con password admin."""
+    """Assicura che l'utente superuser admin esista con password configurata."""
     try:
         from django.contrib.auth import get_user_model
         User = get_user_model()
+        admin_pass = os.environ.get('ADMIN_PASSWORD', 'Aik9e@HK3SvX33s')
         user, created = User.objects.get_or_create(username='admin', defaults={'email': 'admin@example.com'})
-        user.set_password('admin')
+        user.set_password(admin_pass)
         user.is_superuser = True
         user.is_staff = True
         user.is_active = True
         user.save()
-        print(f"[init_db] Superuser 'admin' {'creato' if created else 'aggiornato'} con password 'admin'")
+        print(f"[init_db] Superuser 'admin' {'creato' if created else 'aggiornato'} con la password configurata.")
     except Exception as e:
         print(f"[init_db] Errore durante post_migrate: {e}")
 
