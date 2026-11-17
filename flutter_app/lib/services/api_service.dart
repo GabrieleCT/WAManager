@@ -19,7 +19,12 @@ class ApiService {
     if (kIsWeb) {
       final uri = Uri.base;
       if (uri.host.isNotEmpty && uri.host != 'localhost' && uri.host != '127.0.0.1') {
-        baseUrl = '${uri.scheme}://${uri.host}:8000';
+        final isDomainOrHttps = uri.scheme == 'https' || !RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(uri.host);
+        if (isDomainOrHttps) {
+          baseUrl = '${uri.scheme}://${uri.host}';
+        } else {
+          baseUrl = '${uri.scheme}://${uri.host}:8000';
+        }
       } else {
         baseUrl = 'http://localhost:8000';
       }
