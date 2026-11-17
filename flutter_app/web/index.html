@@ -17,6 +17,15 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
+  <script>
+    // Se l'utente accede tramite IP o porta diretta (es. 80.211.58.251:8080), reindirizza subito al dominio sicuro HTTPS
+    (function() {
+      var h = window.location.hostname;
+      if (h === '80.211.58.251' || (h === 'gestionale.tantotango.it' && window.location.protocol === 'http:')) {
+        window.location.replace('https://gestionale.tantotango.it' + window.location.pathname + window.location.search + window.location.hash);
+      }
+    })();
+  </script>
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="TantoTango Manager - Gestionale scuola di ballo">
 
