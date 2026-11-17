@@ -31,7 +31,12 @@ class ApiService {
     } else {
       final savedUrl = prefs.getString('api_base_url');
       if (savedUrl != null && savedUrl.isNotEmpty) {
-        baseUrl = savedUrl;
+        var cleanSaved = savedUrl.trim();
+        if (cleanSaved.startsWith('https://') && cleanSaved.endsWith(':8000')) {
+          cleanSaved = cleanSaved.substring(0, cleanSaved.length - 5);
+          prefs.setString('api_base_url', cleanSaved);
+        }
+        baseUrl = cleanSaved;
       } else {
         baseUrl = 'http://localhost:8000';
       }
@@ -99,9 +104,13 @@ class ApiService {
   }
 
   Future<void> setBaseUrl(String newUrl) async {
-    baseUrl = newUrl;
+    var cleanUrl = newUrl.trim();
+    if (cleanUrl.startsWith('https://') && cleanUrl.endsWith(':8000')) {
+      cleanUrl = cleanUrl.substring(0, cleanUrl.length - 5);
+    }
+    baseUrl = cleanUrl;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('api_base_url', newUrl);
+    await prefs.setString('api_base_url', cleanUrl);
   }
 
   // Helper generici

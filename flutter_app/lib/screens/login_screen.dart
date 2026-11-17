@@ -56,7 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (_urlController.text.trim().isNotEmpty) {
-        await api.setBaseUrl(_urlController.text.trim());
+        var cleanUrl = _urlController.text.trim();
+        if (cleanUrl.startsWith('https://') && cleanUrl.endsWith(':8000')) {
+          cleanUrl = cleanUrl.substring(0, cleanUrl.length - 5);
+          _urlController.text = cleanUrl;
+        }
+        await api.setBaseUrl(cleanUrl);
       }
 
       final success = await api.login(
