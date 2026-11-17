@@ -31,9 +31,9 @@ services:
              python manage.py collectstatic --noinput &&
              python manage.py migrate &&
              python init_db.py post &&
-             gunicorn wamanager.wsgi:application --bind 0.0.0.0:8000"
+             gunicorn wamanager.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 2 --worker-class gthread --timeout 120"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgres://admin:secretpassword@db:5432/wamanager_db}
       - GATEWAY_BASE_URL=http://gateway:4002
@@ -68,7 +68,7 @@ services:
       - DJANGO_PORT=8000
       - DJANGO_WEBHOOK_URL=http://backend:8000/api/webhook/poll-vote/
     ports:
-      - "4002:4002"
+      - "127.0.0.1:4002:4002"
     volumes:
       - wa_session_data:/app/baileys_auth_info
     restart: always
@@ -80,7 +80,7 @@ services:
       dockerfile: Dockerfile
     container_name: wamanager_frontend
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     restart: always
 
 volumes:
