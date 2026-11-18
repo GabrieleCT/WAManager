@@ -193,11 +193,11 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     });
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool? forceInviaWhatsapp}) async {
     if (_selectedAllievi.isEmpty) return;
 
     final hasAnyPhone = _selectedWithPhoneCount > 0;
-    final shouldSendWa = _inviaWhatsapp && hasAnyPhone;
+    final shouldSendWa = (forceInviaWhatsapp ?? _inviaWhatsapp) && hasAnyPhone;
     final msg = _messageController.text.trim();
 
     if (shouldSendWa && msg.isEmpty) {
@@ -210,7 +210,12 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
       return;
     }
 
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      if (forceInviaWhatsapp != null) {
+        _inviaWhatsapp = forceInviaWhatsapp;
+      }
+    });
     final res = widget.onMultiSubmit != null
         ? await widget.onMultiSubmit!(
             _selectedAllievi.values.toList(),
@@ -241,8 +246,19 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     final withPhoneCount = _selectedWithPhoneCount;
     final withoutPhoneCount = selectedCount - withPhoneCount;
 
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 40,
+        vertical: isMobile ? 16 : 24,
+      ),
+      actionsOverflowButtonSpacing: 8,
+      actionsPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 16,
+        vertical: 8,
+      ),
       title: Row(
         children: [
           const Icon(Icons.star, color: Colors.amber),
@@ -257,7 +273,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
         ],
       ),
       content: SizedBox(
-        width: 600,
+        width: isMobile ? double.maxFinite : 600,
         child: _loading
             ? const Padding(
                 padding: EdgeInsets.all(24.0),
@@ -295,7 +311,91 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+
+                        // Selettore Rapido Modalità: WhatsApp vs Solo in Attesa (visibile subito su Mobile)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _inviaWhatsapp = true),
+                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: _inviaWhatsapp ? Colors.green.shade700 : Colors.transparent,
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.chat,
+                                          size: 15,
+                                          color: _inviaWhatsapp ? Colors.white : Colors.grey.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            'Invia WhatsApp',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: _inviaWhatsapp ? Colors.white : Colors.grey.shade800,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _inviaWhatsapp = false),
+                                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: !_inviaWhatsapp ? Colors.amber.shade800 : Colors.transparent,
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(9)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.person_add,
+                                          size: 15,
+                                          color: !_inviaWhatsapp ? Colors.white : Colors.grey.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            'Solo in Attesa (senza WA)',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: !_inviaWhatsapp ? Colors.white : Colors.grey.shade800,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         TextField(
                           controller: _searchController,
                           decoration: InputDecoration(
@@ -434,7 +534,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                         ),
                         const SizedBox(height: 6),
                         Container(
-                          height: 190,
+                          height: isMobile ? 140 : 190,
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey.shade300),
                             borderRadius: BorderRadius.circular(8),
@@ -716,40 +816,53 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
           onPressed: _submitting ? null : () => Navigator.pop(context),
           child: const Text('Annulla'),
         ),
+        // Pulsante 1: Aggiungi in Attesa (senza WhatsApp) - sempre accessibile e visibile
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.amber.shade900,
+            side: BorderSide(color: Colors.amber.shade700),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: 8),
+          ),
+          icon: const Icon(Icons.person_add, size: 16),
+          label: Text(
+            _submitting && !_inviaWhatsapp
+                ? 'Salvataggio...'
+                : (selectedCount > 1
+                    ? 'Aggiungi ($selectedCount) in Attesa'
+                    : 'Aggiungi in Attesa'),
+            style: const TextStyle(fontSize: 12),
+          ),
+          onPressed: (_submitting || _loading || selectedCount == 0)
+              ? null
+              : () => _submit(forceInviaWhatsapp: false),
+        ),
+        // Pulsante 2: Aggiungi e Invia WhatsApp
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
             backgroundColor: (_inviaWhatsapp && withPhoneCount > 0)
                 ? Colors.green.shade700
-                : Colors.amber.shade800,
+                : Colors.grey.shade500,
             foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: 8),
           ),
-          icon: _submitting
+          icon: _submitting && _inviaWhatsapp
               ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                 )
-              : Icon(
-                  (_inviaWhatsapp && withPhoneCount > 0)
-                      ? Icons.send
-                      : Icons.person_add,
-                  size: 18,
-                ),
+              : const Icon(Icons.send, size: 16),
           label: Text(
-            _submitting
-                ? 'Operazione in corso...'
-                : (_inviaWhatsapp && withPhoneCount > 0
-                    ? (selectedCount > 1
-                        ? 'Aggiungi ($selectedCount) e Invia WhatsApp'
-                        : 'Aggiungi e Invia WhatsApp')
-                    : (selectedCount > 1
-                        ? 'Aggiungi ($selectedCount) in Attesa'
-                        : 'Aggiungi come Jolly in Attesa')),
+            _submitting && _inviaWhatsapp
+                ? 'Invio in corso...'
+                : (selectedCount > 1
+                    ? 'Aggiungi ($selectedCount) e Invia WhatsApp'
+                    : 'Aggiungi e Invia WhatsApp'),
+            style: const TextStyle(fontSize: 12),
           ),
-          onPressed: (_submitting || _loading || selectedCount == 0)
+          onPressed: (_submitting || _loading || selectedCount == 0 || withPhoneCount == 0)
               ? null
-              : _submit,
+              : () => _submit(forceInviaWhatsapp: true),
         ),
       ],
     );
