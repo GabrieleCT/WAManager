@@ -1249,7 +1249,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                          tooltip: 'Nessuna risposta',
                                          onTap: () => _updatePresenzaValore(p, null),
                                        ),
-                                       const SizedBox(width: 6),
+                                       if (!p.isJolly) ...[
+                                         const SizedBox(width: 6),
                                        // 4. Invia sollecito WhatsApp (dopo il punto interrogativo)
                                        _buildPresenzaButton(
                                          isSelected: p.sollecitoInviato,
@@ -1270,7 +1271,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                                                  : 'Invia sollecito WhatsApp a ${p.allievoNome}')
                                              : 'Nessun numero di telefono per ${p.allievoNome}',
                                          onTap: () => _inviaSollecitoRisposta(p),
-                                       ),
+                                         ),
+                                       ],
                                      ],
                                    )                          ],
                             ),
@@ -1447,7 +1449,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                 ],
               ),
             ),
-            const PopupMenuDivider(),
+            if (!p.isJolly) ...[
+              const PopupMenuDivider(),
             PopupMenuItem<String>(
               value: 'sollecito',
               enabled: p.allievoTelefono.trim().isNotEmpty,
@@ -1474,7 +1477,8 @@ class _PresenzeScreenState extends State<PresenzeScreen> {
                   ),
                 ],
               ),
-            ),
+              ),
+            ],
           ],
         ),
       ],

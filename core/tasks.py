@@ -682,6 +682,10 @@ def controlla_e_invia_solleciti_mancata_risposta(lezione_id=None, corso_ids=None
                 defaults={'presente': None, 'fonte': 'manuale'}
             )
 
+            # I Jolly NON devono MAI ricevere il sollecito di mancata risposta del corso
+            if p.is_jolly:
+                continue
+
             # Se ha risposto (sia PRESENTE [True] che ASSENTE [False]), NON sollecitare
             if p.presente is not None:
                 continue

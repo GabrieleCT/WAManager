@@ -532,7 +532,7 @@ class GeminiPresenceParsingTests(TestCase):
     def setUp(self):
         self.scuola = Scuola.objects.create(nome="Scuola Test", sede="Sede")
         self.corso = Corso.objects.create(scuola=self.scuola, livello="principiante", giorno_settimana="MERCOLEDI", orario=time(19, 30))
-        self.allievo = Allievo.objects.create(nome="Danila", cognome="Ghisletti", telefono="39333111222")
+        self.allievo = Allievo.objects.create(nome="Danila", cognome="Ghisletti", telefono="39333111222", corso=self.corso)
 
     def test_single_raising_hand_emoji(self):
         from .gemini_service import parse_and_apply_presenze
@@ -587,3 +587,34 @@ class GeminiPresenceParsingTests(TestCase):
 
 
 
+
+    def test_sollecito_skips_jolly(self):
+        from .tasks import controlla_e_invia_solleciti_mancata_risposta
+        from .models import Lezione, Presenza, SondaggioMattutinoConfig
+        from datetime import date
+        from unittest.mock import patch
+
+        cfg = SondaggioMattutinoConfig.objects.create(sollecito_attivo=True, sollecito_orario='00:00')
+        lezione = Lezione.objects.create(corso=self.corso, data=date.today())
+        
+        # Allievo 1: normale del corso, senza risposta
+        p1, _ = Presenza.objects.get_or_create(lezione=lezione, allievo=self.allievo)
+        p1.presente = None
+        p1.is_jolly = False
+        p1.save()
+        
+        # Allievo 2: Jolly, senza risposta
+        jolly_allievo = Allievo.objects.create(nome='Jolly', cognome='Test', telefono='39333999888', corso=self.corso)
+        p2, _ = Presenza.objects.get_or_create(lezione=lezione, allievo=jolly_allievo)
+        p2.presente = None
+        p2.is_jolly = True
+        p2.save()
+
+        with patch('core.tasks.send_whatsapp_message') as mock_send:
+            mock_send.return_value = {'success': True}
+            res = controlla_e_invia_solleciti_mancata_risposta(lezione_id=lezione.id, force=True)
+            
+            # Solo l'allievo normale deve essere stato sollecitato, MAI il jolly
+            phones_called = [call.kwargs['to'] for call in mock_send.call_args_list]
+            self.assertIn('39333111222', phones_called)
+            self.assertNotIn('39333999888', phones_called)
