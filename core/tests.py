@@ -528,5 +528,62 @@ class ImportDocumentiDriveTests(TestCase):
         self.assertTrue(serializer_blank.is_valid(), serializer_blank.errors)
 
 
+class GeminiPresenceParsingTests(TestCase):
+    def setUp(self):
+        self.scuola = Scuola.objects.create(nome="Scuola Test", sede="Sede")
+        self.corso = Corso.objects.create(scuola=self.scuola, livello="principiante", giorno_settimana="MERCOLEDI", orario=time(19, 30))
+        self.allievo = Allievo.objects.create(nome="Danila", cognome="Ghisletti", telefono="39333111222")
+
+    def test_single_raising_hand_emoji(self):
+        from .gemini_service import parse_and_apply_presenze
+        # Even if Gemini returns IGNOTA, heuristic should classify as PRESENTE_SINGOLO
+        esito, _, _ = parse_and_apply_presenze(
+            allievo=self.allievo,
+            prossima_lezione=None,
+            risposta_ai="IGNOTA",
+            mittente_label="Danila Ghisletti",
+            corso=self.corso,
+            original_text="🙋‍♀️"
+        )
+        self.assertEqual(esito, "PRESENTE_SINGOLO")
+
+    def test_single_thumbs_up_emoji(self):
+        from .gemini_service import parse_and_apply_presenze
+        esito, _, _ = parse_and_apply_presenze(
+            allievo=self.allievo,
+            prossima_lezione=None,
+            risposta_ai="IGNOTA",
+            mittente_label="Danila Ghisletti",
+            corso=self.corso,
+            original_text="👍"
+        )
+        self.assertEqual(esito, "PRESENTE_SINGOLO")
+
+    def test_couple_raising_hands_emojis(self):
+        from .gemini_service import parse_and_apply_presenze
+        esito, _, _ = parse_and_apply_presenze(
+            allievo=self.allievo,
+            prossima_lezione=None,
+            risposta_ai="IGNOTA",
+            mittente_label="Rosanna Perozzo",
+            corso=self.corso,
+            original_text="🙋🏼‍♀️🙋🏻‍♂️"
+        )
+        self.assertEqual(esito, "PRESENTE_COPPIA")
+
+    def test_negative_with_emoji_not_present(self):
+        from .gemini_service import parse_and_apply_presenze
+        esito, _, _ = parse_and_apply_presenze(
+            allievo=self.allievo,
+            prossima_lezione=None,
+            risposta_ai="ASSENTE_SINGOLO",
+            mittente_label="Danila Ghisletti",
+            corso=self.corso,
+            original_text="Stasera non riesco 👍"
+        )
+        self.assertEqual(esito, "ASSENTE_SINGOLO")
+
+
+
 
 

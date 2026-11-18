@@ -110,13 +110,15 @@ Devi interpretare l'intenzione di presenza/assenza e restituire SOLO UNA di ques
 Regole di classificazione ed esempi:
 1. PRESENTE_COPPIA:
    - Se il mittente parla al plurale o conferma la presenza per la coppia / partner.
-   - Esempi: "Presenti", "presenti!", "Ci siamo", "Noi ci siamo", "Veniamo", "Arriviamo", "Presenti entrambi", "Ci siamo entrambi", "Presenti tutti e due".
+   - Esempi: "Presenti", "presenti!", "Ci siamo", "Noi ci siamo", "Veniamo", "Arriviamo", "Presenti entrambi", "Ci siamo entrambi", "Presenti tutti e due", "🙋‍♀️🙋‍♂️", "🙋🏼‍♀️🙋🏻‍♂️", "👫", "🧑‍🤝‍🧑".
    - ATTENZIONE CRITICA: La parola "Presenti" (al plurale) indica SEMPRE PRESENTE_COPPIA. Solo "Presente" (al singolare) indica PRESENTE_SINGOLO.
+   - ATTENZIONE CRITICA EMOJI: Se compaiono due o più emoji di persone che alzano la mano (es. "🙋‍♀️🙋‍♂️", "🙋🏼‍♀️🙋🏻‍♂️") o emoji di coppia ("👫", "🧑‍🤝‍🧑"), indica SEMPRE PRESENTE_COPPIA.
 
 2. PRESENTE_SINGOLO:
-   - Se il mittente conferma la propria presenza da solo/a, anche con risposte brevi, informali, in inglese o con ringraziamenti/saluti.
-   - Esempi: "Presente", "Ci sono", "Vengo", "Arrivo", "Io ci sono", "Presente 💃", "Sì", "Si", "Yes", "Yess", "Yess!", "Yes, Grazie!", "Presente grazie!", "Ok grazie", "Ok ci sono", "Confermo", "Presente io".
+   - Se il mittente conferma la propria presenza da solo/a, anche con risposte brevi, informali, in inglese, con emoji o con ringraziamenti/saluti.
+   - Esempi: "Presente", "Ci sono", "Vengo", "Arrivo", "Io ci sono", "Presente 💃", "Sì", "Si", "Yes", "Yess", "Yess!", "Yes, Grazie!", "Presente grazie!", "Ok grazie", "Ok ci sono", "Confermo", "Presente io", "🙋‍♀️", "🙋‍♂️", "🙋", "✋", "👍", "👌", "💃".
    - ATTENZIONE CRITICA: Messaggi affermativi come "Yes", "Yess", "Yes grazie", "Sì grazie", "Ok ci sono" scritti nell'appello presenze indicano SEMPRE conferma di presenza (PRESENTE_SINGOLO) e NON devono essere etichettati come IGNOTA.
+   - ATTENZIONE CRITICA EMOJI: L'uso di una singola emoji di presenza, mano alzata o approvazione (es. "🙋‍♀️", "🙋‍♂️", "🙋", "✋", "👍", "👌"), anche DA SOLA E SENZA ALCUN TESTO AGGIUNTIVO, indica SEMPRE conferma di presenza (PRESENTE_SINGOLO) e NON deve MAI essere etichettata come IGNOTA.
 
 3. ASSENTE_COPPIA:
    - Se comunica l'assenza al plurale o per entrambi i membri della coppia.
@@ -124,7 +126,7 @@ Regole di classificazione ed esempi:
 
 4. ASSENTE_SINGOLO:
    - Se comunica la propria assenza da solo/a.
-   - Esempi: "Non ci sono", "Assente", "Non riesco a venire", "Stasera salto", "Oggi non posso".
+   - Esempi: "Non ci sono", "Assente", "Non riesco a venire", "Stasera salto", "Oggi non posso", "👎".
 
 5. IGNOTA:
    - SOLO se il messaggio non esprime alcuna intenzione di presenza o assenza (es. "A che ora inizia?", "Qualcuno ha visto le mie scarpe?", "Auguri!", "Ci vediamo sabato alla milonga").'''
@@ -157,7 +159,20 @@ def parse_and_apply_presenze(allievo, prossima_lezione, risposta_ai, mittente_la
         affirmative_tokens = {'yes', 'yess', 'yep', 'yeah', 'si', 'sì', 'presente', 'ci sono', 'confermo'}
         if any(w in affirmative_tokens for w in words) and not any(neg in words for neg in ('non', 'mai', 'assente', 'salto')):
             if esito == 'IGNOTA':
-                esito = 'PRESENTE_SINGOLO' 
+                esito = 'PRESENTE_SINGOLO'
+
+        # 3. Riconoscimento euristico emoji di presenza (es. 🙋, 🙋‍♀️, 🙋‍♂️, ✋, 👍, 👫)
+        has_negative = any(neg in words for neg in ('non', 'mai', 'assente', 'assenti', 'salto', 'saltiamo', 'no'))
+        if not has_negative:
+            # Conta le emoji di persone con mano alzata (🙋, \U0001F64B)
+            person_raising_hand = len(re.findall(r'🙋|[\U0001F64B]', original_text))
+            has_couple_emoji = any(c in original_text for c in ['👫', '👬', '👭', '🧑‍🤝‍🧑'])
+            if person_raising_hand >= 2 or has_couple_emoji:
+                if esito in ('PRESENTE_SINGOLO', 'IGNOTA'):
+                    esito = 'PRESENTE_COPPIA'
+            elif person_raising_hand == 1 or any(e in original_text for e in ['👍', '✋', '👌']):
+                if esito == 'IGNOTA':
+                    esito = 'PRESENTE_SINGOLO' 
 
     azione_presenze = ""
     partner_coinvolto = None
