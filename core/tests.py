@@ -750,6 +750,7 @@ class AnalisiCertificatoMedicoTests(TestCase):
         self.assertTrue(data['found'])
         self.assertEqual(data['data_scadenza'], '2027-06-05')
         self.assertEqual(data['data_scadenza_italiana'], '05/06/2027')
+        self.assertEqual(data['source'], 'ocr_locale')
 
     def test_import_documento_drive_saves_italian_format_date(self):
         from django.core.files.uploadedfile import SimpleUploadedFile

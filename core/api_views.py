@@ -1102,8 +1102,9 @@ class AllievoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='analizza-certificato-medico')
     def analizza_certificato_medico(self, request, pk=None):
         """
-        Analizza con AI (Gemini) il file o i file del certificato medico forniti
+        Analizza in locale con OCR e Regex il file o i file del certificato medico forniti
         (da upload multipart o da WhatsApp) ed estrae la data di scadenza (e rilascio).
+        Esecuzione 100% on-premise per la massima tutela della privacy (nessun dato inviato a terzi).
         """
         allievo = self.get_object()
 

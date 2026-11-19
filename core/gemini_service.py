@@ -311,7 +311,7 @@ def start_background_retry(log_id, delay_seconds=120, max_attempts=3):
 
 def _extract_dates_from_text(text):
     """
-    Estrae date in formato italiano o testuale (es. 15/10/2026, 15 ottobre 2026).
+    Estrae date in formato italiano o testuale (es. 15/10/2026, 15 ottobre 2026, 15 / 10 / 2026).
     Restituisce una lista ordinata di tuple: (indice_inizio, datetime.date, stringa_originale).
     """
     if not text:
@@ -322,12 +322,14 @@ def _extract_dates_from_text(text):
         'luglio': 7, 'agosto': 8, 'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
     }
     dates = []
-    # 1. DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
-    for m in re.finditer(r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})\b', text):
+    # 1. DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY anche con spazi OCR (es. 12 / 10 / 2026 o 12/10/26)
+    for m in re.finditer(r'\b(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})\b', text):
         try:
-            d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            dt = datetime.date(y, mth, d)
-            dates.append((m.start(), dt, m.group(0)))
+            d, mth, y_raw = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            y = y_raw + 2000 if y_raw < 100 else y_raw
+            if 1 <= mth <= 12 and 1 <= d <= 31 and 2000 <= y <= 2040:
+                dt = datetime.date(y, mth, d)
+                dates.append((m.start(), dt, m.group(0)))
         except ValueError:
             pass
 
@@ -371,8 +373,8 @@ def _heuristic_analyze_certificate_text(text):
     scadenza_date = None
     rilascio_date = None
 
-    scadenza_keywords = ['scadenza', 'scade', 'valido fino', 'validita fino', 'validità fino', 'termine', 'scadrà']
-    rilascio_keywords = ['rilasciato', 'rilascio', 'visita', 'data:', 'in data', 'emissione', 'firmato', 'effettuata', 'certifica']
+    scadenza_keywords = ['scadenza', 'scade', 'valido fino', 'validita fino', 'validità fino', 'termine', 'scadrà', 'scadra', 'validita:']
+    rilascio_keywords = ['rilasciato', 'rilascio', 'visita', 'data:', 'in data', 'emissione', 'firmato', 'effettuata', 'certifica', 'del']
 
     for pos, dt, raw, surrounding in filtered_dates:
         before = text[max(0, pos - 45):pos + len(raw)].lower()
@@ -391,7 +393,7 @@ def _heuristic_analyze_certificate_text(text):
             'data_scadenza': scadenza_date.strftime('%Y-%m-%d'),
             'data_scadenza_italiana': scadenza_date.strftime('%d/%m/%Y'),
             'data_rilascio': rilascio_date.strftime('%Y-%m-%d') if rilascio_date else None,
-            'source': 'regex',
+            'source': 'ocr_locale',
             'confidence': 'alta',
             'note': f"Data di scadenza ({scadenza_date.strftime('%d/%m/%Y')}) identificata nel testo."
         }
@@ -407,16 +409,59 @@ def _heuristic_analyze_certificate_text(text):
         'data_scadenza': calculated_scadenza.strftime('%Y-%m-%d'),
         'data_scadenza_italiana': calculated_scadenza.strftime('%d/%m/%Y'),
         'data_rilascio': target_rel.strftime('%Y-%m-%d'),
-        'source': 'regex',
+        'source': 'ocr_locale',
         'confidence': 'media',
         'note': f"Calcolata scadenza annuale (+1 anno) dalla data di rilascio/visita {target_rel.strftime('%d/%m/%Y')} (D.M. 24/04/2013)."
     }
 
 
-def analizza_certificato_medico_ai(file_bytes, mime_type='application/pdf', filename=None, allievo_nome=None):
+def _run_local_ocr_on_image_bytes(image_bytes):
+    """Esegue OCR locale su un'immagine tramite pytesseract se installato."""
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        try:
+            return pytesseract.image_to_string(img, lang='ita+eng')
+        except Exception:
+            return pytesseract.image_to_string(img)
+    except Exception as e:
+        logger.debug(f"Pytesseract non disponibile o errore: {e}")
+        return ""
+
+
+def _run_local_ocr_on_pdf_pages(doc, max_pages=2):
+    """Esegue OCR locale sulle prime pagine di un documento PDF scansionato."""
+    full_ocr = ""
+    for i in range(min(len(doc), max_pages)):
+        page = doc[i]
+        try:
+            import pytesseract
+            from PIL import Image
+            pix = page.get_pixmap(dpi=200)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            try:
+                txt = pytesseract.image_to_string(img, lang='ita+eng')
+            except Exception:
+                txt = pytesseract.image_to_string(img)
+            if txt:
+                full_ocr += txt + "\n"
+        except Exception:
+            try:
+                tp = page.get_textpage_ocr(dpi=200, language='ita')
+                txt = tp.extractText()
+                if txt:
+                    full_ocr += txt + "\n"
+            except Exception:
+                pass
+    return full_ocr
+
+
+def analizza_certificato_medico_locale(file_bytes, mime_type='application/pdf', filename=None, allievo_nome=None):
     """
     Analizza un certificato medico (PDF o immagine) per estrarre la data di scadenza.
-    Utilizza Gemini AI (multimodale) con fallback euristico regex su testo estratto.
+    Esecuzione 100% LOCALE (On-Premise) tramite OCR e Regex.
+    Nessun dato o immagine esce dal perimetro aziendale verso API esterne (Privacy Totale).
     """
     if not file_bytes:
         return {
@@ -424,24 +469,26 @@ def analizza_certificato_medico_ai(file_bytes, mime_type='application/pdf', file
             'found': False,
             'data_scadenza': None,
             'data_scadenza_italiana': None,
-            'error': 'Nessun byte fornito per il file.'
+            'error': 'Nessun file fornito per l\'analisi.'
         }
 
     extracted_text = ""
-    preview_image_bytes = None
     fn_lower = (filename or '').lower()
     is_pdf = (mime_type == 'application/pdf') or fn_lower.endswith('.pdf') or file_bytes.startswith(b'%PDF')
 
-    # 1. Estrazione testo e/o immagine prima pagina da PDF
+    # 1. Estrazione testo nativo da PDF
     if is_pdf:
         try:
             import pymupdf
             doc = pymupdf.open(stream=file_bytes, filetype="pdf")
             for page in doc:
                 extracted_text += page.get_text() + "\n"
-            if len(doc) > 0:
-                pix = doc[0].get_pixmap(dpi=150)
-                preview_image_bytes = pix.tobytes("jpeg")
+
+            # Se il PDF ha poco o nessun testo nativo (scansione), esegui OCR locale
+            if len(extracted_text.strip()) < 30 and len(doc) > 0:
+                ocr_res = _run_local_ocr_on_pdf_pages(doc)
+                if ocr_res:
+                    extracted_text += "\n" + ocr_res
         except Exception as e:
             logger.warning(f"pymupdf non disponibile o errore: {e}")
             try:
@@ -454,90 +501,19 @@ def analizza_certificato_medico_ai(file_bytes, mime_type='application/pdf', file
             except Exception as pe:
                 logger.warning(f"pypdf errore: {pe}")
     elif mime_type.startswith('image/') or any(fn_lower.endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
-        preview_image_bytes = file_bytes
+        extracted_text = _run_local_ocr_on_image_bytes(file_bytes)
     else:
         try:
             extracted_text = file_bytes.decode('utf-8')
         except Exception:
             pass
 
-    # 2. Analisi euristica su testo già estratto
+    # 2. Analisi euristica su testo estratto (Regole euristiche e normative D.M. 24/04/2013)
     heuristic_res = _heuristic_analyze_certificate_text(extracted_text)
 
-    # 3. Preparazione chiamata Gemini AI
-    sched = RecurringSchedule.objects.first()
-    import os
-    api_key = (sched.gemini_api_key if sched and sched.gemini_api_key else None) or os.environ.get('GEMINI_API_KEY')
-
-    gemini_data = None
-    if api_key:
-        prompt = (
-            "Sei un assistente specializzato nell'analisi di certificati medici per attività sportiva non agonistica o agonistica rilasciati in Italia.\n"
-            "Analizza con la massima accuratezza il documento allegato ed estrai la data di scadenza del certificato medico.\n\n"
-            "Normativa di riferimento (D.M. 24/04/2013 e successive modifiche):\n"
-            "1. In Italia i certificati per attività sportiva non agonistica hanno validità annuale (1 anno dalla data del rilascio/visita).\n"
-            "2. Se nel documento è presente una data di scadenza esplicita ('scade il', 'valido fino al', 'scadenza'), estrai quella data.\n"
-            "3. Se nel documento NON è indicata esplicitamente la scadenza ma è presente la data della visita / emissione / rilascio o firma del medico, calcola la data di scadenza aggiungendo esattamente 1 anno alla data di rilascio.\n"
-            "4. NON considerare le date di emanazione di leggi o decreti (es. 24 aprile 2013 o agosto 2014) come data di visita o scadenza.\n\n"
-            "Rispondi ESCLUSIVAMENTE con un blocco JSON valido e rigoroso, senza commenti, senza testo prima o dopo, con la seguente struttura:\n"
-            "{\n"
-            '  "data_scadenza": "YYYY-MM-DD",\n'
-            '  "data_scadenza_italiana": "DD/MM/YYYY",\n'
-            '  "data_rilascio": "YYYY-MM-DD o null",\n'
-            '  "tipo_certificato": "non agonistico" o "agonistico" o "altro",\n'
-            '  "medico": "nome medico o null",\n'
-            '  "paziente": "nome paziente o null",\n'
-            '  "confidence": "alta" o "media" o "bassa",\n'
-            '  "note": "breve spiegazione del calcolo della data di scadenza"\n'
-            "}\n"
-            "Se il documento non è un certificato medico o non contiene alcuna data di rilascio o scadenza, restituisci:\n"
-            '{"data_scadenza": null, "data_scadenza_italiana": null, "error": "Nessuna data identificabile"}'
-        )
-
-        parts = [{"text": prompt}]
-        if allievo_nome:
-            parts.append({"text": f"Nome dell'allievo/paziente atteso: {allievo_nome}"})
-        if extracted_text.strip():
-            parts.append({"text": f"Testo estratto dal documento:\n\"\"\"\n{extracted_text[:4000]}\n\"\"\""})
-
-        if preview_image_bytes:
-            b64_img = base64.b64encode(preview_image_bytes).decode('utf-8')
-            img_mime = 'image/jpeg' if is_pdf else (mime_type if mime_type.startswith('image/') else 'image/jpeg')
-            parts.append({
-                "inlineData": {
-                    "mimeType": img_mime,
-                    "data": b64_img
-                }
-            })
-
-        success, ai_text, model_used, attempts, err_summary = call_gemini_with_fallback(
-            prompt="",
-            api_key=api_key,
-            max_attempts=2,
-            backoff_seconds=1.5,
-            parts=parts
-        )
-
-        if success and ai_text:
-            try:
-                clean_json = ai_text.strip()
-                if clean_json.startswith('```'):
-                    lines = clean_json.splitlines()
-                    clean_json = '\n'.join([line for line in lines if not line.strip().startswith('```')])
-                parsed = json.loads(clean_json.strip())
-                scad = parsed.get('data_scadenza')
-                if scad and scad.lower() != 'null':
-                    gemini_data = parsed
-                    gemini_data['source'] = f'gemini ({model_used})'
-            except Exception as je:
-                logger.warning(f"Errore parsing JSON da Gemini per certificato medico: {je}")
-
-    # 4. Scelta del risultato migliore tra Gemini ed Euristica
-    final_res = gemini_data or heuristic_res
-
-    if final_res and final_res.get('data_scadenza'):
-        scad_iso = final_res['data_scadenza']
-        scad_it = final_res.get('data_scadenza_italiana')
+    if heuristic_res and heuristic_res.get('data_scadenza'):
+        scad_iso = heuristic_res['data_scadenza']
+        scad_it = heuristic_res.get('data_scadenza_italiana')
         if not scad_it:
             try:
                 p_date = datetime.datetime.strptime(scad_iso, '%Y-%m-%d').date()
@@ -550,13 +526,10 @@ def analizza_certificato_medico_ai(file_bytes, mime_type='application/pdf', file
             'found': True,
             'data_scadenza': scad_iso,
             'data_scadenza_italiana': scad_it,
-            'data_rilascio': final_res.get('data_rilascio'),
-            'tipo_certificato': final_res.get('tipo_certificato'),
-            'medico': final_res.get('medico'),
-            'paziente': final_res.get('paziente'),
-            'confidence': final_res.get('confidence', 'media'),
-            'note': final_res.get('note', ''),
-            'source': final_res.get('source', 'ai')
+            'data_rilascio': heuristic_res.get('data_rilascio'),
+            'confidence': heuristic_res.get('confidence', 'alta'),
+            'note': heuristic_res.get('note', ''),
+            'source': 'ocr_locale'
         }
 
     return {
@@ -564,6 +537,11 @@ def analizza_certificato_medico_ai(file_bytes, mime_type='application/pdf', file
         'found': False,
         'data_scadenza': None,
         'data_scadenza_italiana': None,
-        'message': 'Nessuna data di scadenza o rilascio identificata nel documento.'
+        'source': 'ocr_locale',
+        'message': 'Nessuna data di scadenza o rilascio identificata tramite OCR locale.'
     }
+
+
+# Alias retrocompatibile
+analizza_certificato_medico_ai = analizza_certificato_medico_locale
 

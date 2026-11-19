@@ -941,7 +941,7 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
         ),
         if (_tipoDocumento == 'certificati') ...[
           const SizedBox(height: 20),
-          // Sezione Analisi AI (Gemini) del Certificato
+          // Sezione Analisi Locale (OCR / Regex) del Certificato - Privacy Totale
           if (_analyzingCertificato)
             Container(
               padding: const EdgeInsets.all(12),
@@ -960,7 +960,7 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Analisi certificato medico con AI (Gemini) in corso... Lettura data e calcolo scadenza...',
+                      'Estrazione data certificato con OCR locale in corso (100% sicuro sul tuo server)...',
                       style: TextStyle(fontSize: 13, color: Colors.blue.shade900),
                     ),
                   ),
@@ -981,7 +981,7 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    _analisiCertificatoSuccess == true ? Icons.auto_awesome : Icons.info_outline,
+                    _analisiCertificatoSuccess == true ? Icons.verified_user_outlined : Icons.info_outline,
                     color: _analisiCertificatoSuccess == true ? Colors.green.shade800 : Colors.amber.shade900,
                     size: 20,
                   ),
@@ -990,13 +990,31 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _analisiCertificatoSuccess == true ? 'Data identificata con AI' : 'Nota analisi documento',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: _analisiCertificatoSuccess == true ? Colors.green.shade900 : Colors.amber.shade900,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              _analisiCertificatoSuccess == true ? 'Data rilevata con OCR Locale' : 'Nota analisi documento',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: _analisiCertificatoSuccess == true ? Colors.green.shade900 : Colors.amber.shade900,
+                              ),
+                            ),
+                            if (_analisiCertificatoSuccess == true) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Privacy Protetta',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -1026,8 +1044,8 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                   foregroundColor: Colors.deepOrange.shade800,
                   side: BorderSide(color: Colors.deepOrange.shade400),
                 ),
-                icon: const Icon(Icons.auto_awesome, size: 18),
-                label: const Text('Analizza Certificato con AI (precompila scadenza)'),
+                icon: const Icon(Icons.document_scanner_rounded, size: 18),
+                label: const Text('Estrai Scadenza (OCR Locale - Privacy Protetta)'),
                 onPressed: () => _analizzaCertificatoMedico(userTriggered: true),
               ),
             ),
