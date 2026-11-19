@@ -9,6 +9,7 @@ import '../widgets/delete_allievo_dialog.dart';
 import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
+import '../widgets/manual_date_field.dart';
 
 
 
@@ -434,6 +435,23 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                         icon: const Icon(Icons.account_balance, size: 20),
                         label: const Text('Invia Coordinate Bancarie (IBAN) via WhatsApp', style: TextStyle(fontWeight: FontWeight.w600)),
                         onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, editingProspect, api: _api),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.school, size: 20),
+                        label: const Text('Iscrivi a Corso (Promuovi ad Allievo)', style: TextStyle(fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showConvertDialog(editingProspect);
+                        },
                       ),
                     ),
                   ],
@@ -1053,43 +1071,31 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                             p.nomeCompleto,
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              [
+                                if (p.telefono.isNotEmpty) '📞 ${p.telefono}',
+                                if (p.email.isNotEmpty) '✉️ ${p.email}',
+                                p.hasCertificatoMedico
+                                    ? '🩺 Cert: ${formatIsoDateToItalian(p.scadenzaCertificatoMedico)}${p.isCertificatoMedicoScaduto ? " (Scad.)" : ""}'
+                                    : '⚠️ Senza cert. medico',
+                              ].join(' • '),
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.description_outlined, color: Color(0xFF128C7E), size: 20),
-                                tooltip: 'Invia Modulo Tesseramento',
-                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                                padding: const EdgeInsets.all(4),
-                                onPressed: () => mostraInviaModuloTesseramentoDialog(context, p, api: _api),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.account_balance_outlined, color: Colors.teal, size: 20),
-                                tooltip: 'Invia Coordinate Bancarie (IBAN)',
-                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                                padding: const EdgeInsets.all(4),
-                                onPressed: () => mostraInviaIstruzioniPagamentoDialog(context, p, api: _api),
-                              ),
-                              IconButton(
                                 icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                                 tooltip: 'Modifica prospect',
-                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                                padding: const EdgeInsets.all(4),
                                 onPressed: () => _showAddEditProspectDialog(p),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                                 tooltip: 'Elimina prospect',
-                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                                padding: const EdgeInsets.all(4),
                                 onPressed: () => _deleteProspect(p),
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.school, color: Theme.of(context).colorScheme.primary, size: 20),
-                                tooltip: 'Iscrivi a Corso (Promuovi)',
-                                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                                padding: const EdgeInsets.all(4),
-                                onPressed: () => _showConvertDialog(p),
                               ),
                             ],
                           ),
