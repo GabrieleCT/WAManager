@@ -737,7 +737,7 @@ class SondaggioMattutinoConfig(models.Model):
         help_text="Testo del messaggio di sollecito risposta inviato all'allievo"
     )
     jolly_testo = models.TextField(
-        default="Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺",
+        default="Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione delle {orario}. Fammi sapere se sei disponibile! 💃🕺",
         help_text="Testo predefinito per il messaggio inviato ai Jolly"
     )
     modulo_tesseramento_testo = models.TextField(

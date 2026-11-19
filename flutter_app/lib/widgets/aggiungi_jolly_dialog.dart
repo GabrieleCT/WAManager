@@ -42,7 +42,7 @@ class AggiungiJollyDialog extends StatefulWidget {
 
 class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
   static const String _fallbackTemplate =
-      'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
+      'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione delle {orario}. Fammi sapere se sei disponibile! 💃🕺';
 
   final ApiService _api = ApiService();
   final TextEditingController _searchController = TextEditingController();
@@ -62,15 +62,27 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
   final Set<String> _selectedAllievoIds = <String>{};
   final Map<String, Allievo> _selectedAllievi = <String, Allievo>{};
 
+  String _applyLessonPlaceholders(String text) {
+    final orario = widget.lezione.orarioEffettivo;
+    return text
+        .replaceAll('{orario}', orario)
+        .replaceAll('<orario>', orario)
+        .replaceAll('{ora}', orario)
+        .replaceAll('<ora>', orario)
+        .replaceAll('{corso}', widget.lezione.corsoDescrizione)
+        .replaceAll('<corso>', widget.lezione.corsoDescrizione);
+  }
+
   @override
   void initState() {
     super.initState();
     if (widget.initialAllievi != null) {
       _allievi = List<Allievo>.from(widget.initialAllievi!)
         ..sort((a, b) => a.sortName.compareTo(b.sortName));
-      _jollyTemplate = (widget.initialJollyTemplate?.trim().isNotEmpty ?? false)
+      final rawTmpl = (widget.initialJollyTemplate?.trim().isNotEmpty ?? false)
           ? widget.initialJollyTemplate!.trim()
           : _fallbackTemplate;
+      _jollyTemplate = _applyLessonPlaceholders(rawTmpl);
       _messageController.text = _jollyTemplate;
       _loading = false;
     } else {
@@ -95,9 +107,10 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
       final allievi = (results[0] as List<Allievo>)
         ..sort((a, b) => a.sortName.compareTo(b.sortName));
       final cfg = results[1] as SondaggioMattutinoConfig?;
-      final tmpl = (cfg != null && cfg.jollyTesto.trim().isNotEmpty)
+      final rawTmpl = (cfg != null && cfg.jollyTesto.trim().isNotEmpty)
           ? cfg.jollyTesto.trim()
           : _fallbackTemplate;
+      final tmpl = _applyLessonPlaceholders(rawTmpl);
 
       setState(() {
         _allievi = allievi;
@@ -114,11 +127,12 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     }
   }
 
-  String _buildPreviewFor(Allievo allievo) {
+  String _buildPreviewFor(Allievo allievo, {String? customText}) {
     final nick = allievo.nickname.trim().isNotEmpty
         ? allievo.nickname.trim()
         : allievo.nome.trim();
-    return _jollyTemplate
+    final base = customText ?? _jollyTemplate;
+    return _applyLessonPlaceholders(base)
         .replaceAll('{nickname}', nick)
         .replaceAll('<nickname>', nick)
         .replaceAll('<nome_allievo>', nick)
@@ -158,6 +172,45 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     }).toList();
   }
 
+  void _syncMessageForSelection() {
+    if (_selectedAllievi.length == 1) {
+      final single = _selectedAllievi.values.first;
+      final nick = single.nickname.trim().isNotEmpty
+          ? single.nickname.trim()
+          : single.nome.trim();
+      if (_messageController.text.contains('{nickname}')) {
+        _messageController.text =
+            _messageController.text.replaceAll('{nickname}', nick);
+      } else if (!_messageController.text.contains(nick)) {
+        _messageController.text = _buildPreviewFor(single);
+      }
+    } else if (_selectedAllievi.length > 1) {
+      // In selezione multipla il testo da inviare deve contenere il segnaposto {nickname}
+      // per consentire al backend di personalizzare il messaggio per ciascun allievo.
+      final first = _selectedAllievi.values.first;
+      final firstNick = first.nickname.trim().isNotEmpty
+          ? first.nickname.trim()
+          : first.nome.trim();
+      final firstNome = first.nome.trim();
+      if (firstNick.isNotEmpty && _messageController.text.contains(firstNick)) {
+        _messageController.text =
+            _messageController.text.replaceAll(firstNick, '{nickname}');
+      } else if (firstNome.isNotEmpty &&
+          _messageController.text.contains(firstNome)) {
+        _messageController.text =
+            _messageController.text.replaceAll(firstNome, '{nickname}');
+      } else if (!_messageController.text.contains('{nickname}') &&
+          !_messageController.text.contains('<nickname>')) {
+        _messageController.text = _jollyTemplate;
+      }
+    } else {
+      if (!_messageController.text.contains('{nickname}') &&
+          !_messageController.text.contains('<nickname>')) {
+        _messageController.text = _jollyTemplate;
+      }
+    }
+  }
+
   void _toggleAllievo(Allievo allievo) {
     setState(() {
       if (_selectedAllievoIds.contains(allievo.id)) {
@@ -166,11 +219,8 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
       } else {
         _selectedAllievoIds.add(allievo.id);
         _selectedAllievi[allievo.id] = allievo;
-        // Se è il primo o l'unico selezionato, sincronizza l'anteprima
-        if (_selectedAllievi.length == 1) {
-          _messageController.text = _buildPreviewFor(allievo);
-        }
       }
+      _syncMessageForSelection();
     });
   }
 
@@ -180,9 +230,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
         _selectedAllievoIds.add(a.id);
         _selectedAllievi[a.id] = a;
       }
-      if (_selectedAllievi.length == 1) {
-        _messageController.text = _buildPreviewFor(_selectedAllievi.values.first);
-      }
+      _syncMessageForSelection();
     });
   }
 
@@ -190,6 +238,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
     setState(() {
       _selectedAllievoIds.clear();
       _selectedAllievi.clear();
+      _syncMessageForSelection();
     });
   }
 
@@ -198,7 +247,7 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
 
     final hasAnyPhone = _selectedWithPhoneCount > 0;
     final shouldSendWa = (forceInviaWhatsapp ?? _inviaWhatsapp) && hasAnyPhone;
-    final msg = _messageController.text.trim();
+    var msg = _messageController.text.trim();
 
     if (shouldSendWa && msg.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -208,6 +257,23 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
         ),
       );
       return;
+    }
+
+    // Se ci sono più destinatari e il messaggio contiene ancora il nome del primo allievo anziché {nickname},
+    // ripristiniamo {nickname} prima di inviare al backend per garantire la corretta personalizzazione.
+    if (_selectedAllievi.length > 1) {
+      final first = _selectedAllievi.values.first;
+      final firstNick = first.nickname.trim().isNotEmpty
+          ? first.nickname.trim()
+          : first.nome.trim();
+      final firstNome = first.nome.trim();
+      if (!msg.contains('{nickname}') && !msg.contains('<nickname>')) {
+        if (firstNick.isNotEmpty && msg.contains(firstNick)) {
+          msg = msg.replaceAll(firstNick, '{nickname}');
+        } else if (firstNome.isNotEmpty && msg.contains(firstNome)) {
+          msg = msg.replaceAll(firstNome, '{nickname}');
+        }
+      }
     }
 
     setState(() {
@@ -756,16 +822,125 @@ class _AggiungiJollyDialogState extends State<AggiungiJollyDialog> {
                                 maxLines: 3,
                                 decoration: InputDecoration(
                                   labelText: 'Testo messaggio (modificabile)',
-                                  hintText: 'Usa {nickname} per personalizzare il nome...',
+                                  hintText: 'Usa {nickname} per il nome e {orario} per l\'ora...',
                                   border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(8)),
                                   filled: true,
                                   fillColor: Colors.grey.shade50,
-                                  helperText:
-                                      'Il segnaposto {nickname} verrà sostituito automaticamente per ogni allievo.',
+                                  helperText: selectedCount > 1
+                                      ? 'I segnaposti {nickname} e {orario} verranno sostituiti automaticamente per ogni singolo allievo.'
+                                      : 'I segnaposti {nickname} e {orario} vengono popolati automaticamente per la lezione.',
                                   helperStyle: const TextStyle(fontSize: 10),
                                 ),
                               ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  const Text('Tag disponibili:',
+                                      style: TextStyle(
+                                          fontSize: 10, color: Colors.grey)),
+                                  ActionChip(
+                                    avatar: const Icon(Icons.add, size: 12),
+                                    label: const Text('{nickname}',
+                                        style: TextStyle(fontSize: 11)),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () {
+                                      final text = _messageController.text;
+                                      final sel = _messageController.selection;
+                                      if (sel.isValid && sel.start >= 0) {
+                                        final newText = text.replaceRange(
+                                            sel.start, sel.end, '{nickname}');
+                                        _messageController.value =
+                                            TextEditingValue(
+                                          text: newText,
+                                          selection: TextSelection.collapsed(
+                                              offset: sel.start + 10),
+                                        );
+                                      } else {
+                                        _messageController.text +=
+                                            ' {nickname}';
+                                      }
+                                      setState(() {});
+                                    },
+                                  ),
+                                  ActionChip(
+                                    avatar: const Icon(Icons.add, size: 12),
+                                    label: const Text('{orario}',
+                                        style: TextStyle(fontSize: 11)),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () {
+                                      final text = _messageController.text;
+                                      final sel = _messageController.selection;
+                                      if (sel.isValid && sel.start >= 0) {
+                                        final newText = text.replaceRange(
+                                            sel.start, sel.end, '{orario}');
+                                        _messageController.value =
+                                            TextEditingValue(
+                                          text: newText,
+                                          selection: TextSelection.collapsed(
+                                              offset: sel.start + 8),
+                                        );
+                                      } else {
+                                        _messageController.text += ' {orario}';
+                                      }
+                                      setState(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                              if (selectedCount > 1) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCF8C6)
+                                        .withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: Colors.green.shade300),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.preview,
+                                              size: 14,
+                                              color: Color(0xFF128C7E)),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              'Anteprima per ${_selectedAllievi.values.first.nomeCompleto} (+ altri ${selectedCount - 1} allievi con rispettivo nome):',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.green.shade900,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _buildPreviewFor(
+                                          _selectedAllievi.values.first,
+                                          customText: _messageController.text,
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               if (withoutPhoneCount > 0)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),

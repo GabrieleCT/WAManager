@@ -1387,8 +1387,31 @@ class LezioneViewSet(viewsets.ModelViewSet):
             testo_raw = (
                 cfg.jolly_testo
                 if (cfg and cfg.jolly_testo)
-                else "Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺"
+                else "Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione delle {orario}. Fammi sapere se sei disponibile! 💃🕺"
             )
+
+        # Estrai orario e info lezione per i placeholder
+        orario_str = ""
+        if lezione.corso and lezione.corso.orario:
+            if hasattr(lezione.corso.orario, 'strftime'):
+                orario_str = lezione.corso.orario.strftime('%H:%M')
+            else:
+                orario_str = str(lezione.corso.orario)[:5]
+        if not orario_str and lezione.corso:
+            import re
+            m = re.search(r'\(?(\d{1,2}:\d{2})\)?', str(lezione.corso))
+            if m:
+                orario_str = m.group(1)
+
+        corso_nome = str(lezione.corso) if lezione.corso else ""
+        data_str = lezione.data.strftime('%d/%m/%Y') if lezione.data else ""
+
+        first_allievo = Allievo.objects.filter(id=ids_to_process[0]).first() if ids_to_process else None
+        first_nick = ""
+        first_nome = ""
+        if first_allievo:
+            first_nick = (getattr(first_allievo, 'nickname', '') or '').strip() or (first_allievo.nome or '').strip()
+            first_nome = (first_allievo.nome or '').strip()
 
         presenze_list = []
         whatsapp_info_list = []
@@ -1420,16 +1443,45 @@ class LezioneViewSet(viewsets.ModelViewSet):
                     })
                 else:
                     nick = (getattr(allievo, 'nickname', '') or '').strip() or (allievo.nome or '').strip()
-                    msg_finale = (
+
+                    msg_cur = (
                         testo_raw
-                        .replace('{nickname}', nick)
-                        .replace('<nickname>', nick)
-                        .replace('<nome_allievo>', nick)
-                        .replace('{nome_allievo}', nick)
-                        .replace('{allievo}', nick)
-                        .replace('{nome}', nick)
-                        .replace('<nome>', nick)
+                        .replace('{orario}', orario_str)
+                        .replace('<orario>', orario_str)
+                        .replace('{ora}', orario_str)
+                        .replace('<ora>', orario_str)
+                        .replace('{corso}', corso_nome)
+                        .replace('<corso>', corso_nome)
+                        .replace('{data}', data_str)
+                        .replace('<data>', data_str)
                     )
+
+                    nick_placeholders = ['{nickname}', '<nickname>', '<nome_allievo>', '{nome_allievo}', '{allievo}', '{nome}', '<nome>']
+                    has_nick_ph = any(p in msg_cur for p in nick_placeholders)
+
+                    if has_nick_ph:
+                        msg_finale = (
+                            msg_cur
+                            .replace('{nickname}', nick)
+                            .replace('<nickname>', nick)
+                            .replace('<nome_allievo>', nick)
+                            .replace('{nome_allievo}', nick)
+                            .replace('{allievo}', nick)
+                            .replace('{nome}', nick)
+                            .replace('<nome>', nick)
+                        )
+                    elif len(ids_to_process) > 1 and first_allievo and allievo.id != first_allievo.id:
+                        # Se è un invio multiplo e il testo inviato conteneva il nome specifico del primo allievo (es. Rocco),
+                        # sostituiamo il nome del primo allievo con il nome dell'allievo corrente.
+                        msg_tmp = msg_cur
+                        if first_nick and first_nick in msg_tmp:
+                            msg_tmp = msg_tmp.replace(first_nick, nick)
+                        elif first_nome and first_nome in msg_tmp:
+                            msg_tmp = msg_tmp.replace(first_nome, nick)
+                        msg_finale = msg_tmp
+                    else:
+                        msg_finale = msg_cur
+
                     wa_res = send_whatsapp_message(
                         to=telefono,
                         message=msg_finale,

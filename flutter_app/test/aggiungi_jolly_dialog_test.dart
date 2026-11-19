@@ -256,4 +256,112 @@ void main() {
     expect(submittedAllievi?.map((a) => a.id).toSet(), {'a1', 'a2'});
     expect(submittedInviaWa, isFalse);
   });
+
+  testWidgets(
+      'AggiungiJollyDialog populates {orario} from lesson and keeps {nickname} for multi-selection WhatsApp submit',
+      (tester) async {
+    final scuole = [
+      Scuola(id: 's1', nome: 'Sede Centro', sede: 'Milano', gruppoWhatsapp: ''),
+    ];
+    final lezione = Lezione(
+      id: 'l1',
+      corsoId: 'c1',
+      corsoDescrizione: 'Sede Centro - Principianti (20:30)',
+      data: '2026-11-12',
+    );
+    final List<Allievo> allievi = [
+      Allievo(
+        id: 'a1',
+        nome: 'Rocco',
+        cognome: 'Rossi',
+        nickname: 'Rocco',
+        ruolo: 'leader',
+        ruoloDisplay: 'Leader',
+        telefono: '+393331111111',
+        scuolaId: 's1',
+        recensione: 'no',
+        recensioneDisplay: 'No',
+        livello: 'principiante',
+        livelloDisplay: 'Principianti',
+      ),
+      Allievo(
+        id: 'a2',
+        nome: 'Maria',
+        cognome: 'Bianchi',
+        nickname: 'Mary',
+        ruolo: 'follower',
+        ruoloDisplay: 'Follower',
+        telefono: '+393332222222',
+        scuolaId: 's1',
+        recensione: 'no',
+        recensioneDisplay: 'No',
+        livello: 'intermedio',
+        livelloDisplay: 'Intermedio',
+      ),
+    ];
+
+    List<Allievo>? submittedAllievi;
+    String? submittedTesto;
+    bool? submittedInviaWa;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => AggiungiJollyDialog(
+                    lezione: lezione,
+                    presenze: const [],
+                    scuole: scuole,
+                    infoBilanciamento: 'Servono Jolly',
+                    initialAllievi: allievi,
+                    initialJollyTemplate:
+                        'Ciao {nickname}! Saresti disponibile come Jolly stasera alle {orario}?',
+                    onMultiSubmit: (list, testo, inviaWa) async {
+                      submittedAllievi = list;
+                      submittedTesto = testo;
+                      submittedInviaWa = inviaWa;
+                      return {'success': true};
+                    },
+                  ),
+                );
+              },
+              child: const Text('Apri Multi WA'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Apri Multi WA'));
+    await tester.pumpAndSettle();
+
+    // Select Rocco: single selection should preview with Rocco and 20:30
+    await tester.tap(find.text('Rocco Rossi'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Ciao Rocco! Saresti disponibile come Jolly stasera alle 20:30?'),
+      findsOneWidget,
+    );
+
+    // Select Maria: multi selection should restore {nickname} and keep 20:30
+    await tester.tap(find.text('Maria Bianchi'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aggiungi (2) e Invia WhatsApp'), findsOneWidget);
+
+    // Submit with WhatsApp
+    await tester.tap(find.text('Aggiungi (2) e Invia WhatsApp'));
+    await tester.pumpAndSettle();
+
+    expect(submittedAllievi?.length, 2);
+    expect(submittedInviaWa, isTrue);
+    // submittedTesto MUST contain {nickname} so backend can customize for Rocco and Mary
+    expect(submittedTesto, contains('{nickname}'));
+    expect(submittedTesto, contains('20:30'));
+    expect(submittedTesto, isNot(contains('Ciao Rocco!')));
+  });
 }

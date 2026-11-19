@@ -1781,7 +1781,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                         controller: _testoJollyCtl,
                         maxLines: 4,
                         decoration: InputDecoration(
-                          hintText: 'Es. Ciao {nickname}! Abbiamo bisogno di un jolly stasera...',
+                          hintText: 'Es. Ciao {nickname}! Abbiamo bisogno di un jolly stasera alle {orario}...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           contentPadding: const EdgeInsets.all(14),
                         ),
@@ -1807,12 +1807,24 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                             tooltip: 'Inserisce il nickname del jolly (o il nome se non presente)',
                             onPressed: () => _inserisciTagNelController(_testoJollyCtl, '<nickname>'),
                           ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('{orario}'),
+                            tooltip: "Inserisce l'orario del corso della lezione (es. 20:30)",
+                            onPressed: () => _inserisciTagNelController(_testoJollyCtl, '{orario}'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.add, size: 14),
+                            label: const Text('<orario>'),
+                            tooltip: "Inserisce l'orario del corso della lezione (es. 20:30)",
+                            onPressed: () => _inserisciTagNelController(_testoJollyCtl, '<orario>'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 20),
                       // Anteprima
                       const Text(
-                        'Anteprima Messaggio WhatsApp (con esempio nickname "Alex")',
+                        'Anteprima Messaggio WhatsApp (con esempio nickname "Alex" e orario "20:30")',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
@@ -1825,7 +1837,12 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
                           border: Border.all(color: Colors.green.shade300),
                         ),
                         child: Text(
-                          _testoJollyCtl.text.trim().replaceAll("{nickname}", "Alex").replaceAll("<nickname>", "Alex"),
+                          _testoJollyCtl.text
+                              .trim()
+                              .replaceAll('{nickname}', 'Alex')
+                              .replaceAll('<nickname>', 'Alex')
+                              .replaceAll('{orario}', '20:30')
+                              .replaceAll('<orario>', '20:30'),
                           style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
                         ),
                       ),

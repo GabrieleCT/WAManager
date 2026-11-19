@@ -286,7 +286,7 @@ class JollySerializer(serializers.ModelSerializer):
 
 class LezioneSerializer(serializers.ModelSerializer):
     corso_descrizione = serializers.SerializerMethodField()
-    corso_orario = serializers.CharField(source='corso.orario', read_only=True)
+    corso_orario = serializers.SerializerMethodField()
     scuola_id = serializers.UUIDField(source='corso.scuola.id', read_only=True)
     scuola_nome = serializers.CharField(source='corso.scuola.nome', read_only=True)
     argomento_titolo = serializers.CharField(source='argomento.titolo', read_only=True)
@@ -310,6 +310,13 @@ class LezioneSerializer(serializers.ModelSerializer):
 
     def get_corso_descrizione(self, obj):
         return str(obj.corso)
+
+    def get_corso_orario(self, obj):
+        if obj.corso and obj.corso.orario:
+            if hasattr(obj.corso.orario, 'strftime'):
+                return obj.corso.orario.strftime('%H:%M')
+            return str(obj.corso.orario)[:5]
+        return ""
 
     def get_presenti_count(self, obj):
         return obj.presenze.filter(presente=True).count()

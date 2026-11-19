@@ -240,7 +240,7 @@ class AggiungiJollyLezioneTests(TestCase):
             {
                 "allievo_id": str(allievo.id),
                 "invia_whatsapp": True,
-                "testo": "Ciao {nickname}, riesci a venire come Jolly stasera?",
+                "testo": "Ciao {nickname}, riesci a venire come Jolly stasera per le {orario}?",
             },
             format="json",
         )
@@ -251,7 +251,7 @@ class AggiungiJollyLezioneTests(TestCase):
         self.assertTrue(data["whatsapp"]["success"])
         self.assertEqual(
             data["whatsapp"]["messaggio"],
-            "Ciao Chiary, riesci a venire come Jolly stasera?",
+            "Ciao Chiary, riesci a venire come Jolly stasera per le 20:30?",
         )
 
         presenza = Presenza.objects.get(lezione=lezione, allievo=allievo)
@@ -259,7 +259,89 @@ class AggiungiJollyLezioneTests(TestCase):
         self.assertTrue(presenza.is_jolly)
         mock_send.assert_called_once_with(
             to="+393331234567",
-            message="Ciao Chiary, riesci a venire come Jolly stasera?",
+            message="Ciao Chiary, riesci a venire come Jolly stasera per le 20:30?",
+            is_group=False,
+        )
+
+    @patch("core.api_views.send_whatsapp_message", return_value={"success": True})
+    def test_aggiungi_jolly_multipli_con_placeholder_orario_e_nickname(self, mock_send):
+        from core.models import Scuola, Corso, Lezione, Presenza
+        from datetime import time
+
+        scuola = Scuola.objects.create(nome="Sede Sud")
+        corso = Corso.objects.create(
+            scuola=scuola,
+            livello="intermedio",
+            giorno_settimana="mercoledi",
+            orario=time(19, 30),
+        )
+        lezione = Lezione.objects.create(corso=corso, data=date(2026, 11, 14))
+        a1 = Allievo.objects.create(nome="Rocco", cognome="Siffredi", nickname="Rocco", ruolo="leader", telefono="+393331111111")
+        a2 = Allievo.objects.create(nome="Maria", cognome="Rossi", nickname="Mary", ruolo="follower", telefono="+393332222222")
+
+        res = self.client.post(
+            f"/api/lezioni/{lezione.id}/aggiungi-jolly/",
+            {
+                "allievo_ids": [str(a1.id), str(a2.id)],
+                "invia_whatsapp": True,
+                "testo": "Ciao {nickname}! Saresti disponibile come Jolly stasera alle {orario}?",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["count"], 2)
+
+        self.assertEqual(mock_send.call_count, 2)
+        mock_send.assert_any_call(
+            to="+393331111111",
+            message="Ciao Rocco! Saresti disponibile come Jolly stasera alle 19:30?",
+            is_group=False,
+        )
+        mock_send.assert_any_call(
+            to="+393332222222",
+            message="Ciao Mary! Saresti disponibile come Jolly stasera alle 19:30?",
+            is_group=False,
+        )
+
+    @patch("core.api_views.send_whatsapp_message", return_value={"success": True})
+    def test_aggiungi_jolly_multipli_quando_testo_ha_nome_primo_allievo_sostituisce_per_altri(self, mock_send):
+        from core.models import Scuola, Corso, Lezione, Presenza
+        from datetime import time
+
+        scuola = Scuola.objects.create(nome="Sede Sud")
+        corso = Corso.objects.create(
+            scuola=scuola,
+            livello="intermedio",
+            giorno_settimana="mercoledi",
+            orario=time(20, 30),
+        )
+        lezione = Lezione.objects.create(corso=corso, data=date(2026, 11, 14))
+        a1 = Allievo.objects.create(nome="Rocco", cognome="Verdi", nickname="Rocco", ruolo="leader", telefono="+393331111111")
+        a2 = Allievo.objects.create(nome="Maria", cognome="Rossi", nickname="Mary", ruolo="follower", telefono="+393332222222")
+
+        # Il client ha erroneamente inviato il testo contenente "Rocco" per l'invio multiplo
+        res = self.client.post(
+            f"/api/lezioni/{lezione.id}/aggiungi-jolly/",
+            {
+                "allievo_ids": [str(a1.id), str(a2.id)],
+                "invia_whatsapp": True,
+                "testo": "Ciao Rocco! Saresti disponibile come Jolly stasera dalle {orario}?",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(mock_send.call_count, 2)
+        mock_send.assert_any_call(
+            to="+393331111111",
+            message="Ciao Rocco! Saresti disponibile come Jolly stasera dalle 20:30?",
+            is_group=False,
+        )
+        # Maria NON deve ricevere "Ciao Rocco", ma "Ciao Mary"
+        mock_send.assert_any_call(
+            to="+393332222222",
+            message="Ciao Mary! Saresti disponibile come Jolly stasera dalle 20:30?",
             is_group=False,
         )
 

@@ -457,10 +457,17 @@ class Lezione {
   });
 
   String get orarioEffettivo {
-    if (corsoOrario != null && corsoOrario!.isNotEmpty) return corsoOrario!;
-    final match = RegExp(r'\((\d{1,2}:\d{2})\)').firstMatch(corsoDescrizione);
-    if (match != null) return match.group(1)!;
-    return '';
+    String raw = '';
+    if (corsoOrario != null && corsoOrario!.isNotEmpty) {
+      raw = corsoOrario!;
+    } else {
+      final match = RegExp(r'\((\d{1,2}:\d{2})\)').firstMatch(corsoDescrizione);
+      if (match != null) raw = match.group(1)!;
+    }
+    if (raw.length >= 5 && RegExp(r'^\d{1,2}:\d{2}').hasMatch(raw)) {
+      return raw.substring(0, 5);
+    }
+    return raw;
   }
 
   factory Lezione.fromJson(Map<String, dynamic> json) {
@@ -719,7 +726,7 @@ class SondaggioMattutinoConfig {
     this.sollecitoOreAttesa = 3,
     this.sollecitoOrario = '16:00',
     this.sollecitoTesto = '',
-    this.jollyTesto = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+    this.jollyTesto = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione delle {orario}. Fammi sapere se sei disponibile! 💃🕺',
     this.moduloTesseramentoTesto = 'Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
     this.ricevutaTesto = 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".',
     this.istruzioniPagamentoTesto = 'Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺',
@@ -745,7 +752,7 @@ class SondaggioMattutinoConfig {
       sollecitoOreAttesa: json['sollecito_ore_attesa'] ?? 3,
       sollecitoOrario: json['sollecito_orario'] ?? '16:00',
       sollecitoTesto: json['sollecito_testo'] ?? '',
-      jollyTesto: json['jolly_testo'] ?? 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺',
+      jollyTesto: json['jolly_testo'] ?? 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione delle {orario}. Fammi sapere se sei disponibile! 💃🕺',
       moduloTesseramentoTesto: json['modulo_tesseramento_testo'] ?? 'Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all\'ASD TantoTango da compilare e firmare. A presto!',
       ricevutaTesto: json['ricevuta_testo'] ?? 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".',
       istruzioniPagamentoTesto: json['istruzioni_pagamento_testo'] ?? 'Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺',
