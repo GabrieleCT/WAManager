@@ -9,8 +9,11 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 import os
 import re
 import datetime
+import logging
 from django.utils import timezone
 from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 from django.http import HttpResponse, FileResponse, Http404
 from .pdf_template_service import genera_pdf_ricevuta_da_template, genera_pdf_modulo_tesseramento
@@ -1096,6 +1099,76 @@ class AllievoViewSet(viewsets.ModelViewSet):
             'files': media_res.get('files', [])
         })
 
+    @action(detail=True, methods=['post'], url_path='analizza-certificato-medico')
+    def analizza_certificato_medico(self, request, pk=None):
+        """
+        Analizza con AI (Gemini) il file o i file del certificato medico forniti
+        (da upload multipart o da WhatsApp) ed estrae la data di scadenza (e rilascio).
+        """
+        allievo = self.get_object()
+
+        # 1. Raccoglie i file: multipart o WhatsApp
+        file_bytes = None
+        file_mime = None
+        file_name = None
+
+        files = request.FILES.getlist('files')
+        if files:
+            uploaded = files[0]
+            file_bytes = uploaded.read()
+            file_mime = uploaded.content_type or 'application/octet-stream'
+            file_name = uploaded.name
+
+        if not file_bytes:
+            wa_files_raw = request.data.get('whatsapp_files')
+            if wa_files_raw:
+                if isinstance(wa_files_raw, str):
+                    try:
+                        import json
+                        wa_filenames = json.loads(wa_files_raw)
+                    except Exception:
+                        wa_filenames = [f.strip() for f in wa_files_raw.split(',') if f.strip()]
+                elif isinstance(wa_files_raw, list):
+                    wa_filenames = wa_files_raw
+                else:
+                    wa_filenames = []
+
+                if wa_filenames:
+                    from .wa_client import fetch_whatsapp_media_file
+                    phone = (allievo.telefono or '').strip()
+                    wa_first = wa_filenames[0]
+                    file_bytes = fetch_whatsapp_media_file(phone, wa_first)
+                    file_name = wa_first
+                    ext = wa_first.split('.')[-1].lower() if '.' in wa_first else ''
+                    if ext == 'pdf':
+                        file_mime = 'application/pdf'
+                    elif ext in ('jpg', 'jpeg'):
+                        file_mime = 'image/jpeg'
+                    elif ext == 'png':
+                        file_mime = 'image/png'
+                    elif ext == 'webp':
+                        file_mime = 'image/webp'
+                    else:
+                        file_mime = 'application/octet-stream'
+
+        if not file_bytes:
+            return Response({
+                'success': False,
+                'found': False,
+                'error': 'Nessun file fornito per l\'analisi del certificato medico.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        from .gemini_service import analizza_certificato_medico_ai
+        allievo_label = f"{allievo.nome} {allievo.cognome}".strip()
+        analysis = analizza_certificato_medico_ai(
+            file_bytes=file_bytes,
+            mime_type=file_mime or 'application/octet-stream',
+            filename=file_name,
+            allievo_nome=allievo_label
+        )
+
+        return Response(analysis)
+
     @action(detail=True, methods=['post'], url_path='import-documento-drive')
     def import_documento_drive(self, request, pk=None):
         """
@@ -1276,10 +1349,22 @@ class AllievoViewSet(viewsets.ModelViewSet):
             scadenza_certificato = request.data.get('scadenza_certificato_medico')
             if scadenza_certificato and tipo_documento == 'certificati':
                 try:
-                    allievo.scadenza_certificato_medico = scadenza_certificato
-                    allievo.save(update_fields=['scadenza_certificato_medico'])
-                except Exception:
-                    pass
+                    import datetime
+                    parsed_date = None
+                    scad_str = str(scadenza_certificato).strip()
+                    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y', '%Y-%m-%d'):
+                        try:
+                            parsed_date = datetime.datetime.strptime(scad_str, fmt).date()
+                            break
+                        except ValueError:
+                            pass
+                    if parsed_date:
+                        allievo.scadenza_certificato_medico = parsed_date
+                        allievo.save(update_fields=['scadenza_certificato_medico'])
+                    else:
+                        logger.warning(f"Impossibile parsare la data scadenza: {scad_str}")
+                except Exception as e:
+                    logger.error(f"Errore salvataggio scadenza certificato medico: {e}")
 
             return Response({
                 'success': True,

@@ -1,7 +1,9 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../widgets/manual_date_field.dart';
 
 class ImportDocumentiScreen extends StatefulWidget {
   final bool embedded;
@@ -35,6 +37,9 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
   // Step 5: Document Type ('tesseramento' vs 'certificati')
   String _tipoDocumento = 'tesseramento'; // 'tesseramento' | 'certificati'
   final TextEditingController _scadenzaCertificatoController = TextEditingController();
+  bool _analyzingCertificato = false;
+  String? _analisiCertificatoInfo;
+  bool? _analisiCertificatoSuccess;
 
   // Step 6: Filename
   final TextEditingController _filenameController = TextEditingController();
@@ -141,6 +146,9 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
             'isPdf': isPdf,
           });
         });
+        if (_tipoDocumento == 'certificati' && _scadenzaCertificatoController.text.trim().isEmpty) {
+          _analizzaCertificatoMedico(userTriggered: false);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -152,6 +160,93 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
   }
 
   int get _totalSelectedFilesCount => _selectedWhatsappFiles.length + _manualFiles.length;
+
+  Future<void> _analizzaCertificatoMedico({bool userTriggered = false}) async {
+    if (_selectedAllievo == null) return;
+    if (_totalSelectedFilesCount == 0) {
+      if (userTriggered && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Seleziona prima almeno un file WhatsApp o carica un documento manuale.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _analyzingCertificato = true;
+      _analisiCertificatoInfo = null;
+      _analisiCertificatoSuccess = null;
+    });
+
+    try {
+      final res = await _api.analizzaCertificatoMedico(
+        allievoId: _selectedAllievo!.id,
+        whatsappFiles: _selectedWhatsappFiles.toList(),
+        manualFiles: _manualFiles,
+      );
+
+      if (!mounted) return;
+
+      if (res['success'] == true && res['found'] == true) {
+        final scadIt = (res['data_scadenza_italiana'] as String?) ?? '';
+        final note = (res['note'] as String?) ?? '';
+        final source = (res['source'] as String?) ?? 'AI';
+        setState(() {
+          _analyzingCertificato = false;
+          _analisiCertificatoSuccess = true;
+          if (scadIt.isNotEmpty) {
+            _scadenzaCertificatoController.text = scadIt;
+          }
+          _analisiCertificatoInfo = note.isNotEmpty ? note : 'Data rilevata con $source: $scadIt';
+        });
+      } else {
+        setState(() {
+          _analyzingCertificato = false;
+          _analisiCertificatoSuccess = false;
+          _analisiCertificatoInfo = res['message']?.toString() ?? 'Nessuna data di scadenza identificata nel documento.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _analyzingCertificato = false;
+          _analisiCertificatoSuccess = false;
+          _analisiCertificatoInfo = 'Errore durante l\'analisi del certificato: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _pickScadenzaDateFromCalendar() async {
+    DateTime initial = DateTime.now().add(const Duration(days: 365));
+    if (_scadenzaCertificatoController.text.trim().isNotEmpty) {
+      final parsed = parseItalianDateToIso(_scadenzaCertificatoController.text.trim());
+      if (parsed.isValid && parsed.isoDate != null) {
+        final d = DateTime.tryParse(parsed.isoDate!);
+        if (d != null) initial = d;
+      }
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      locale: const Locale('it', 'IT'),
+      helpText: 'SELEZIONA DATA DI SCADENZA',
+      cancelText: 'ANNULLA',
+      confirmText: 'CONFERMA',
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        _scadenzaCertificatoController.text = DateFormat('dd/MM/yyyy').format(picked);
+      });
+    }
+  }
 
   Future<void> _executeUpload() async {
     if (_selectedAllievo == null) return;
@@ -169,6 +264,14 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
     });
 
     try {
+      String? cleanScadenza;
+      if (_tipoDocumento == 'certificati' && _scadenzaCertificatoController.text.trim().isNotEmpty) {
+        final parsed = parseItalianDateToIso(_scadenzaCertificatoController.text.trim());
+        cleanScadenza = parsed.isValid && parsed.isoDate != null
+            ? parsed.isoDate
+            : _scadenzaCertificatoController.text.trim();
+      }
+
       final res = await _api.importDocumentoDrive(
         allievoId: _selectedAllievo!.id,
         tipoDocumento: _tipoDocumento,
@@ -176,7 +279,7 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
         filename: _filenameController.text.trim(),
         whatsappFiles: _selectedWhatsappFiles.toList(),
         manualFiles: _manualFiles,
-        scadenzaCertificatoMedico: _tipoDocumento == 'certificati' ? _scadenzaCertificatoController.text.trim() : null,
+        scadenzaCertificatoMedico: cleanScadenza,
       );
 
       if (mounted) {
@@ -805,7 +908,12 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: InkWell(
-                onTap: () => setState(() => _tipoDocumento = 'certificati'),
+                onTap: () {
+                  setState(() => _tipoDocumento = 'certificati');
+                  if (_scadenzaCertificatoController.text.trim().isEmpty && _totalSelectedFilesCount > 0 && !_analyzingCertificato) {
+                    _analizzaCertificatoMedico(userTriggered: false);
+                  }
+                },
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -832,16 +940,132 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
           ],
         ),
         if (_tipoDocumento == 'certificati') ...[
-          const SizedBox(height: 16),
-          TextField(
-            controller: _scadenzaCertificatoController,
-            decoration: InputDecoration(
-              labelText: 'Scadenza Certificato Medico (Opzionale, formato YYYY-MM-DD)',
-              hintText: 'es. 2027-10-31',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              isDense: true,
-              prefixIcon: const Icon(Icons.calendar_today, size: 18),
+          const SizedBox(height: 20),
+          // Sezione Analisi AI (Gemini) del Certificato
+          if (_analyzingCertificato)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                border: Border.all(color: Colors.blue.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Analisi certificato medico con AI (Gemini) in corso... Lettura data e calcolo scadenza...',
+                      style: TextStyle(fontSize: 13, color: Colors.blue.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_analisiCertificatoInfo != null)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _analisiCertificatoSuccess == true ? Colors.green.shade50 : Colors.amber.shade50,
+                border: Border.all(
+                  color: _analisiCertificatoSuccess == true ? Colors.green.shade300 : Colors.amber.shade400,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _analisiCertificatoSuccess == true ? Icons.auto_awesome : Icons.info_outline,
+                    color: _analisiCertificatoSuccess == true ? Colors.green.shade800 : Colors.amber.shade900,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _analisiCertificatoSuccess == true ? 'Data identificata con AI' : 'Nota analisi documento',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: _analisiCertificatoSuccess == true ? Colors.green.shade900 : Colors.amber.shade900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _analisiCertificatoInfo!,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Rianalizza', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _analizzaCertificatoMedico(userTriggered: true),
+                  ),
+                ],
+              ),
+            )
+          else
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.deepOrange.shade800,
+                  side: BorderSide(color: Colors.deepOrange.shade400),
+                ),
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Analizza Certificato con AI (precompila scadenza)'),
+                onPressed: () => _analizzaCertificatoMedico(userTriggered: true),
+              ),
             ),
+          const SizedBox(height: 16),
+          // Campo di inserimento Data di Scadenza in formato italiano gg/mm/aaaa
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _scadenzaCertificatoController,
+            builder: (context, value, _) {
+              return TextField(
+                controller: _scadenzaCertificatoController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [Date8InputFormatter()],
+                decoration: InputDecoration(
+                  labelText: 'Data di Scadenza Certificato Medico (gg/mm/aaaa)',
+                  hintText: 'es. 31/10/2027 (o digita 8 cifre)',
+                  helperText: 'Validità 1 anno dalla visita/rilascio (D.M. 24/04/2013 per attività sportiva non agonistica).',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.calendar_today, size: 18),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (value.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                          tooltip: 'Cancella data',
+                          onPressed: () => _scadenzaCertificatoController.clear(),
+                        ),
+                      IconButton(
+                        icon: Icon(Icons.calendar_month, size: 20, color: Colors.deepOrange.shade700),
+                        tooltip: 'Seleziona da calendario',
+                        onPressed: _pickScadenzaDateFromCalendar,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ],
@@ -1098,7 +1322,16 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                 );
                 return;
               }
-              setState(() => _currentStep++);
+              setState(() {
+                _currentStep++;
+                if (_currentStep == 4 &&
+                    _tipoDocumento == 'certificati' &&
+                    _scadenzaCertificatoController.text.trim().isEmpty &&
+                    _totalSelectedFilesCount > 0 &&
+                    !_analyzingCertificato) {
+                  _analizzaCertificatoMedico(userTriggered: false);
+                }
+              });
             },
           ),
       ],

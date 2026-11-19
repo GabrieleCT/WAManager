@@ -2067,6 +2067,38 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> analizzaCertificatoMedico({
+    required String allievoId,
+    List<String>? whatsappFiles,
+    List<Map<String, dynamic>>? manualFiles,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/allievi/$allievoId/analizza-certificato-medico/');
+    final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_headers);
+
+    if (whatsappFiles != null && whatsappFiles.isNotEmpty) {
+      request.fields['whatsapp_files'] = jsonEncode(whatsappFiles);
+    }
+
+    if (manualFiles != null) {
+      for (final mf in manualFiles) {
+        final bytes = mf['bytes'] as List<int>?;
+        final name = (mf['name'] as String?) ?? 'file';
+        if (bytes != null && bytes.isNotEmpty) {
+          request.files.add(http.MultipartFile.fromBytes('files', bytes, filename: name));
+        }
+      }
+    }
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   Future<Map<String, dynamic>> importDocumentoDrive({
     required String allievoId,
     required String tipoDocumento, // 'tesseramento' | 'certificati'

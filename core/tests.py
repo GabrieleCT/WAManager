@@ -700,3 +700,95 @@ class GeminiPresenceParsingTests(TestCase):
             phones_called = [call.kwargs['to'] for call in mock_send.call_args_list]
             self.assertIn('39333111222', phones_called)
             self.assertNotIn('39333999888', phones_called)
+
+
+class AnalisiCertificatoMedicoTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="test_cert", password="secret")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.allievo = Allievo.objects.create(
+            nome="Luca",
+            cognome="Verdi",
+            telefono="393481234567"
+        )
+
+    def test_analizza_certificato_medico_heuristic_explicit_scadenza(self):
+        from .gemini_service import _heuristic_analyze_certificate_text
+        text = "Certificato medico sportivo non agonistico per Luca Verdi. Rilasciato il 10/11/2026. Data di scadenza: 10/11/2027."
+        res = _heuristic_analyze_certificate_text(text)
+        self.assertIsNotNone(res)
+        self.assertEqual(res['data_scadenza'], '2027-11-10')
+        self.assertEqual(res['data_scadenza_italiana'], '10/11/2027')
+        self.assertEqual(res['data_rilascio'], '2026-11-10')
+
+    def test_analizza_certificato_medico_heuristic_annual_rule(self):
+        from .gemini_service import _heuristic_analyze_certificate_text
+        # Solo data di rilascio/visita con citazione normativa D.M. 24/04/2013
+        text = "Si rilascia certificato di idoneità non agonistica in data 15/09/2026 ex D.M. 24/04/2013."
+        res = _heuristic_analyze_certificate_text(text)
+        self.assertIsNotNone(res)
+        # La scadenza deve essere calcolata a +1 anno dal 15/09/2026 -> 15/09/2027 (e non dal 2013!)
+        self.assertEqual(res['data_scadenza'], '2027-09-15')
+        self.assertEqual(res['data_scadenza_italiana'], '15/09/2027')
+        self.assertEqual(res['data_rilascio'], '2026-09-15')
+
+    def test_api_analizza_certificato_medico_endpoint(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from unittest.mock import patch
+
+        fake_file = SimpleUploadedFile("certificato.txt", b"Certificato medico. Visita effettuata il 05/06/2026.", content_type="text/plain")
+        res = self.client.post(
+            f"/api/allievi/{self.allievo.id}/analizza-certificato-medico/",
+            {'files': [fake_file]},
+            format='multipart'
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data['success'])
+        self.assertTrue(data['found'])
+        self.assertEqual(data['data_scadenza'], '2027-06-05')
+        self.assertEqual(data['data_scadenza_italiana'], '05/06/2027')
+
+    def test_import_documento_drive_saves_italian_format_date(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from unittest.mock import MagicMock
+        from .models import GoogleDriveConfig
+
+        # Crea configurazione Google Drive valida
+        GoogleDriveConfig.objects.all().delete()
+        GoogleDriveConfig.objects.create(
+            auth_type='oauth',
+            oauth_refresh_token='mock_token',
+            folder_certificati_id='folder_123',
+            folder_certificati_nome='Certificati'
+        )
+
+        with patch("core.api_views.get_google_drive_service") as mock_get_service:
+            mock_service = MagicMock()
+            mock_files = MagicMock()
+            mock_files.create.return_value.execute.return_value = {'id': 'drive_file_1', 'name': 'test.pdf', 'webViewLink': 'http://drive/link'}
+            mock_service.files.return_value = mock_files
+            mock_get_service.return_value = mock_service
+
+            import io
+            import pypdf
+            writer = pypdf.PdfWriter()
+            writer.add_blank_page(width=72, height=72)
+            pdf_buf = io.BytesIO()
+            writer.write(pdf_buf)
+
+            fake_file = SimpleUploadedFile("certificato.pdf", pdf_buf.getvalue(), content_type="application/pdf")
+            res = self.client.post(
+                f"/api/allievi/{self.allievo.id}/import-documento-drive/",
+                {
+                    'tipo_documento': 'certificati',
+                    'scadenza_certificato_medico': '25/12/2027', # Formato italiano DD/MM/YYYY
+                    'files': [fake_file],
+                },
+                format='multipart'
+            )
+            self.assertEqual(res.status_code, 200)
+            self.allievo.refresh_from_db()
+            self.assertEqual(self.allievo.scadenza_certificato_medico, date(2027, 12, 25))
