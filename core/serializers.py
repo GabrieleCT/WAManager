@@ -166,6 +166,9 @@ class AllievoSerializer(serializers.ModelSerializer):
     comune_nascita = serializers.CharField(required=False, allow_blank=True, default='')
     provincia_nascita = serializers.CharField(required=False, allow_blank=True, default='')
     codice_fiscale = serializers.CharField(required=False, allow_blank=True, default='')
+    indirizzo_residenza = serializers.CharField(required=False, allow_blank=True, default='')
+    comune_residenza = serializers.CharField(required=False, allow_blank=True, default='')
+    provincia_residenza = serializers.CharField(required=False, allow_blank=True, default='')
     numero_tessera_acsi = serializers.CharField(required=False, allow_blank=True, default='')
     numero_tessera = serializers.CharField(source='numero_tessera_acsi', required=False, allow_blank=True)
     tessera_associativa = serializers.CharField(required=False, allow_blank=True, default='')
@@ -183,6 +186,7 @@ class AllievoSerializer(serializers.ModelSerializer):
             'in_gruppo_scuola_whatsapp', 'in_gruppo_corso_whatsapp',
             'corso_gruppo_whatsapp', 'corso_has_whatsapp',
             'email', 'data_nascita', 'comune_nascita', 'provincia_nascita', 'codice_fiscale',
+            'indirizzo_residenza', 'comune_residenza', 'provincia_residenza',
             'numero_tessera_acsi', 'numero_tessera', 'tessera_associativa', 'data_ammissione',
             'scadenza_certificato_medico', 'tesserato_altra_asd', 'stato_tessera', 'google_contact_id',
             'created_at', 'updated_at'
@@ -211,6 +215,12 @@ class AllievoSerializer(serializers.ModelSerializer):
                     data['codice_fiscale'] = ''
                 else:
                     data['codice_fiscale'] = str(data['codice_fiscale']).strip().upper()
+            if 'indirizzo_residenza' in data and data['indirizzo_residenza'] is None:
+                data['indirizzo_residenza'] = ''
+            if 'comune_residenza' in data and data['comune_residenza'] is None:
+                data['comune_residenza'] = ''
+            if 'provincia_residenza' in data and data['provincia_residenza'] is None:
+                data['provincia_residenza'] = ''
             if 'numero_tessera_acsi' in data:
                 if data['numero_tessera_acsi'] is None:
                     data['numero_tessera_acsi'] = ''

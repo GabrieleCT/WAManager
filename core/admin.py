@@ -50,7 +50,7 @@ class ArgomentoAdmin(admin.ModelAdmin):
 class AllievoAdmin(admin.ModelAdmin):
     list_display = ('cognome', 'nome', 'nickname', 'tessera_associativa', 'data_ammissione', 'scadenza_certificato_medico', 'numero_tessera_acsi', 'ruolo', 'livello', 'telefono', 'corso', 'tesserato_altra_asd', 'recensione', 'is_active', 'is_prospect')
     list_filter = ('tesserato_altra_asd', 'ruolo', 'livello', 'is_active', 'is_prospect', 'recensione', 'corso__scuola', 'corso')
-    search_fields = ('nome', 'cognome', 'nickname', 'telefono', 'tessera_associativa', 'numero_tessera_acsi', 'email', 'codice_fiscale', 'comune_nascita')
+    search_fields = ('nome', 'cognome', 'nickname', 'telefono', 'tessera_associativa', 'numero_tessera_acsi', 'email', 'codice_fiscale', 'comune_nascita', 'comune_residenza', 'indirizzo_residenza')
 
 
 @admin.register(Jolly)

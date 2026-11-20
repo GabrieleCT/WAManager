@@ -497,6 +497,9 @@ class _AllieviScreenState extends State<AllieviScreen> {
     final comuneNascitaController = TextEditingController(text: (allievo?.comuneNascita ?? '').toUpperCase());
     final provinciaNascitaController = TextEditingController(text: (allievo?.provinciaNascita ?? '').toUpperCase());
     final codiceFiscaleController = TextEditingController(text: (allievo?.codiceFiscale ?? '').toUpperCase());
+    final indirizzoResidenzaController = TextEditingController(text: allievo?.indirizzoResidenza ?? '');
+    final comuneResidenzaController = TextEditingController(text: (allievo?.comuneResidenza ?? '').toUpperCase());
+    final provinciaResidenzaController = TextEditingController(text: (allievo?.provinciaResidenza ?? '').toUpperCase());
     final dataNascitaController = TextEditingController(
       text: formatIsoDateToItalian(allievo?.dataNascita),
     );
@@ -792,6 +795,55 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: TextField(
+                              controller: indirizzoResidenzaController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Indirizzo di Residenza',
+                                hintText: 'Es. Via Roma, 10',
+                                prefixIcon: Icon(Icons.home_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 4,
+                            child: TextField(
+                              controller: comuneResidenzaController,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Comune di Residenza',
+                                hintText: 'Es. MILANO',
+                                prefixIcon: Icon(Icons.location_city_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: provinciaResidenzaController,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                                LengthLimitingTextInputFormatter(2),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Provincia',
+                                hintText: 'Es. MI',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ] else ...[
                       TextField(
                         controller: nomeController,
@@ -890,6 +942,52 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             flex: 1,
                             child: TextField(
                               controller: provinciaNascitaController,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                                LengthLimitingTextInputFormatter(2),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Provincia',
+                                hintText: 'Es. MI',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: indirizzoResidenzaController,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Indirizzo di Residenza',
+                          hintText: 'Es. Via Roma, 10',
+                          prefixIcon: Icon(Icons.home_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: comuneResidenzaController,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                _UpperCaseTextFormatter(),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Comune di Residenza',
+                                hintText: 'Es. MILANO',
+                                prefixIcon: Icon(Icons.location_city_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 1,
+                            child: TextField(
+                              controller: provinciaResidenzaController,
                               textCapitalization: TextCapitalization.characters,
                               inputFormatters: [
                                 _UpperCaseTextFormatter(),
@@ -1406,6 +1504,9 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             'comune_nascita': comuneNascitaController.text.trim().toUpperCase(),
                             'provincia_nascita': provinciaNascitaController.text.trim().toUpperCase(),
                             'codice_fiscale': codiceFiscaleController.text.trim().toUpperCase(),
+                            'indirizzo_residenza': indirizzoResidenzaController.text.trim(),
+                            'comune_residenza': comuneResidenzaController.text.trim().toUpperCase(),
+                            'provincia_residenza': provinciaResidenzaController.text.trim().toUpperCase(),
                             'ruolo': ruolo,
                             'livello': livello,
                             'recensione': recensione,
@@ -1849,6 +1950,14 @@ class _AllieviScreenState extends State<AllieviScreen> {
                     if (a.dataNascita != null && a.dataNascita!.isNotEmpty)
                       '🎂 Nato: ${DateFormat("dd/MM/yyyy").format(DateTime.tryParse(a.dataNascita!) ?? DateTime.now())}${a.comuneNascita.isNotEmpty ? " a ${a.comuneNascita}" : ""}${a.provinciaNascita.isNotEmpty ? " (${a.provinciaNascita})" : ""}',
                   ].join('   •   '),
+                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
+                ),
+              ),
+            if (a.indirizzoResidenza.isNotEmpty || a.comuneResidenza.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '🏠 Residenza: ${[if (a.indirizzoResidenza.isNotEmpty) a.indirizzoResidenza, if (a.comuneResidenza.isNotEmpty) a.comuneResidenza, if (a.provinciaResidenza.isNotEmpty) "(${a.provinciaResidenza})" ].join(' - ')}',
                   style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w500),
                 ),
               ),

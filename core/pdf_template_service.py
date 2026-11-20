@@ -199,20 +199,32 @@ def genera_pdf_modulo_tesseramento(allievo=None):
         else "Tango Argentino"
     )
 
+    cf_val = allievo.codice_fiscale if (allievo and allievo.codice_fiscale) else "________________________________________"
+    data_nasc_str = allievo.data_nascita.strftime('%d/%m/%Y') if (allievo and allievo.data_nascita) else "___/___/______"
+    luogo_nasc_str = (
+        f"{allievo.comune_nascita}{f' ({allievo.provincia_nascita})' if allievo.provincia_nascita else ''}"
+        if (allievo and allievo.comune_nascita)
+        else "____________________________________"
+    )
+    via_str = allievo.indirizzo_residenza if (allievo and allievo.indirizzo_residenza) else "__________________________________________________"
+    citta_str = allievo.comune_residenza if (allievo and allievo.comune_residenza) else "____________________________"
+    prov_str = allievo.provincia_residenza if (allievo and allievo.provincia_residenza) else "____"
+    email_val = allievo.email if (allievo and allievo.email) else "____________________________________________________________"
+
     y = 205
     page.insert_text(pymupdf.Point(55, y), f"Cognome e Nome:  {nome_completo}", fontsize=11, fontname=fontname)
     y += 24
-    page.insert_text(pymupdf.Point(55, y), "Codice Fiscale:  ________________________________________", fontsize=11, fontname=fontname)
+    page.insert_text(pymupdf.Point(55, y), f"Codice Fiscale:  {cf_val}", fontsize=11, fontname=fontname)
     y += 24
-    page.insert_text(pymupdf.Point(55, y), "Nato/a a:  ____________________________________  il:  ___/___/______", fontsize=11, fontname=fontname)
+    page.insert_text(pymupdf.Point(55, y), f"Nato/a a:  {luogo_nasc_str}  il:  {data_nasc_str}", fontsize=11, fontname=fontname)
     y += 24
-    page.insert_text(pymupdf.Point(55, y), "Residente in Via/Piazza:  __________________________________________________", fontsize=11, fontname=fontname)
+    page.insert_text(pymupdf.Point(55, y), f"Residente in Via/Piazza:  {via_str}", fontsize=11, fontname=fontname)
     y += 24
-    page.insert_text(pymupdf.Point(55, y), "Città:  ____________________________  Prov:  ____  CAP:  ________", fontsize=11, fontname=fontname)
+    page.insert_text(pymupdf.Point(55, y), f"Città:  {citta_str}  Prov:  {prov_str}  CAP:  ________", fontsize=11, fontname=fontname)
     y += 24
     page.insert_text(pymupdf.Point(55, y), f"Telefono / Cellulare:  {telefono}", fontsize=11, fontname=fontname)
     y += 24
-    page.insert_text(pymupdf.Point(55, y), "Email:  ____________________________________________________________", fontsize=11, fontname=fontname)
+    page.insert_text(pymupdf.Point(55, y), f"Email:  {email_val}", fontsize=11, fontname=fontname)
 
     y += 35
     page.insert_text(pymupdf.Point(45, y), "2. ATTIVITÀ ISTITUZIONALE E CORSO", fontsize=11, fontname=fontname, color=(0.08, 0.2, 0.4))

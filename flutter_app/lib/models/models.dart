@@ -213,6 +213,9 @@ class Allievo {
   final String comuneNascita;
   final String provinciaNascita;
   final String codiceFiscale;
+  final String indirizzoResidenza;
+  final String comuneResidenza;
+  final String provinciaResidenza;
   final String? googleContactId;
   final String? googleSyncError;
 
@@ -229,6 +232,9 @@ class Allievo {
     this.comuneNascita = '',
     this.provinciaNascita = '',
     this.codiceFiscale = '',
+    this.indirizzoResidenza = '',
+    this.comuneResidenza = '',
+    this.provinciaResidenza = '',
     this.corsoId,
     this.corsoDescrizione,
     this.scuolaId,
@@ -344,6 +350,9 @@ class Allievo {
       comuneNascita: json['comune_nascita'] ?? '',
       provinciaNascita: json['provincia_nascita'] ?? '',
       codiceFiscale: json['codice_fiscale'] ?? '',
+      indirizzoResidenza: json['indirizzo_residenza'] ?? '',
+      comuneResidenza: json['comune_residenza'] ?? '',
+      provinciaResidenza: json['provincia_residenza'] ?? '',
       googleContactId: json['google_contact_id'],
       googleSyncError: googleSyncError,
     );
@@ -360,6 +369,9 @@ class Allievo {
     'comune_nascita': comuneNascita,
     'provincia_nascita': provinciaNascita,
     'codice_fiscale': codiceFiscale,
+    'indirizzo_residenza': indirizzoResidenza,
+    'comune_residenza': comuneResidenza,
+    'provincia_residenza': provinciaResidenza,
     'tesserato_altra_asd': tesseratoAltraAsd,
     'corso': corsoId,
     'recensione': recensione,

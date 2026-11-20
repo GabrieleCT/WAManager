@@ -203,6 +203,59 @@ class AllievoCertificatoMedicoTests(TestCase):
         )
 
 
+class AllievoResidenzaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="admin_residenza", password="secret")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_create_and_update_allievo_with_residenza(self):
+        res = self.client.post(
+            "/api/allievi/",
+            {
+                "nome": "Marco",
+                "cognome": "Rossi",
+                "ruolo": "leader",
+                "livello": "principiante",
+                "indirizzo_residenza": "Via Roma, 10",
+                "comune_residenza": "MILANO",
+                "provincia_residenza": "MI",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data["indirizzo_residenza"], "Via Roma, 10")
+        self.assertEqual(data["comune_residenza"], "MILANO")
+        self.assertEqual(data["provincia_residenza"], "MI")
+
+        allievo = Allievo.objects.get(id=data["id"])
+        self.assertEqual(allievo.indirizzo_residenza, "Via Roma, 10")
+        self.assertEqual(allievo.comune_residenza, "MILANO")
+        self.assertEqual(allievo.provincia_residenza, "MI")
+
+        # Test search by comune_residenza
+        search_res = self.client.get("/api/allievi/?search=MILANO")
+        self.assertEqual(search_res.status_code, 200)
+        self.assertIn(str(allievo.id), [r["id"] for r in search_res.json()])
+
+        # Test patch update
+        res_patch = self.client.patch(
+            f"/api/allievi/{allievo.id}/",
+            {
+                "indirizzo_residenza": "Corso Buenos Aires, 45",
+                "comune_residenza": "SEGRATE",
+                "provincia_residenza": "MI",
+            },
+            format="json",
+        )
+        self.assertEqual(res_patch.status_code, 200)
+        patch_data = res_patch.json()
+        self.assertEqual(patch_data["indirizzo_residenza"], "Corso Buenos Aires, 45")
+        self.assertEqual(patch_data["comune_residenza"], "SEGRATE")
+
+
 class AggiungiJollyLezioneTests(TestCase):
     def setUp(self):
         User = get_user_model()

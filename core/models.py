@@ -222,6 +222,27 @@ class Allievo(models.Model):
         default='',
         help_text="Codice fiscale dell'allievo"
     )
+    indirizzo_residenza = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name="Indirizzo di Residenza",
+        help_text="Indirizzo di residenza dell'allievo (via, numero civico)"
+    )
+    comune_residenza = models.CharField(
+        max_length=150,
+        blank=True,
+        default='',
+        verbose_name="Comune di Residenza",
+        help_text="Comune di residenza dell'allievo"
+    )
+    provincia_residenza = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name="Provincia di Residenza",
+        help_text="Provincia di residenza dell'allievo (es. MI)"
+    )
     google_contact_id = models.CharField(
         max_length=255,
         blank=True,

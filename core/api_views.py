@@ -221,7 +221,7 @@ class AllievoViewSet(viewsets.ModelViewSet):
         'recensione': ['exact'],
         'is_active': ['exact']
     }
-    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera_acsi', 'tessera_associativa', 'email', 'codice_fiscale', 'comune_nascita']
+    search_fields = ['nome', 'cognome', 'nickname', 'telefono', 'note', 'numero_tessera_acsi', 'tessera_associativa', 'email', 'codice_fiscale', 'comune_nascita', 'comune_residenza', 'indirizzo_residenza']
     ordering_fields = ['cognome', 'nome', 'livello', 'ruolo']
 
     def create(self, request, *args, **kwargs):

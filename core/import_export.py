@@ -107,6 +107,7 @@ def export_allievi(request):
         'Scuola', 'Corso', 'Anno Accademico', 'Tessera Associativa', 'Data Ammissione',
         'Scadenza Certificato Medico', 'Numero Tessera ACSI', 'Tesserato Altra ASD',
         'Email', 'Codice Fiscale', 'Data Nascita', 'Comune Nascita', 'Provincia Nascita',
+        'Indirizzo Residenza', 'Comune Residenza', 'Provincia Residenza',
         'Recensione', 'Prospect', 'Attivo', 'Note', 'WhatsApp Scuola', 'WhatsApp Corso'
     ]
     rows = []
@@ -132,6 +133,9 @@ def export_allievi(request):
             a.data_nascita.strftime('%Y-%m-%d') if a.data_nascita else '',
             a.comune_nascita or '',
             a.provincia_nascita or '',
+            a.indirizzo_residenza or '',
+            a.comune_residenza or '',
+            a.provincia_residenza or '',
             a.get_recensione_display(),
             'Sì' if a.is_prospect else 'No',
             'Sì' if a.is_active else 'No',
