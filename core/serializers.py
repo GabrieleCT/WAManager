@@ -5,7 +5,7 @@ from .models import (
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
     ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
-    ConfigurazioneASD, MembroDirettivo
+    ConfigurazioneASD, MembroDirettivo, Socio, CategoriaSocio, MotivoCessazione, OrigineSocio
 )
 from .wa_client import resolve_group_link
 
@@ -799,3 +799,38 @@ class GoogleContactsSyncLogSerializer(serializers.ModelSerializer):
 
     def get_timestamp_display(self, obj):
         return obj.timestamp.strftime('%d/%m/%Y %H:%M') if obj.timestamp else ''
+
+
+class SocioSerializer(serializers.ModelSerializer):
+    categoria_display = serializers.CharField(source='get_categoria_display', read_only=True)
+    motivo_cessazione_display = serializers.CharField(source='get_motivo_cessazione_display', read_only=True)
+    origine_display = serializers.CharField(source='get_origine_display', read_only=True)
+    allievo_nome_completo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Socio
+        fields = [
+            'id', 'numero_progressivo', 'numero_tessera', 'cognome', 'nome',
+            'data_nascita', 'luogo_nascita', 'codice_fiscale', 'indirizzo_residenza',
+            'telefono', 'email', 'data_iscrizione', 'categoria', 'categoria_display',
+            'quota_associativa', 'attivo', 'data_cessazione', 'motivo_cessazione',
+            'motivo_cessazione_display', 'origine', 'origine_display', 'allievo',
+            'allievo_nome_completo', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'numero_progressivo', 'created_at', 'updated_at']
+
+    def get_allievo_nome_completo(self, obj):
+        if obj.allievo:
+            return f"{obj.allievo.cognome} {obj.allievo.nome}"
+        return None
+
+    def validate(self, attrs):
+        # Normalizzazioni
+        if 'codice_fiscale' in attrs and attrs['codice_fiscale']:
+            attrs['codice_fiscale'] = attrs['codice_fiscale'].strip().upper()
+        if 'email' in attrs and attrs['email']:
+            attrs['email'] = attrs['email'].strip().lower()
+        if 'numero_tessera' in attrs and attrs['numero_tessera']:
+            attrs['numero_tessera'] = attrs['numero_tessera'].strip()
+        return attrs
+

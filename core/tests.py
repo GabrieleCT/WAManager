@@ -1,10 +1,12 @@
 from datetime import date, time
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Allievo, Corso, Scuola
+from .models import Allievo, Corso, Scuola, Socio, CategoriaSocio, OrigineSocio, MotivoCessazione
 from .serializers import AllievoSerializer
 
 
@@ -846,3 +848,131 @@ class AnalisiCertificatoMedicoTests(TestCase):
             self.assertEqual(res.status_code, 200)
             self.allievo.refresh_from_db()
             self.assertEqual(self.allievo.scadenza_certificato_medico, date(2027, 12, 25))
+
+
+class LibroSociTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='admin', password='password123')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_br001_sync_allievo_to_socio(self):
+        """BR-001: Allievo con tessera_associativa crea automaticamente un Socio con categoria ORDINARIO e origine STUDENTE."""
+        allievo = Allievo.objects.create(
+            nome='Mario',
+            cognome='Rossi',
+            codice_fiscale='RSSMRA80A01H501U',
+            tessera_associativa='TS100',
+            telefono='3331234567',
+            email='mario.rossi@example.com',
+            comune_residenza='Milano',
+            provincia_residenza='MI',
+            indirizzo_residenza='Via Roma 1',
+            data_ammissione=date(2026, 1, 15)
+        )
+
+        socio = Socio.objects.filter(allievo=allievo).first()
+        self.assertIsNotNone(socio)
+        self.assertEqual(socio.numero_tessera, 'TS100')
+        self.assertEqual(socio.cognome, 'Rossi')
+        self.assertEqual(socio.nome, 'Mario')
+        self.assertEqual(socio.categoria, CategoriaSocio.ORDINARIO)
+        self.assertEqual(socio.quota_associativa, Decimal('20.00'))
+        self.assertEqual(socio.origine, OrigineSocio.STUDENTE)
+        self.assertTrue(socio.attivo)
+        self.assertEqual(socio.data_iscrizione, date(2026, 1, 15))
+        self.assertIn('Milano', socio.indirizzo_residenza)
+
+        # Modifica allievo sincronizza i dati
+        allievo.cognome = 'Rossi Bianchi'
+        allievo.telefono = '3339999999'
+        allievo.save()
+
+        socio.refresh_from_db()
+        self.assertEqual(socio.cognome, 'Rossi Bianchi')
+        self.assertEqual(socio.telefono, '3339999999')
+
+    def test_br001_socio_studente_non_eliminabile(self):
+        """BR-001: I soci derivati da allievi non possono essere eliminati direttamente dal Libro Soci."""
+        allievo = Allievo.objects.create(
+            nome='Giuseppe',
+            cognome='Verdi',
+            tessera_associativa='TS101',
+            telefono='3332221111'
+        )
+        socio = Socio.objects.get(allievo=allievo)
+
+        res = self.client.delete(f'/api/soci/{socio.id}/')
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(Socio.objects.filter(id=socio.id).exists())
+
+    def test_br002_socio_manuale_creazione_ed_eliminazione(self):
+        """BR-002: Creazione socio manuale ed eliminazione consentita."""
+        payload = {
+            'numero_tessera': 'TS_MAN_01',
+            'cognome': 'Bianchi',
+            'nome': 'Luigi',
+            'codice_fiscale': 'BNCLGU85M01H501Z',
+            'categoria': 'SOSTENITORE',
+            'quota_associativa': '30.00',
+            'data_iscrizione': '2026-02-01',
+            'origine': 'MANUALE'
+        }
+        res = self.client.post('/api/soci/', payload, format='json')
+        self.assertEqual(res.status_code, 201)
+        socio_id = res.data['id']
+        socio = Socio.objects.get(id=socio_id)
+        self.assertEqual(socio.origine, OrigineSocio.MANUALE)
+        self.assertEqual(socio.categoria, CategoriaSocio.SOSTENITORE)
+        self.assertEqual(socio.quota_associativa, Decimal('30.00'))
+
+        # Eliminazione socio manuale
+        del_res = self.client.delete(f'/api/soci/{socio_id}/')
+        self.assertEqual(del_res.status_code, 204)
+        self.assertFalse(Socio.objects.filter(id=socio_id).exists())
+
+    def test_br003_numerazione_progressiva(self):
+        """BR-003: Numero progressivo univoco, crescente, mai riutilizzato."""
+        s1 = Socio.objects.create(numero_tessera='T1', cognome='A', nome='A', origine=OrigineSocio.MANUALE)
+        s2 = Socio.objects.create(numero_tessera='T2', cognome='B', nome='B', origine=OrigineSocio.MANUALE)
+        self.assertIsNotNone(s1.numero_progressivo)
+        self.assertIsNotNone(s2.numero_progressivo)
+        self.assertEqual(s2.numero_progressivo, s1.numero_progressivo + 1)
+
+    def test_cessazione_socio(self):
+        """Test cessazione socio."""
+        socio = Socio.objects.create(
+            numero_tessera='T3',
+            cognome='Neri',
+            nome='Franco',
+            origine=OrigineSocio.MANUALE
+        )
+        self.assertTrue(socio.attivo)
+
+        res = self.client.post(
+            f'/api/soci/{socio.id}/cessazione/',
+            {
+                'data_cessazione': '2026-06-30',
+                'motivo_cessazione': 'RECESSO'
+            },
+            format='json'
+        )
+        self.assertEqual(res.status_code, 200)
+        socio.refresh_from_db()
+        self.assertFalse(socio.attivo)
+        self.assertEqual(socio.data_cessazione, date(2026, 6, 30))
+        self.assertEqual(socio.motivo_cessazione, MotivoCessazione.RECESSO)
+
+    def test_export_xls(self):
+        """Test esportazione XLSX del Libro Soci."""
+        Socio.objects.create(
+            numero_tessera='T_EXP',
+            cognome='ExportTest',
+            nome='Nome',
+            origine=OrigineSocio.MANUALE
+        )
+        res = self.client.get('/api/soci/export/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.assertTrue(len(res.content) > 1000)
+

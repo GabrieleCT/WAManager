@@ -1,6 +1,7 @@
 import uuid
 import re
 import datetime
+from decimal import Decimal
 from django.db import models
 from django.db.models.signals import pre_delete, pre_save, post_save, post_delete
 from django.dispatch import receiver
@@ -1301,3 +1302,198 @@ class GoogleContactsSyncLog(models.Model):
 
     def __str__(self):
         return f"SyncLog {self.action} ({self.status}) - {self.timestamp.strftime('%d/%m/%Y %H:%M')}"
+
+
+# ─── 1.16 Libro Soci (Gestione Registro Soci ASD) ───────────────────
+
+class CategoriaSocio(models.TextChoices):
+    ORDINARIO = 'ORDINARIO', 'Ordinario'
+    SOSTENITORE = 'SOSTENITORE', 'Sostenitore'
+    PRESIDENTE = 'PRESIDENTE', 'Presidente'
+    VICE_PRESIDENTE = 'VICE_PRESIDENTE', 'Vice Presidente'
+    SEGRETARIO = 'SEGRETARIO', 'Segretario'
+
+
+class MotivoCessazione(models.TextChoices):
+    RECESSO = 'RECESSO', 'Recesso'
+    ESCLUSIONE = 'ESCLUSIONE', 'Esclusione'
+    DECESSO = 'DECESSO', 'Decesso'
+    MANCATO_RINNOVO = 'MANCATO_RINNOVO', 'Mancato Rinnovo'
+
+
+class OrigineSocio(models.TextChoices):
+    STUDENTE = 'STUDENTE', 'Studente'
+    MANUALE = 'MANUALE', 'Manuale'
+
+
+class Socio(models.Model):
+    numero_progressivo = models.PositiveIntegerField(
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Numero Progressivo",
+        help_text="Numero progressivo incrementale univoco nel Libro Soci"
+    )
+    numero_tessera = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name="Numero Tessera",
+        help_text="Numero tessera associativa del socio"
+    )
+    cognome = models.CharField(max_length=100, db_index=True)
+    nome = models.CharField(max_length=100)
+
+    data_nascita = models.DateField(null=True, blank=True, verbose_name="Data di Nascita")
+    luogo_nascita = models.CharField(max_length=150, blank=True, default='', verbose_name="Luogo di Nascita")
+
+    codice_fiscale = models.CharField(max_length=16, blank=True, default='', db_index=True, verbose_name="Codice Fiscale")
+
+    indirizzo_residenza = models.CharField(max_length=255, blank=True, default='', verbose_name="Indirizzo di Residenza")
+    telefono = models.CharField(max_length=50, blank=True, default='', verbose_name="Telefono")
+    email = models.EmailField(max_length=254, blank=True, default='', verbose_name="Email")
+
+    data_iscrizione = models.DateField(default=datetime.date.today, verbose_name="Data Iscrizione")
+
+    categoria = models.CharField(
+        max_length=20,
+        choices=CategoriaSocio.choices,
+        default=CategoriaSocio.ORDINARIO,
+        db_index=True,
+        verbose_name="Categoria Socio"
+    )
+
+    quota_associativa = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('20.00'),
+        verbose_name="Quota Associativa (€)"
+    )
+
+    attivo = models.BooleanField(default=True, db_index=True, verbose_name="Attivo")
+
+    data_cessazione = models.DateField(null=True, blank=True, verbose_name="Data Cessazione")
+    motivo_cessazione = models.CharField(
+        max_length=20,
+        choices=MotivoCessazione.choices,
+        blank=True,
+        null=True,
+        verbose_name="Motivo Cessazione"
+    )
+
+    origine = models.CharField(
+        max_length=10,
+        choices=OrigineSocio.choices,
+        default=OrigineSocio.MANUALE,
+        verbose_name="Origine"
+    )
+
+    allievo = models.ForeignKey(
+        Allievo,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='soci',
+        verbose_name="Allievo collegato"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'soci'
+        verbose_name = "Socio"
+        verbose_name_plural = "Libro Soci"
+        ordering = ['numero_progressivo']
+        indexes = [
+            models.Index(fields=['cognome'], name='idx_socio_cognome'),
+            models.Index(fields=['codice_fiscale'], name='idx_socio_cf'),
+            models.Index(fields=['categoria'], name='idx_socio_categoria'),
+            models.Index(fields=['attivo'], name='idx_socio_attivo'),
+        ]
+
+    def __str__(self):
+        return f"#{self.numero_progressivo or 'N/A'} - {self.cognome} {self.nome} ({self.numero_tessera})"
+
+    def save(self, *args, **kwargs):
+        if self.numero_progressivo is None:
+            from django.db import transaction
+            from django.db.models import Max
+            with transaction.atomic():
+                max_num = Socio.objects.select_for_update().aggregate(m=Max('numero_progressivo'))['m'] or 0
+                self.numero_progressivo = max_num + 1
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+    @classmethod
+    def get_next_numero_progressivo(cls):
+        from django.db.models import Max
+        max_num = cls.objects.aggregate(m=Max('numero_progressivo'))['m'] or 0
+        return max_num + 1
+
+
+@receiver(post_save, sender=Allievo)
+def sync_allievo_to_socio(sender, instance, created, **kwargs):
+    """
+    BR-001: Tutti gli allievi che possiedono un valore valorizzato nel campo
+    tessera_associativa devono essere automaticamente considerati soci (origine = STUDENTE).
+    I dati anagrafici vengono sincronizzati automaticamente.
+    """
+    tessera = (instance.tessera_associativa or '').strip()
+    if not tessera:
+        # Se la tessera associativa non è valorizzata, non deve essere registrato un socio STUDENTE
+        return
+
+    # Luogo nascita composto da comune e provincia
+    luogo_nasc = instance.comune_nascita.strip()
+    if luogo_nasc and instance.provincia_nascita.strip():
+        luogo_nasc = f"{luogo_nasc} ({instance.provincia_nascita.strip()})"
+    elif not luogo_nasc:
+        luogo_nasc = instance.provincia_nascita.strip()
+
+    # Indirizzo residenza composto da indirizzo, comune e provincia
+    residenza_parts = [p for p in [instance.indirizzo_residenza.strip(), instance.comune_residenza.strip(), instance.provincia_residenza.strip()] if p]
+    indirizzo_res = ", ".join(residenza_parts)
+
+    data_iscr = instance.data_ammissione or (instance.created_at.date() if instance.created_at else datetime.date.today())
+
+    socio = Socio.objects.filter(allievo=instance).first()
+    if not socio:
+        # Controlla anche per numero tessera se esiste già
+        socio = Socio.objects.filter(numero_tessera=tessera).first()
+
+    if socio:
+        # Aggiorna anagrafica sincronizzata
+        socio.allievo = instance
+        socio.numero_tessera = tessera
+        socio.cognome = instance.cognome.strip()
+        socio.nome = instance.nome.strip()
+        socio.data_nascita = instance.data_nascita
+        socio.luogo_nascita = luogo_nasc
+        socio.codice_fiscale = instance.codice_fiscale.strip().upper()
+        socio.indirizzo_residenza = indirizzo_res
+        socio.telefono = instance.telefono.strip()
+        socio.email = instance.email.strip().lower()
+        if instance.data_ammissione and not socio.data_iscrizione:
+            socio.data_iscrizione = instance.data_ammissione
+        socio.save()
+    else:
+        Socio.objects.create(
+            numero_tessera=tessera,
+            cognome=instance.cognome.strip(),
+            nome=instance.nome.strip(),
+            data_nascita=instance.data_nascita,
+            luogo_nascita=luogo_nasc,
+            codice_fiscale=instance.codice_fiscale.strip().upper(),
+            indirizzo_residenza=indirizzo_res,
+            telefono=instance.telefono.strip(),
+            email=instance.email.strip().lower(),
+            data_iscrizione=data_iscr,
+            categoria=CategoriaSocio.ORDINARIO,
+            quota_associativa=Decimal('20.00'),
+            attivo=True,
+            origine=OrigineSocio.STUDENTE,
+            allievo=instance
+        )
+

@@ -1888,3 +1888,118 @@ class GoogleContactsSyncLog {
     );
   }
 }
+
+class Socio {
+  final int id;
+  final int? numeroProgressivo;
+  final String numeroTessera;
+  final String cognome;
+  final String nome;
+  final String? dataNascita;
+  final String? luogoNascita;
+  final String? codiceFiscale;
+  final String? indirizzoResidenza;
+  final String? telefono;
+  final String? email;
+  final String? dataIscrizione;
+  final String categoria;
+  final String categoriaDisplay;
+  final double quotaAssociativa;
+  final bool attivo;
+  final String? dataCessazione;
+  final String? motivoCessazione;
+  final String? motivoCessazioneDisplay;
+  final String origine;
+  final String origineDisplay;
+  final String? allievo;
+  final String? allievoNomeCompleto;
+  final String? createdAt;
+  final String? updatedAt;
+
+  Socio({
+    required this.id,
+    this.numeroProgressivo,
+    required this.numeroTessera,
+    required this.cognome,
+    required this.nome,
+    this.dataNascita,
+    this.luogoNascita,
+    this.codiceFiscale,
+    this.indirizzoResidenza,
+    this.telefono,
+    this.email,
+    this.dataIscrizione,
+    required this.categoria,
+    required this.categoriaDisplay,
+    required this.quotaAssociativa,
+    required this.attivo,
+    this.dataCessazione,
+    this.motivoCessazione,
+    this.motivoCessazioneDisplay,
+    required this.origine,
+    required this.origineDisplay,
+    this.allievo,
+    this.allievoNomeCompleto,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  String get nomeCompleto => '$cognome $nome';
+  bool get isStudente => origine == 'STUDENTE';
+  bool get isManuale => origine == 'MANUALE';
+
+  factory Socio.fromJson(Map<String, dynamic> json) {
+    return Socio(
+      id: (json['id'] as num).toInt(),
+      numeroProgressivo: (json['numero_progressivo'] as num?)?.toInt(),
+      numeroTessera: json['numero_tessera'] ?? '',
+      cognome: json['cognome'] ?? '',
+      nome: json['nome'] ?? '',
+      dataNascita: json['data_nascita'],
+      luogoNascita: json['luogo_nascita'] ?? '',
+      codiceFiscale: json['codice_fiscale'] ?? '',
+      indirizzoResidenza: json['indirizzo_residenza'] ?? '',
+      telefono: json['telefono'] ?? '',
+      email: json['email'] ?? '',
+      dataIscrizione: json['data_iscrizione'],
+      categoria: json['categoria'] ?? 'ORDINARIO',
+      categoriaDisplay: json['categoria_display'] ?? (json['categoria'] ?? 'Ordinario'),
+      quotaAssociativa: (json['quota_associativa'] != null)
+          ? double.tryParse(json['quota_associativa'].toString()) ?? 20.0
+          : 20.0,
+      attivo: json['attivo'] ?? true,
+      dataCessazione: json['data_cessazione'],
+      motivoCessazione: json['motivo_cessazione'],
+      motivoCessazioneDisplay: json['motivo_cessazione_display'] ?? json['motivo_cessazione'],
+      origine: json['origine'] ?? 'MANUALE',
+      origineDisplay: json['origine_display'] ?? (json['origine'] == 'STUDENTE' ? 'Studente' : 'Manuale'),
+      allievo: json['allievo']?.toString(),
+      allievoNomeCompleto: json['allievo_nome_completo'],
+      createdAt: json['created_at'],
+      updatedAt: json['updated_at'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'numero_tessera': numeroTessera,
+      'cognome': cognome,
+      'nome': nome,
+      if (dataNascita != null && dataNascita!.isNotEmpty) 'data_nascita': dataNascita,
+      'luogo_nascita': luogoNascita ?? '',
+      'codice_fiscale': codiceFiscale ?? '',
+      'indirizzo_residenza': indirizzoResidenza ?? '',
+      'telefono': telefono ?? '',
+      'email': email ?? '',
+      if (dataIscrizione != null && dataIscrizione!.isNotEmpty) 'data_iscrizione': dataIscrizione,
+      'categoria': categoria,
+      'quota_associativa': quotaAssociativa,
+      'attivo': attivo,
+      if (dataCessazione != null && dataCessazione!.isNotEmpty) 'data_cessazione': dataCessazione,
+      if (motivoCessazione != null && motivoCessazione!.isNotEmpty) 'motivo_cessazione': motivoCessazione,
+      'origine': origine,
+      if (allievo != null) 'allievo': allievo,
+    };
+  }
+}
+

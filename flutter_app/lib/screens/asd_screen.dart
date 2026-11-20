@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'verbale_rendiconto_tab.dart';
+import 'libro_soci_tab.dart';
 
 class AsdScreen extends StatefulWidget {
   const AsdScreen({super.key});
@@ -41,7 +42,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadAllData();
   }
 
@@ -541,6 +542,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
             Tab(icon: Icon(Icons.account_balance), text: 'Dati Associazione (ASD)'),
             Tab(icon: Icon(Icons.groups_rounded), text: 'Direttivo & Firme'),
             Tab(icon: Icon(Icons.description_outlined), text: 'Genera Verbale Rendiconto'),
+            Tab(icon: Icon(Icons.menu_book), text: 'Libro Soci'),
           ],
         ),
       ),
@@ -561,6 +563,7 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
                 _buildTabDatiAsd(),
                 _buildTabDirettivo(),
                 const VerbaleRendicontoTab(),
+                const LibroSociTab(),
               ],
             ),
     );

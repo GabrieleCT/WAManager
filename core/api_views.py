@@ -23,7 +23,7 @@ from .models import (
     Presenza, Pagamento, MessageTemplate, MessageLog, Match, RecurringSchedule,
     SondaggioMattutinoConfig, GeminiLog, DocumentTemplate,
     ContatoreRicevute, Ricevuta, GoogleDriveConfig, GoogleContactsConfig, MovimentoPrimaNota, CategoriaBilancio,
-    ConfigurazioneASD, MembroDirettivo
+    ConfigurazioneASD, MembroDirettivo, Socio, CategoriaSocio, MotivoCessazione, OrigineSocio
 )
 from .serializers import (
     ScuolaSerializer, CorsoSerializer, ArgomentoSerializer,
@@ -33,7 +33,7 @@ from .serializers import (
     SondaggioMattutinoConfigSerializer, GeminiLogSerializer, DocumentTemplateSerializer,
     ContatoreRicevuteSerializer, RicevutaSerializer, GoogleDriveConfigSerializer, GoogleContactsConfigSerializer,
     MovimentoPrimaNotaSerializer, CategoriaBilancioSerializer,
-    ConfigurazioneASDSerializer, MembroDirettivoSerializer
+    ConfigurazioneASDSerializer, MembroDirettivoSerializer, SocioSerializer
 )
 from .services import generate_matches
 from .wa_client import send_whatsapp_message, get_whatsapp_status, get_group_participants, add_group_participant, resolve_group_link
@@ -4340,3 +4340,282 @@ def download_mobile_apk(request):
             )
             return response
     raise Http404("File APK non trovato sul server.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LIBRO SOCI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def genera_excel_libro_soci(soci_qs):
+    """
+    Genera il file XLSX del Libro Soci formattato secondo le specifiche.
+    Ordinamento: numeroProgressivo ASC.
+    """
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Libro Soci"
+
+    # Stili
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    data_font = Font(name="Calibri", size=10)
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+    right_align = Alignment(horizontal="right", vertical="center")
+
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    headers = [
+        "Numero Progressivo",
+        "Numero Tessera",
+        "Cognome",
+        "Nome",
+        "Data Nascita",
+        "Luogo Nascita",
+        "Codice Fiscale",
+        "Indirizzo",
+        "Telefono",
+        "Email",
+        "Data Iscrizione",
+        "Categoria",
+        "Quota Associativa",
+        "Stato",
+        "Data Cessazione",
+        "Motivo Cessazione",
+        "Origine"
+    ]
+
+    ws.append(headers)
+    ws.row_dimensions[1].height = 28
+
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+
+    for socio in soci_qs.order_by('numero_progressivo'):
+        stato_str = "Attivo" if socio.attivo else "Cessato"
+        origine_str = "Anagrafica Allievo" if socio.origine == 'STUDENTE' else "Inserimento Manuale"
+        quota_val = float(socio.quota_associativa) if socio.quota_associativa is not None else 0.0
+
+        row_data = [
+            socio.numero_progressivo,
+            socio.numero_tessera,
+            socio.cognome,
+            socio.nome,
+            socio.data_nascita.strftime('%d/%m/%Y') if socio.data_nascita else '',
+            socio.luogo_nascita or '',
+            socio.codice_fiscale or '',
+            socio.indirizzo_residenza or '',
+            socio.telefono or '',
+            socio.email or '',
+            socio.data_iscrizione.strftime('%d/%m/%Y') if socio.data_iscrizione else '',
+            socio.get_categoria_display(),
+            quota_val,
+            stato_str,
+            socio.data_cessazione.strftime('%d/%m/%Y') if socio.data_cessazione else '',
+            socio.get_motivo_cessazione_display() if socio.motivo_cessazione else '',
+            origine_str
+        ]
+        ws.append(row_data)
+        current_row = ws.max_row
+        ws.row_dimensions[current_row].height = 20
+
+        for col_idx in range(1, len(row_data) + 1):
+            cell = ws.cell(row=current_row, column=col_idx)
+            cell.font = data_font
+            cell.border = thin_border
+            if col_idx in [1, 5, 11, 14, 15]:
+                cell.alignment = center_align
+            elif col_idx == 13:
+                cell.alignment = right_align
+                cell.number_format = '€ #,##0.00'
+            else:
+                cell.alignment = left_align
+
+    # Adattamento larghezza colonne
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or '')
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    xlsx_bytes = output.getvalue()
+    today_str = datetime.date.today().strftime('%Y%m%d')
+    filename = f"Libro_Soci_{today_str}.xlsx"
+    return xlsx_bytes, filename
+
+
+class SocioViewSet(viewsets.ModelViewSet):
+    queryset = Socio.objects.all().order_by('numero_progressivo')
+    serializer_class = SocioSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['nome', 'cognome', 'codice_fiscale', 'numero_tessera']
+    ordering_fields = ['numero_progressivo', 'cognome', 'nome', 'data_iscrizione', 'attivo']
+    ordering = ['numero_progressivo']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        stato = self.request.query_params.get('stato')
+        attivo_param = self.request.query_params.get('attivo')
+        if stato:
+            if stato.lower() == 'attivi':
+                qs = qs.filter(attivo=True)
+            elif stato.lower() == 'cessati':
+                qs = qs.filter(attivo=False)
+        elif attivo_param is not None:
+            if attivo_param.lower() in ['true', '1']:
+                qs = qs.filter(attivo=True)
+            elif attivo_param.lower() in ['false', '0']:
+                qs = qs.filter(attivo=False)
+
+        categoria = self.request.query_params.get('categoria')
+        if categoria:
+            qs = qs.filter(categoria=categoria)
+
+        origine = self.request.query_params.get('origine')
+        if origine:
+            qs = qs.filter(origine=origine)
+
+        return qs
+
+    def perform_destroy(self, instance):
+        if instance.origine == OrigineSocio.STUDENTE or instance.allievo is not None:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("I soci derivati da allievi non possono essere eliminati direttamente dal Libro Soci.")
+        instance.delete()
+
+    @action(detail=True, methods=['post'], url_path='cessazione')
+    def cessazione(self, request, pk=None):
+        socio = self.get_object()
+        data_cessazione_raw = request.data.get('data_cessazione')
+        motivo_cessazione = request.data.get('motivo_cessazione')
+
+        if not motivo_cessazione:
+            return Response({'error': 'Il motivo della cessazione è obbligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_motivi = [c[0] for c in MotivoCessazione.choices]
+        if motivo_cessazione not in valid_motivi:
+            return Response({'error': f'Motivo cessazione non valido. Valori ammessi: {", ".join(valid_motivi)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if data_cessazione_raw:
+            try:
+                data_cessazione = datetime.datetime.strptime(data_cessazione_raw, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Formato data_cessazione non valido. Usare YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            data_cessazione = datetime.date.today()
+
+        socio.attivo = False
+        socio.data_cessazione = data_cessazione
+        socio.motivo_cessazione = motivo_cessazione
+        socio.save()
+
+        serializer = self.get_serializer(socio)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get', 'post'], url_path='export')
+    def export_excel(self, request):
+        qs = self.filter_queryset(self.get_queryset())
+        xlsx_bytes, filename = genera_excel_libro_soci(qs)
+
+        upload_drive = request.query_params.get('upload_drive', '').lower() in ['true', '1']
+        if not upload_drive and request.method == 'POST' and isinstance(request.data, dict):
+            upload_drive = str(request.data.get('upload_drive', '')).lower() in ['true', '1']
+
+        if upload_drive:
+            config = GoogleDriveConfig.get_instance()
+            if not config.is_configured:
+                return Response({
+                    'success': False,
+                    'error': 'Google Drive non configurato. Vai in Impostazioni > Google Drive per collegare il tuo account.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            target_folder_id = config.folder_libro_soci_id or config.folder_id
+            if not target_folder_id:
+                return Response({
+                    'success': False,
+                    'error': 'Nessuna cartella di destinazione impostata per il Libro Soci. Selezionala in Impostazioni > Google Drive.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                from googleapiclient.http import MediaIoBaseUpload
+                import io
+
+                drive_service = get_google_drive_service(config)
+
+                query = f"name = '{filename}' and '{target_folder_id}' in parents and trashed = false"
+                existing = drive_service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, webViewLink)',
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
+                ).execute()
+
+                files_found = existing.get('files', [])
+                media = MediaIoBaseUpload(
+                    io.BytesIO(xlsx_bytes),
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    resumable=True
+                )
+
+                if files_found:
+                    file_id = files_found[0]['id']
+                    uploaded_file = drive_service.files().update(
+                        fileId=file_id,
+                        media_body=media,
+                        fields='id, name, webViewLink',
+                        supportsAllDrives=True
+                    ).execute()
+                else:
+                    file_metadata = {
+                        'name': filename,
+                        'parents': [target_folder_id],
+                        'description': f"Libro Soci esportato in data {datetime.date.today().strftime('%d/%m/%Y')}"
+                    }
+                    uploaded_file = drive_service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields='id, name, webViewLink',
+                        supportsAllDrives=True
+                    ).execute()
+
+                return Response({
+                    'success': True,
+                    'message': 'Libro Soci esportato correttamente su Google Drive.',
+                    'file_id': uploaded_file.get('id'),
+                    'filename': uploaded_file.get('name'),
+                    'webViewLink': uploaded_file.get('webViewLink'),
+                })
+            except Exception as e:
+                logger.exception("Errore upload Google Drive Libro Soci")
+                return Response({'success': False, 'error': f"Errore durante l'upload su Google Drive: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        response = HttpResponse(
+            xlsx_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+

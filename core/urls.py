@@ -30,6 +30,7 @@ router.register(r'prima-nota', api_views.MovimentoPrimaNotaViewSet, basename='pr
 router.register(r'categorie-bilancio', api_views.CategoriaBilancioViewSet, basename='categoria-bilancio')
 router.register(r'asd', api_views.ConfigurazioneASDViewSet, basename='asd')
 router.register(r'direttivo', api_views.MembroDirettivoViewSet, basename='direttivo')
+router.register(r'soci', api_views.SocioViewSet, basename='socio')
 
 
 urlpatterns = [

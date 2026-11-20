@@ -2140,4 +2140,186 @@ class ApiService {
       return {'success': false, 'error': e.toString()};
     }
   }
+
+  // ─── Libro Soci ──────────────────────────────────────────────────────────
+
+  Future<List<Socio>> getSoci({
+    String? search,
+    String? stato,
+    String? categoria,
+    String? origine,
+  }) async {
+    final queryParams = <String, String>{};
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (stato != null && stato.isNotEmpty && stato != 'tutti') {
+      queryParams['stato'] = stato;
+    }
+    if (categoria != null && categoria.isNotEmpty && categoria != 'tutti') {
+      queryParams['categoria'] = categoria;
+    }
+    if (origine != null && origine.isNotEmpty && origine != 'tutti') {
+      queryParams['origine'] = origine;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/soci/').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    final response = await http.get(uri, headers: _headers);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (data is List) {
+        return data.map((json) => Socio.fromJson(json as Map<String, dynamic>)).toList();
+      } else if (data is Map && data['results'] is List) {
+        return (data['results'] as List)
+            .map((json) => Socio.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } else {
+      throw Exception('Errore nel caricamento del Libro Soci (${response.statusCode})');
+    }
+  }
+
+  Future<Socio> getSocio(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/soci/$id/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      return Socio.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+    } else {
+      throw Exception('Errore nel caricamento del socio ($id)');
+    }
+  }
+
+  Future<Socio> createSocio(Map<String, dynamic> data) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/soci/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 201) {
+      return Socio.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+    } else {
+      final err = jsonDecode(utf8.decode(response.bodyBytes));
+      throw Exception(err is Map ? (err['error'] ?? err['detail'] ?? err.toString()) : 'Errore creazione socio');
+    }
+  }
+
+  Future<Socio> updateSocio(int id, Map<String, dynamic> data) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/api/soci/$id/'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 200) {
+      return Socio.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+    } else {
+      final err = jsonDecode(utf8.decode(response.bodyBytes));
+      throw Exception(err is Map ? (err['error'] ?? err['detail'] ?? err.toString()) : 'Errore aggiornamento socio');
+    }
+  }
+
+  Future<bool> deleteSocio(int id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/soci/$id/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 204) {
+      return true;
+    } else {
+      final err = jsonDecode(utf8.decode(response.bodyBytes));
+      throw Exception(err is Map ? (err['error'] ?? err['detail'] ?? 'Errore eliminazione') : 'Errore eliminazione');
+    }
+  }
+
+  Future<Socio> cessaSocio(int id, {required String motivoCessazione, String? dataCessazione}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/soci/$id/cessazione/'),
+      headers: _headers,
+      body: jsonEncode({
+        'motivo_cessazione': motivoCessazione,
+        if (dataCessazione != null && dataCessazione.isNotEmpty) 'data_cessazione': dataCessazione,
+      }),
+    );
+    if (response.statusCode == 200) {
+      return Socio.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+    } else {
+      final err = jsonDecode(utf8.decode(response.bodyBytes));
+      throw Exception(err is Map ? (err['error'] ?? err['detail'] ?? 'Errore cessazione') : 'Errore cessazione');
+    }
+  }
+
+  String getSociExportUrl() {
+    return '$baseUrl/api/soci/export/';
+  }
+
+  Future<List<int>> downloadSociExportXls({
+    String? search,
+    String? stato,
+    String? categoria,
+    String? origine,
+  }) async {
+    final queryParams = <String, String>{};
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (stato != null && stato.isNotEmpty && stato != 'tutti') {
+      queryParams['stato'] = stato;
+    }
+    if (categoria != null && categoria.isNotEmpty && categoria != 'tutti') {
+      queryParams['categoria'] = categoria;
+    }
+    if (origine != null && origine.isNotEmpty && origine != 'tutti') {
+      queryParams['origine'] = origine;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/soci/export/').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    final response = await http.get(uri, headers: _headers);
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Errore download Excel Libro Soci (${response.statusCode})');
+    }
+  }
+
+  Future<Map<String, dynamic>> exportSociToGoogleDrive({
+    String? search,
+    String? stato,
+    String? categoria,
+    String? origine,
+  }) async {
+    final queryParams = <String, String>{'upload_drive': 'true'};
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (stato != null && stato.isNotEmpty && stato != 'tutti') {
+      queryParams['stato'] = stato;
+    }
+    if (categoria != null && categoria.isNotEmpty && categoria != 'tutti') {
+      queryParams['categoria'] = categoria;
+    }
+    if (origine != null && origine.isNotEmpty && origine != 'tutti') {
+      queryParams['origine'] = origine;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/soci/export/').replace(
+      queryParameters: queryParams,
+    );
+    final response = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({'upload_drive': true}),
+    );
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    return {'success': false, 'error': 'Risposta inattesa dal server'};
+  }
 }
