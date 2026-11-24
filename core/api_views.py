@@ -4534,8 +4534,31 @@ class SocioViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(socio)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get', 'post'], url_path='export')
+    @action(detail=False, methods=['get', 'post'], url_path='export', permission_classes=[permissions.AllowAny])
     def export_excel(self, request):
+        # Verifica autenticazione tramite Sessione, Header Authorization o query param ?token=...
+        user = request.user if (request.user and request.user.is_authenticated) else None
+        if not user:
+            auth_header = request.headers.get('Authorization', '')
+            token_key = None
+            if auth_header.startswith('Token '):
+                token_key = auth_header.split(' ')[1].strip()
+            elif request.GET.get('token'):
+                token_key = request.GET.get('token').strip()
+            elif request.data and isinstance(request.data, dict) and request.data.get('token'):
+                token_key = str(request.data.get('token')).strip()
+
+            if token_key:
+                from rest_framework.authtoken.models import Token
+                try:
+                    token_obj = Token.objects.select_related('user').get(key=token_key)
+                    user = token_obj.user
+                except Token.DoesNotExist:
+                    pass
+
+        if not user:
+            return Response({'detail': 'Non sono state immesse le credenziali di autenticazione.'}, status=status.HTTP_401_UNAUTHORIZED)
+
         qs = self.filter_queryset(self.get_queryset())
         xlsx_bytes, filename = genera_excel_libro_soci(qs)
 

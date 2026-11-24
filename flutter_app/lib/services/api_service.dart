@@ -2253,8 +2253,30 @@ class ApiService {
     }
   }
 
-  String getSociExportUrl() {
-    return '$baseUrl/api/soci/export/';
+  String getSociExportUrl({
+    String? search,
+    String? stato,
+    String? categoria,
+    String? origine,
+  }) {
+    final params = <String>[];
+    if (search != null && search.trim().isNotEmpty) {
+      params.add('search=${Uri.encodeComponent(search.trim())}');
+    }
+    if (stato != null && stato.isNotEmpty && stato != 'tutti') {
+      params.add('stato=$stato');
+    }
+    if (categoria != null && categoria.isNotEmpty && categoria != 'tutti') {
+      params.add('categoria=$categoria');
+    }
+    if (origine != null && origine.isNotEmpty && origine != 'tutti') {
+      params.add('origine=$origine');
+    }
+    if (_token != null && _token!.isNotEmpty) {
+      params.add('token=$_token');
+    }
+    final q = params.isNotEmpty ? '?${params.join('&')}' : '';
+    return '$baseUrl/api/soci/export/$q';
   }
 
   Future<List<int>> downloadSociExportXls({

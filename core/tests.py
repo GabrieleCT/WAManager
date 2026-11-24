@@ -976,3 +976,13 @@ class LibroSociTests(TestCase):
         self.assertEqual(res['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         self.assertTrue(len(res.content) > 1000)
 
+    def test_export_xls_with_token_query_param(self):
+        """Test esportazione XLSX del Libro Soci via query param token per download da browser."""
+        from rest_framework.authtoken.models import Token
+        token, _ = Token.objects.get_or_create(user=self.user)
+        unauth_client = APIClient()
+        res = unauth_client.get(f'/api/soci/export/?token={token.key}')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.assertTrue(len(res.content) > 1000)
+

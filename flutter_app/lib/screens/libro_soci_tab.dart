@@ -68,24 +68,12 @@ class _LibroSociTabState extends State<LibroSociTab> {
 
   Future<void> _esportaXls() async {
     try {
-      final queryParams = <String>[];
-      if (_searchController.text.trim().isNotEmpty) {
-        queryParams.add('search=${Uri.encodeComponent(_searchController.text.trim())}');
-      }
-      if (_filtroStato.isNotEmpty && _filtroStato != 'tutti') {
-        queryParams.add('stato=$_filtroStato');
-      }
-      if (_filtroCategoria.isNotEmpty && _filtroCategoria != 'tutti') {
-        queryParams.add('categoria=$_filtroCategoria');
-      }
-      if (_filtroOrigine.isNotEmpty && _filtroOrigine != 'tutti') {
-        queryParams.add('origine=$_filtroOrigine');
-      }
-
-      var url = _api.getSociExportUrl();
-      if (queryParams.isNotEmpty) {
-        url += '?${queryParams.join('&')}';
-      }
+      final url = _api.getSociExportUrl(
+        search: _searchController.text,
+        stato: _filtroStato,
+        categoria: _filtroCategoria,
+        origine: _filtroOrigine,
+      );
 
       final uri = Uri.parse(url);
       final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
