@@ -19,7 +19,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
   List<Socio> _soci = [];
 
   final _searchController = TextEditingController();
-  String _filtroStato = 'attivi'; // 'attivi', 'cessati', 'tutti'
+  String _filtroStato = 'tutti'; // Default 'tutti' in modo che i soci cessati rimangano visibili nel registro con stato 'Cessato'
   String _filtroCategoria = 'tutti';
   String _filtroOrigine = 'tutti';
 
@@ -1032,9 +1032,9 @@ class _LibroSociTabState extends State<LibroSociTab> {
                     value: _filtroStato,
                     underline: const SizedBox(),
                     items: const [
+                      DropdownMenuItem(value: 'tutti', child: Text('Stato: Tutti')),
                       DropdownMenuItem(value: 'attivi', child: Text('Stato: Attivi')),
                       DropdownMenuItem(value: 'cessati', child: Text('Stato: Cessati')),
-                      DropdownMenuItem(value: 'tutti', child: Text('Stato: Tutti')),
                     ],
                     onChanged: (val) {
                       if (val != null) {
