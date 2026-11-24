@@ -810,14 +810,14 @@ class SocioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Socio
         fields = [
-            'id', 'numero_progressivo', 'numero_tessera', 'cognome', 'nome',
+            'id', 'numero_tessera', 'cognome', 'nome',
             'data_nascita', 'luogo_nascita', 'codice_fiscale', 'indirizzo_residenza',
             'telefono', 'email', 'data_iscrizione', 'categoria', 'categoria_display',
             'quota_associativa', 'attivo', 'data_cessazione', 'motivo_cessazione',
             'motivo_cessazione_display', 'origine', 'origine_display', 'allievo',
             'allievo_nome_completo', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'numero_progressivo', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_allievo_nome_completo(self, obj):
         if obj.allievo:

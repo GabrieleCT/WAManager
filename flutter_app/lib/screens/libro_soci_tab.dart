@@ -19,12 +19,19 @@ class _LibroSociTabState extends State<LibroSociTab> {
   bool _loading = false;
   bool _exportingXls = false;
   bool _exportingDrive = false;
+  bool _loadingDriveStatus = false;
+  Map<String, dynamic>? _driveStatus;
   List<Socio> _soci = [];
 
   final _searchController = TextEditingController();
   String _filtroStato = 'tutti'; // Default 'tutti' in modo che i soci cessati rimangano visibili nel registro con stato 'Cessato'
   String _filtroCategoria = 'tutti';
   String _filtroOrigine = 'tutti';
+
+  // Ordinamento: default per numero tessera crescente
+  int _sortColumnIndex = 0; // Colonna 'N. Tessera'
+  bool _sortAscending = true;
+  String _sortField = 'numero_tessera';
 
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'it_IT', symbol: '€');
@@ -33,6 +40,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
   void initState() {
     super.initState();
     _loadSoci();
+    _checkDriveStatus();
   }
 
   @override
@@ -41,14 +49,40 @@ class _LibroSociTabState extends State<LibroSociTab> {
     super.dispose();
   }
 
+  void _onSort(int columnIndex, String field, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _sortField = field;
+    });
+    _loadSoci();
+  }
+
+  Future<void> _checkDriveStatus() async {
+    setState(() => _loadingDriveStatus = true);
+    try {
+      final status = await _api.getSociDriveStatus();
+      if (mounted) {
+        setState(() {
+          _driveStatus = status;
+          _loadingDriveStatus = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingDriveStatus = false);
+    }
+  }
+
   Future<void> _loadSoci() async {
     setState(() => _loading = true);
     try {
+      final orderingParam = _sortAscending ? _sortField : '-$_sortField';
       final list = await _api.getSoci(
         search: _searchController.text,
         stato: _filtroStato,
         categoria: _filtroCategoria,
         origine: _filtroOrigine,
+        ordering: orderingParam,
       );
       if (mounted) {
         setState(() {
@@ -122,6 +156,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
         setState(() => _exportingDrive = false);
         if (res['success'] == true) {
           final webViewLink = res['webViewLink'] as String?;
+          _checkDriveStatus();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(res['message'] ?? 'Libro Soci esportato correttamente su Google Drive.'),
@@ -170,14 +205,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
             children: [
               CircleAvatar(
                 backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                child: Text(
-                  socio.numeroProgressivo != null ? '#${socio.numeroProgressivo}' : '#?',
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
+                child: Icon(Icons.person, color: Theme.of(context).primaryColor),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -618,7 +646,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                 children: [
                   const Icon(Icons.edit, color: Colors.blue),
                   const SizedBox(width: 8),
-                  Text('Modifica Socio #${socio.numeroProgressivo ?? socio.id}'),
+                  Text('Modifica Socio (${socio.numeroTessera})'),
                 ],
               ),
               content: SizedBox(
@@ -986,6 +1014,116 @@ class _LibroSociTabState extends State<LibroSociTab> {
 
   // ─── Main Build ───────────────────────────────────────────────────────────
 
+  Widget _buildDriveAlertBanner() {
+    if (_driveStatus == null || _driveStatus!['configured'] != true) {
+      return const SizedBox.shrink();
+    }
+
+    final status = _driveStatus!['status'] as String? ?? '';
+    if (status == 'AGGIORNATO') {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Libro Soci sincronizzato su Google Drive.',
+                style: TextStyle(color: Colors.green.shade900, fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            ),
+            if (_driveStatus!['webViewLink'] != null && (_driveStatus!['webViewLink'] as String).isNotEmpty)
+              TextButton.icon(
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Apri su Drive', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(foregroundColor: Colors.green.shade800),
+                onPressed: () => launchUrl(
+                  Uri.parse(_driveStatus!['webViewLink']),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    final isNonPresente = status == 'NON_PRESENTE';
+    final bgColor = isNonPresente ? Colors.orange.shade50 : Colors.amber.shade50;
+    final borderColor = isNonPresente ? Colors.orange.shade300 : Colors.amber.shade400;
+    final iconColor = isNonPresente ? Colors.orange.shade800 : Colors.amber.shade900;
+    final textColor = isNonPresente ? Colors.orange.shade900 : Colors.brown.shade900;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isNonPresente ? Icons.warning_amber_rounded : Icons.sync_problem_rounded,
+            color: iconColor,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isNonPresente
+                      ? 'Attenzione: Il file del Libro Soci non è presente su Google Drive.'
+                      : 'Attenzione: Il file del Libro Soci su Google Drive non è aggiornato rispetto alle modifiche nel sistema.',
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                if (!isNonPresente && _driveStatus!['drive_modified_time'] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Ultima versione su Drive: ${_formatDateStr(_driveStatus!['drive_modified_time'])}',
+                      style: TextStyle(color: textColor.withOpacity(0.8), fontSize: 11),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isNonPresente ? Colors.orange.shade700 : Colors.amber.shade800,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+            icon: _exportingDrive
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.cloud_upload, size: 16),
+            label: Text(
+              isNonPresente ? 'Carica su Drive' : 'Aggiorna su Drive',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+            onPressed: _exportingDrive ? null : _esportaGoogleDrive,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1125,13 +1263,19 @@ class _LibroSociTabState extends State<LibroSociTab> {
                   IconButton(
                     icon: const Icon(Icons.refresh, size: 20),
                     tooltip: 'Aggiorna elenco',
-                    onPressed: _loadSoci,
+                    onPressed: () {
+                      _loadSoci();
+                      _checkDriveStatus();
+                    },
                   ),
                 ],
               ),
             ],
           ),
         ),
+
+        // Drive Alert Banner
+        _buildDriveAlertBanner(),
 
         // Tabella dei Soci
         Expanded(
@@ -1156,30 +1300,40 @@ class _LibroSociTabState extends State<LibroSociTab> {
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
+                          sortColumnIndex: _sortColumnIndex,
+                          sortAscending: _sortAscending,
                           headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                          columns: const [
-                            DataColumn(label: Text('N. Prog.', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('N. Tessera', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Cognome', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Nome', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Codice Fiscale', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Residenza', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Categoria', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Data Iscrizione', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Quota', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Stato', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Origine', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Azioni', style: TextStyle(fontWeight: FontWeight.bold))),
+                          columns: [
+                            DataColumn(
+                              label: const Text('N. Tessera', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onSort: (idx, asc) => _onSort(idx, 'numero_tessera', asc),
+                            ),
+                            DataColumn(
+                              label: const Text('Cognome', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onSort: (idx, asc) => _onSort(idx, 'cognome', asc),
+                            ),
+                            DataColumn(
+                              label: const Text('Nome', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onSort: (idx, asc) => _onSort(idx, 'nome', asc),
+                            ),
+                            const DataColumn(label: Text('Codice Fiscale', style: TextStyle(fontWeight: FontWeight.bold))),
+                            const DataColumn(label: Text('Residenza', style: TextStyle(fontWeight: FontWeight.bold))),
+                            const DataColumn(label: Text('Categoria', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(
+                              label: const Text('Data Iscrizione', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onSort: (idx, asc) => _onSort(idx, 'data_iscrizione', asc),
+                            ),
+                            const DataColumn(label: Text('Quota', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(
+                              label: const Text('Stato', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onSort: (idx, asc) => _onSort(idx, 'attivo', asc),
+                            ),
+                            const DataColumn(label: Text('Origine', style: TextStyle(fontWeight: FontWeight.bold))),
+                            const DataColumn(label: Text('Azioni', style: TextStyle(fontWeight: FontWeight.bold))),
                           ],
                           rows: _soci.map((socio) {
                             return DataRow(
                               cells: [
-                                DataCell(
-                                  Text(
-                                    socio.numeroProgressivo != null ? '#${socio.numeroProgressivo}' : '-',
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                ),
                                 DataCell(Text(socio.numeroTessera)),
                                 DataCell(Text(socio.cognome)),
                                 DataCell(Text(socio.nome)),

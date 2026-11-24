@@ -931,13 +931,49 @@ class LibroSociTests(TestCase):
         self.assertEqual(del_res.status_code, 204)
         self.assertFalse(Socio.objects.filter(id=socio_id).exists())
 
-    def test_br003_numerazione_progressiva(self):
-        """BR-003: Numero progressivo univoco, crescente, mai riutilizzato."""
-        s1 = Socio.objects.create(numero_tessera='T1', cognome='A', nome='A', origine=OrigineSocio.MANUALE)
-        s2 = Socio.objects.create(numero_tessera='T2', cognome='B', nome='B', origine=OrigineSocio.MANUALE)
-        self.assertIsNotNone(s1.numero_progressivo)
-        self.assertIsNotNone(s2.numero_progressivo)
-        self.assertEqual(s2.numero_progressivo, s1.numero_progressivo + 1)
+    def test_ordinamento_per_numero_tessera(self):
+        """Punto 2: Ordinamento predefinito dei soci per numero tessera."""
+        Socio.objects.create(numero_tessera='TS-02', cognome='Zeta', nome='A', origine=OrigineSocio.MANUALE)
+        Socio.objects.create(numero_tessera='TS-01', cognome='Alpha', nome='B', origine=OrigineSocio.MANUALE)
+        res = self.client.get('/api/soci/')
+        self.assertEqual(res.status_code, 200)
+        items = res.json()
+        tessere = [s['numero_tessera'] for s in items if s['numero_tessera'].startswith('TS-')]
+        self.assertEqual(tessere, ['TS-01', 'TS-02'])
+
+    def test_sync_socio_to_allievo(self):
+        """Punto 4: Se vengono modificati i dati del socio, la modifica viene riportata pure sull'allievo."""
+        allievo = Allievo.objects.create(
+            nome='Luigi',
+            cognome='Bianchi',
+            tessera_associativa='TS200',
+            telefono='3331112233',
+            email='luigi@test.com'
+        )
+        socio = Socio.objects.get(allievo=allievo)
+
+        # Modifica tramite API PUT del socio
+        payload = {
+            'numero_tessera': 'TS200_NEW',
+            'cognome': 'Bianchi Verdi',
+            'nome': 'Luigi Mario',
+            'telefono': '3339998877',
+            'email': 'luigi.new@test.com',
+            'categoria': 'ORDINARIO',
+            'quota_associativa': '20.00',
+            'indirizzo_residenza': 'Via Garibaldi 5, Milano (MI)',
+        }
+        res = self.client.put(f'/api/soci/{socio.id}/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+
+        # Verifica sincronizzazione su allievo
+        allievo.refresh_from_db()
+        self.assertEqual(allievo.cognome, 'Bianchi Verdi')
+        self.assertEqual(allievo.nome, 'Luigi Mario')
+        self.assertEqual(allievo.telefono, '3339998877')
+        self.assertEqual(allievo.email, 'luigi.new@test.com')
+        self.assertEqual(allievo.tessera_associativa, 'TS200_NEW')
+        self.assertEqual(allievo.indirizzo_residenza, 'Via Garibaldi 5, Milano (MI)')
 
     def test_cessazione_socio(self):
         """Test cessazione socio."""

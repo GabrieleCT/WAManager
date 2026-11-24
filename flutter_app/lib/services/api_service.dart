@@ -2148,6 +2148,7 @@ class ApiService {
     String? stato,
     String? categoria,
     String? origine,
+    String? ordering,
   }) async {
     final queryParams = <String, String>{};
     if (search != null && search.trim().isNotEmpty) {
@@ -2161,6 +2162,9 @@ class ApiService {
     }
     if (origine != null && origine.isNotEmpty && origine != 'tutti') {
       queryParams['origine'] = origine;
+    }
+    if (ordering != null && ordering.isNotEmpty) {
+      queryParams['ordering'] = ordering;
     }
 
     final uri = Uri.parse('$baseUrl/api/soci/').replace(
@@ -2343,5 +2347,29 @@ class ApiService {
       return data;
     }
     return {'success': false, 'error': 'Risposta inattesa dal server'};
+  }
+
+  Future<Map<String, dynamic>> getSociDriveStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/soci/drive-status/'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      } else {
+        return {
+          'configured': false,
+          'status': 'ERRORE',
+          'message': 'Impossibile verificare lo stato di Google Drive (${response.statusCode})',
+        };
+      }
+    } catch (e) {
+      return {
+        'configured': false,
+        'status': 'ERRORE',
+        'message': 'Errore di connessione durante la verifica di Google Drive: $e',
+      };
+    }
   }
 }

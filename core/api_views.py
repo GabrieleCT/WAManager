@@ -4378,7 +4378,6 @@ def genera_excel_libro_soci(soci_qs):
     )
 
     headers = [
-        "Numero Progressivo",
         "Numero Tessera",
         "Cognome",
         "Nome",
@@ -4405,12 +4404,11 @@ def genera_excel_libro_soci(soci_qs):
         cell.font = header_font
         cell.alignment = header_alignment
 
-    for socio in soci_qs.order_by('numero_progressivo'):
+    for socio in soci_qs.order_by('numero_tessera'):
         stato_str = "Attivo" if socio.attivo else "Cessato"
         quota_val = float(socio.quota_associativa) if socio.quota_associativa is not None else 0.0
 
         row_data = [
-            socio.numero_progressivo,
             socio.numero_tessera,
             socio.cognome,
             socio.nome,
@@ -4435,9 +4433,9 @@ def genera_excel_libro_soci(soci_qs):
             cell = ws.cell(row=current_row, column=col_idx)
             cell.font = data_font
             cell.border = thin_border
-            if col_idx in [1, 5, 11, 14, 15]:
+            if col_idx in [4, 10, 13, 14]:
                 cell.alignment = center_align
-            elif col_idx == 13:
+            elif col_idx == 12:
                 cell.alignment = right_align
                 cell.number_format = '€ #,##0.00'
             else:
@@ -4463,12 +4461,12 @@ def genera_excel_libro_soci(soci_qs):
 
 
 class SocioViewSet(viewsets.ModelViewSet):
-    queryset = Socio.objects.all().order_by('numero_progressivo')
+    queryset = Socio.objects.all().order_by('numero_tessera')
     serializer_class = SocioSerializer
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['nome', 'cognome', 'codice_fiscale', 'numero_tessera']
-    ordering_fields = ['numero_progressivo', 'cognome', 'nome', 'data_iscrizione', 'attivo']
-    ordering = ['numero_progressivo']
+    ordering_fields = ['numero_tessera', 'cognome', 'nome', 'data_iscrizione', 'attivo']
+    ordering = ['numero_tessera']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -4638,4 +4636,93 @@ class SocioViewSet(viewsets.ModelViewSet):
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
+
+    @action(detail=False, methods=['get'], url_path='drive-status')
+    def drive_status(self, request):
+        """
+        Punto 5: Controlla lo stato del file Libro Soci su Google Drive:
+        - Verifica se Google Drive è configurato.
+        - Cerca il file Libro_Soci_*.xlsx nella cartella configurata.
+        - Se non presente: status = 'NON_PRESENTE'.
+        - Se presente: confronta la data di ultima modifica del file Drive (modifiedTime)
+          con l'ultima data di modifica dei record dei soci (Max('updated_at')).
+          Se modifiedTime < latest_socio_update: status = 'NON_AGGIORNATO'.
+          Altrimenti: status = 'AGGIORNATO'.
+        """
+        config = GoogleDriveConfig.get_instance()
+        if not config.is_configured:
+            return Response({
+                'configured': False,
+                'status': 'NON_CONFIGURATO',
+                'message': 'Google Drive non configurato.',
+            })
+
+        target_folder_id = config.folder_libro_soci_id or config.folder_id
+        if not target_folder_id:
+            return Response({
+                'configured': False,
+                'status': 'NON_CONFIGURATO',
+                'message': 'Nessuna cartella impostata per il Libro Soci in Google Drive.',
+            })
+
+        try:
+            drive_service = get_google_drive_service(config)
+            query = f"name contains 'Libro_Soci_' and '{target_folder_id}' in parents and trashed = false"
+            res = drive_service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name, modifiedTime, webViewLink)',
+                orderBy='modifiedTime desc',
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+
+            files = res.get('files', [])
+            if not files:
+                return Response({
+                    'configured': True,
+                    'status': 'NON_PRESENTE',
+                    'message': 'Nessun file del Libro Soci presente su Google Drive.',
+                    'last_drive_update': None,
+                    'webViewLink': None,
+                })
+
+            drive_file = files[0]
+            drive_mod_str = drive_file.get('modifiedTime')
+            drive_mod_dt = None
+            if drive_mod_str:
+                drive_mod_dt = datetime.datetime.fromisoformat(drive_mod_str.replace('Z', '+00:00'))
+
+            from django.db.models import Max
+            latest_socio_update = Socio.objects.aggregate(m=Max('updated_at'))['m']
+
+            is_obsolete = False
+            if latest_socio_update and drive_mod_dt:
+                is_obsolete = latest_socio_update > drive_mod_dt
+
+            status_str = 'NON_AGGIORNATO' if is_obsolete else 'AGGIORNATO'
+            message = (
+                'Il file del Libro Soci su Google Drive non è aggiornato rispetto alle ultime modifiche sul sistema.'
+                if is_obsolete else
+                'Il file su Google Drive è aggiornato.'
+            )
+
+            return Response({
+                'configured': True,
+                'status': status_str,
+                'message': message,
+                'filename': drive_file.get('name'),
+                'webViewLink': drive_file.get('webViewLink'),
+                'last_drive_update': drive_mod_dt.isoformat() if drive_mod_dt else None,
+                'last_system_update': latest_socio_update.isoformat() if latest_socio_update else None,
+            })
+        except Exception as e:
+            logger.exception("Errore recupero drive-status Libro Soci")
+            return Response({
+                'configured': True,
+                'status': 'ERRORE',
+                'message': f"Impossibile verificare lo stato di Google Drive: {str(e)}",
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 

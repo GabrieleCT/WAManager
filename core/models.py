@@ -1327,14 +1327,6 @@ class OrigineSocio(models.TextChoices):
 
 
 class Socio(models.Model):
-    numero_progressivo = models.PositiveIntegerField(
-        unique=True,
-        null=True,
-        blank=True,
-        db_index=True,
-        verbose_name="Numero Progressivo",
-        help_text="Numero progressivo incrementale univoco nel Libro Soci"
-    )
     numero_tessera = models.CharField(
         max_length=50,
         unique=True,
@@ -1404,7 +1396,7 @@ class Socio(models.Model):
         db_table = 'soci'
         verbose_name = "Socio"
         verbose_name_plural = "Libro Soci"
-        ordering = ['numero_progressivo']
+        ordering = ['numero_tessera']
         indexes = [
             models.Index(fields=['cognome'], name='idx_socio_cognome'),
             models.Index(fields=['codice_fiscale'], name='idx_socio_cf'),
@@ -1413,24 +1405,7 @@ class Socio(models.Model):
         ]
 
     def __str__(self):
-        return f"#{self.numero_progressivo or 'N/A'} - {self.cognome} {self.nome} ({self.numero_tessera})"
-
-    def save(self, *args, **kwargs):
-        if self.numero_progressivo is None:
-            from django.db import transaction
-            from django.db.models import Max
-            with transaction.atomic():
-                max_num = Socio.objects.select_for_update().aggregate(m=Max('numero_progressivo'))['m'] or 0
-                self.numero_progressivo = max_num + 1
-                super().save(*args, **kwargs)
-        else:
-            super().save(*args, **kwargs)
-
-    @classmethod
-    def get_next_numero_progressivo(cls):
-        from django.db.models import Max
-        max_num = cls.objects.aggregate(m=Max('numero_progressivo'))['m'] or 0
-        return max_num + 1
+        return f"{self.cognome} {self.nome} ({self.numero_tessera})"
 
 
 @receiver(post_save, sender=Allievo)
@@ -1440,6 +1415,9 @@ def sync_allievo_to_socio(sender, instance, created, **kwargs):
     tessera_associativa devono essere automaticamente considerati soci (origine = STUDENTE).
     I dati anagrafici vengono sincronizzati automaticamente.
     """
+    if getattr(instance, '_in_sync', False):
+        return
+
     tessera = (instance.tessera_associativa or '').strip()
     if not tessera:
         # Se la tessera associativa non è valorizzata, non deve essere registrato un socio STUDENTE
@@ -1464,20 +1442,23 @@ def sync_allievo_to_socio(sender, instance, created, **kwargs):
         socio = Socio.objects.filter(numero_tessera=tessera).first()
 
     if socio:
-        # Aggiorna anagrafica sincronizzata
-        socio.allievo = instance
-        socio.numero_tessera = tessera
-        socio.cognome = instance.cognome.strip()
-        socio.nome = instance.nome.strip()
-        socio.data_nascita = instance.data_nascita
-        socio.luogo_nascita = luogo_nasc
-        socio.codice_fiscale = instance.codice_fiscale.strip().upper()
-        socio.indirizzo_residenza = indirizzo_res
-        socio.telefono = instance.telefono.strip()
-        socio.email = instance.email.strip().lower()
-        if instance.data_ammissione and not socio.data_iscrizione:
-            socio.data_iscrizione = instance.data_ammissione
-        socio.save()
+        socio._in_sync = True
+        try:
+            socio.allievo = instance
+            socio.numero_tessera = tessera
+            socio.cognome = instance.cognome.strip()
+            socio.nome = instance.nome.strip()
+            socio.data_nascita = instance.data_nascita
+            socio.luogo_nascita = luogo_nasc
+            socio.codice_fiscale = instance.codice_fiscale.strip().upper()
+            socio.indirizzo_residenza = indirizzo_res
+            socio.telefono = instance.telefono.strip()
+            socio.email = instance.email.strip().lower()
+            if instance.data_ammissione and not socio.data_iscrizione:
+                socio.data_iscrizione = instance.data_ammissione
+            socio.save()
+        finally:
+            socio._in_sync = False
     else:
         Socio.objects.create(
             numero_tessera=tessera,
@@ -1496,4 +1477,51 @@ def sync_allievo_to_socio(sender, instance, created, **kwargs):
             origine=OrigineSocio.STUDENTE,
             allievo=instance
         )
+
+
+@receiver(post_save, sender=Socio)
+def sync_socio_to_allievo(sender, instance, created, **kwargs):
+    """
+    Punto 4: Se vengono modificati i dati del socio e questo è collegato a un allievo,
+    la modifica viene riportata pure sull'allievo.
+    """
+    if getattr(instance, '_in_sync', False):
+        return
+    if not instance.allievo:
+        return
+
+    allievo = instance.allievo
+    allievo._in_sync = True
+    try:
+        updated = False
+        if instance.cognome and allievo.cognome != instance.cognome.strip():
+            allievo.cognome = instance.cognome.strip()
+            updated = True
+        if instance.nome and allievo.nome != instance.nome.strip():
+            allievo.nome = instance.nome.strip()
+            updated = True
+        if instance.codice_fiscale is not None and allievo.codice_fiscale != instance.codice_fiscale.strip().upper():
+            allievo.codice_fiscale = instance.codice_fiscale.strip().upper()
+            updated = True
+        if instance.numero_tessera and allievo.tessera_associativa != instance.numero_tessera.strip():
+            allievo.tessera_associativa = instance.numero_tessera.strip()
+            updated = True
+        if instance.data_nascita != allievo.data_nascita:
+            allievo.data_nascita = instance.data_nascita
+            updated = True
+        if instance.telefono is not None and allievo.telefono != instance.telefono.strip():
+            allievo.telefono = instance.telefono.strip()
+            updated = True
+        if instance.email is not None and allievo.email != instance.email.strip().lower():
+            allievo.email = instance.email.strip().lower()
+            updated = True
+        if instance.indirizzo_residenza:
+            if allievo.indirizzo_residenza != instance.indirizzo_residenza.strip():
+                allievo.indirizzo_residenza = instance.indirizzo_residenza.strip()
+                updated = True
+        if updated:
+            allievo.save()
+    finally:
+        allievo._in_sync = False
+
 

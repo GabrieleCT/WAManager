@@ -1891,7 +1891,6 @@ class GoogleContactsSyncLog {
 
 class Socio {
   final int id;
-  final int? numeroProgressivo;
   final String numeroTessera;
   final String cognome;
   final String nome;
@@ -1918,7 +1917,6 @@ class Socio {
 
   Socio({
     required this.id,
-    this.numeroProgressivo,
     required this.numeroTessera,
     required this.cognome,
     required this.nome,
@@ -1951,7 +1949,6 @@ class Socio {
   factory Socio.fromJson(Map<String, dynamic> json) {
     return Socio(
       id: (json['id'] as num).toInt(),
-      numeroProgressivo: (json['numero_progressivo'] as num?)?.toInt(),
       numeroTessera: json['numero_tessera'] ?? '',
       cognome: json['cognome'] ?? '',
       nome: json['nome'] ?? '',
