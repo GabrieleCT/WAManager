@@ -15,7 +15,7 @@ echo "Avvio Backend (Django + DB SQLite + QCluster + WA Gateway)..."
 Start-Process powershell -ArgumentList "-NoExit -Command `"cd '$PWD\wa-gateway'; `$env:NODE_TLS_REJECT_UNAUTHORIZED=0; npm start`"" -WindowStyle Normal
 
 # 2. Avvia Django Web Server
-Start-Process powershell -ArgumentList "-NoExit -Command `"cd '$PWD'; .venv\Scripts\Activate; python manage.py runserver 0.0.0.0:50082`"" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit -Command `"cd '$PWD'; .venv\Scripts\Activate; python manage.py runserver 0.0.0.0:8000`"" -WindowStyle Normal
 
 # 3. Avvia Django Q-Cluster (Worker)
 Start-Process powershell -ArgumentList "-NoExit -Command `"cd '$PWD'; .venv\Scripts\Activate; python manage.py qcluster`"" -WindowStyle Normal
@@ -30,6 +30,6 @@ Start-Process powershell -ArgumentList "-NoExit -Command `"cd '$PWD\flutter_app'
 echo "=========================================================="
 echo "Servizi avviati in finestre separate!"
 echo "- Gateway Baileys in ascolto sulla porta 4002"
-echo "- Backend API in ascolto su http://localhost:50082"
+echo "- Backend API in ascolto su http://localhost:8000"
 echo "- Frontend Flutter Desktop avviato"
 echo "=========================================================="
