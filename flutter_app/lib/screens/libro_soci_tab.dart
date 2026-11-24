@@ -1,8 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../utils/file_download_helper.dart';
 
 class LibroSociTab extends StatefulWidget {
   const LibroSociTab({super.key});
@@ -15,6 +17,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
   final ApiService _api = ApiService();
 
   bool _loading = false;
+  bool _exportingXls = false;
   bool _exportingDrive = false;
   List<Socio> _soci = [];
 
@@ -67,23 +70,24 @@ class _LibroSociTabState extends State<LibroSociTab> {
   }
 
   Future<void> _esportaXls() async {
+    setState(() => _exportingXls = true);
     try {
-      final url = _api.getSociExportUrl(
+      final bytes = await _api.downloadSociExportXls(
         search: _searchController.text,
         stato: _filtroStato,
         categoria: _filtroCategoria,
         origine: _filtroOrigine,
       );
 
-      final uri = Uri.parse(url);
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        await launchUrl(uri);
-      }
+      final dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
+      final filename = 'Libro_Soci_$dateStr.xlsx';
+
+      await saveFileBytes(Uint8List.fromList(bytes), filename);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Download del Libro Soci (XLSX) avviato.'),
+            content: Text('File $filename scaricato con successo.'),
             backgroundColor: Colors.green.shade800,
           ),
         );
@@ -96,6 +100,10 @@ class _LibroSociTabState extends State<LibroSociTab> {
             backgroundColor: Colors.red.shade800,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportingXls = false);
       }
     }
   }
@@ -1080,9 +1088,11 @@ class _LibroSociTabState extends State<LibroSociTab> {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
-                    icon: const Icon(Icons.table_chart),
+                    icon: _exportingXls
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.table_chart),
                     label: const Text('Esporta XLS'),
-                    onPressed: _esportaXls,
+                    onPressed: _exportingXls ? null : _esportaXls,
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
