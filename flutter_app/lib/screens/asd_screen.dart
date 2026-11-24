@@ -532,6 +532,8 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           labelColor: Theme.of(context).primaryColor,
           unselectedLabelColor: Colors.grey.shade700,
           indicatorColor: Theme.of(context).primaryColor,
