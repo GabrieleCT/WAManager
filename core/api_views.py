@@ -4385,7 +4385,7 @@ def genera_excel_libro_soci(soci_qs):
         "Data Nascita",
         "Luogo Nascita",
         "Codice Fiscale",
-        "Indirizzo",
+        "Residenza",
         "Telefono",
         "Email",
         "Data Iscrizione",
@@ -4393,8 +4393,7 @@ def genera_excel_libro_soci(soci_qs):
         "Quota Associativa",
         "Stato",
         "Data Cessazione",
-        "Motivo Cessazione",
-        "Origine"
+        "Motivo Cessazione"
     ]
 
     ws.append(headers)
@@ -4408,7 +4407,6 @@ def genera_excel_libro_soci(soci_qs):
 
     for socio in soci_qs.order_by('numero_progressivo'):
         stato_str = "Attivo" if socio.attivo else "Cessato"
-        origine_str = "Anagrafica Allievo" if socio.origine == 'STUDENTE' else "Inserimento Manuale"
         quota_val = float(socio.quota_associativa) if socio.quota_associativa is not None else 0.0
 
         row_data = [
@@ -4427,8 +4425,7 @@ def genera_excel_libro_soci(soci_qs):
             quota_val,
             stato_str,
             socio.data_cessazione.strftime('%d/%m/%Y') if socio.data_cessazione else '',
-            socio.get_motivo_cessazione_display() if socio.motivo_cessazione else '',
-            origine_str
+            socio.get_motivo_cessazione_display() if socio.motivo_cessazione else ''
         ]
         ws.append(row_data)
         current_row = ws.max_row

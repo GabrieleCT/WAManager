@@ -1163,6 +1163,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                             DataColumn(label: Text('Cognome', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Nome', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Codice Fiscale', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Residenza', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Categoria', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Data Iscrizione', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Quota', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -1183,6 +1184,13 @@ class _LibroSociTabState extends State<LibroSociTab> {
                                 DataCell(Text(socio.cognome)),
                                 DataCell(Text(socio.nome)),
                                 DataCell(Text(socio.codiceFiscale ?? '-')),
+                                DataCell(
+                                  Text(
+                                    socio.indirizzoResidenza?.isNotEmpty == true
+                                        ? socio.indirizzoResidenza!
+                                        : '-',
+                                  ),
+                                ),
                                 DataCell(Text(socio.categoriaDisplay)),
                                 DataCell(Text(_formatDateStr(socio.dataIscrizione))),
                                 DataCell(Text(_currencyFormat.format(socio.quotaAssociativa))),

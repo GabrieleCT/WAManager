@@ -986,3 +986,22 @@ class LibroSociTests(TestCase):
         self.assertEqual(res['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         self.assertTrue(len(res.content) > 1000)
 
+    def test_export_xls_columns(self):
+        """Test colonne Excel del Libro Soci: include Residenza ed esclude Origine."""
+        import openpyxl
+        import io
+        Socio.objects.create(
+            numero_tessera='T_COL',
+            cognome='ColTest',
+            nome='Nome',
+            indirizzo_residenza='Via Dante 10, Roma (RM)',
+            origine=OrigineSocio.MANUALE
+        )
+        res = self.client.get('/api/soci/export/')
+        self.assertEqual(res.status_code, 200)
+        wb = openpyxl.load_workbook(io.BytesIO(res.content))
+        ws = wb.active
+        headers = [cell.value for cell in ws[1]]
+        self.assertIn("Residenza", headers)
+        self.assertNotIn("Origine", headers)
+
