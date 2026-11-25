@@ -1405,6 +1405,10 @@ class Socio(models.Model):
             models.Index(fields=['attivo'], name='idx_socio_attivo'),
         ]
 
+    @property
+    def nome_completo(self):
+        return f"{self.cognome} {self.nome}".strip()
+
     def __str__(self):
         return f"{self.cognome} {self.nome} ({self.numero_tessera})"
 

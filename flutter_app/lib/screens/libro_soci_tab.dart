@@ -1170,6 +1170,35 @@ class _LibroSociTabState extends State<LibroSociTab> {
     }
 
     final status = _driveStatus!['status'] as String? ?? '';
+    if (status == 'ERRORE') {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _driveStatus!['message'] as String? ?? 'Errore nel controllo di Google Drive',
+                style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              onPressed: _checkDriveStatus,
+              tooltip: 'Riprova',
+            ),
+          ],
+        ),
+      );
+    }
+
     if (status == 'AGGIORNATO') {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
