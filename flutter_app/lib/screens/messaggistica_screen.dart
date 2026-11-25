@@ -17,7 +17,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
   bool _loading = true;
   bool _savingDaemon = false;
   bool _executingDaemon = false;
-  bool _sendingManual = false;
   bool _savingSollecito = false;
   bool _savingJolly = false;
   bool _savingModuloTesseramento = false;
@@ -47,17 +46,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
   bool _isPoll = true;
   bool _daemonActive = true;
 
-  // 2. Invio Manuale
-  List<Corso> _corsi = [];
-  final Set<String> _selectedCorsoIds = {};
-  String _filtroRicerca = '';
-  bool _usaTestoPredefinito = true;
-  final TextEditingController _testoManualeCtl = TextEditingController();
-  bool _manualIsPoll = true;
-  final TextEditingController _manualOpt1Ctl = TextEditingController(text: 'Ci sono! 🕺💃');
-  final TextEditingController _manualOpt2Ctl = TextEditingController(text: 'Non ci sono 🚫');
-
-  // 3. Configurazione Sollecito
+  // Configurazione Sollecito
   bool _sollecitoAttivo = false;
   TimeOfDay _sollecitoTime = const TimeOfDay(hour: 16, minute: 0);
   final TextEditingController _testoSollecitoCtl = TextEditingController();
@@ -84,9 +73,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     _testoDaemonCtl.dispose();
     _pollOpt1Ctl.dispose();
     _pollOpt2Ctl.dispose();
-    _testoManualeCtl.dispose();
-    _manualOpt1Ctl.dispose();
-    _manualOpt2Ctl.dispose();
     _testoSollecitoCtl.dispose();
     _testoJollyCtl.dispose();
     _testoModuloTesseramentoCtl.dispose();
@@ -102,7 +88,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
         _asdConfig = await _api.getConfigurazioneASD();
       } catch (_) {}
       final config = await _api.getDaemonConfig();
-      final corsi = await _api.getCorsi();
 
       if (config != null) {
         // Parsing orario HH:MM demone
@@ -154,25 +139,15 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
         if (config.istruzioniPagamentoTesto.isNotEmpty) {
           _testoIstruzioniPagamentoCtl.text = config.istruzioniPagamentoTesto;
         }
-
-        if (_testoManualeCtl.text.isEmpty) {
-          _testoManualeCtl.text = config.testo;
-        }
       } else {
         _testoDaemonCtl.text =
             "Buongiorno ragazzi! 🕺💃 Vi ricordiamo che oggi c'è lezione per il corso {corso} alle {orario}.\n"
             "Chi di voi sarà presente stasera? Rispondete al sondaggio per confermare la vostra presenza!";
-        _testoManualeCtl.text = _testoDaemonCtl.text;
         _testoSollecitoCtl.text = "Ciao {nickname}, ci sei stasera al corso?";
         _testoJollyCtl.text = 'Ciao {nickname}! Abbiamo bisogno del tuo aiuto come Jolly per la lezione. Fammi sapere se sei disponibile! 💃🕺';
         _testoModuloTesseramentoCtl.text = "Gentile {nickname}, in allegato ti inviamo il modulo per la richiesta o il rinnovo del tesseramento all'ASD TantoTango da compilare e firmare. A presto!";
         _testoRicevutaCtl.text = 'Gentile {nickname}, in allegato la ricevuta {numero} del {data} di € {importo} per "{causale}".';
         _testoIstruzioniPagamentoCtl.text = "Ciao {nickname}, per effettuare il pagamento della quota a favore di {nome_asd}, puoi effettuare un bonifico alle seguenti coordinate bancarie:\n\nIBAN: {iban}\nIntestato a: {nome_asd}\nCausale: Quota corso {nickname}\n\nGrazie e a presto! 💃🕺";
-      }
-
-      _corsi = corsi;
-      if (_selectedCorsoIds.isEmpty && _corsi.isNotEmpty) {
-        _selectedCorsoIds.addAll(_corsi.map((c) => c.id));
       }
     } catch (e) {
       if (mounted) {
@@ -414,144 +389,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     }
   }
 
-  Future<void> _inviaSondaggioManuale() async {
-    if (_selectedCorsoIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona almeno un corso a cui inviare il sondaggio.')),
-      );
-      return;
-    }
-
-    final testoEffettivo = _usaTestoPredefinito ? _testoDaemonCtl.text.trim() : _testoManualeCtl.text.trim();
-    if (testoEffettivo.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Il testo del sondaggio non può essere vuoto.')),
-      );
-      return;
-    }
-
-    final isPoll = _usaTestoPredefinito ? _isPoll : _manualIsPoll;
-    List<String>? opzioni;
-    if (isPoll) {
-      final o1 = (_usaTestoPredefinito ? _pollOpt1Ctl.text : _manualOpt1Ctl.text).trim();
-      final o2 = (_usaTestoPredefinito ? _pollOpt2Ctl.text : _manualOpt2Ctl.text).trim();
-      if (o1.isEmpty || o2.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Le opzioni del sondaggio non possono essere vuote.')),
-        );
-        return;
-      }
-      opzioni = [o1, o2];
-    }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Conferma Invio Manuale'),
-        content: Text(
-          'Stai per inviare ${isPoll ? "un sondaggio" : "un messaggio"} WhatsApp a ${_selectedCorsoIds.length} cors'
-          '${_selectedCorsoIds.length == 1 ? "o" : "i"}.\n\n'
-          'I messaggi verranno inviati direttamente ai rispettivi gruppi WhatsApp configurati.\n'
-          'Vuoi procedere?',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.send),
-            label: const Text('Conferma e Invia'),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() => _sendingManual = true);
-
-    final res = await _api.inviaSondaggioManuale(
-      _selectedCorsoIds.toList(),
-      testo: testoEffettivo,
-      isPoll: isPoll,
-      pollOpzioni: opzioni,
-    );
-
-    setState(() => _sendingManual = false);
-
-    if (mounted) {
-      if (res['success'] == true) {
-        final inviati = res['inviati_con_successo'] ?? 0;
-        final totale = res['totale_corsi'] ?? 0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sondaggi inviati con successo a $inviati su $totale corsi!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _mostraDialogRisultati('Esito Invio Sondaggi', res['dettagli'] ?? []);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Errore durante l\'invio: ${res['error']}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  void _mostraDialogRisultati(String titolo, List<dynamic> dettagli) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(titolo),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: dettagli.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final item = dettagli[i];
-                    final bool success = item['success'] == true;
-                    return ListTile(
-                      dense: true,
-                      leading: Icon(
-                        success ? Icons.check_circle : Icons.error,
-                        color: success ? Colors.green : Colors.red,
-                      ),
-                      title: Text(
-                        '${item['scuola_nome'] != null && item['scuola_nome'].toString().isNotEmpty ? "${item['scuola_nome']} - " : ""}${item['corso_nome'] ?? ""}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        success
-                            ? 'Inviato al gruppo: ${item['gruppo_whatsapp']}'
-                            : 'Errore: ${item['error']}',
-                        style: TextStyle(color: success ? Colors.green.shade700 : Colors.red.shade700),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Chiudi'),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _renderAnteprima(String template) {
     return template
         .replaceAll('{corso}', 'Tango Argentino Intermedio')
@@ -570,8 +407,8 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
     }
 
     return DefaultTabController(
-      initialIndex: widget.initialTab.clamp(0, 7),
-      length: 8,
+      initialIndex: widget.initialTab.clamp(0, 6),
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Messaggistica'),
@@ -581,10 +418,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
               Tab(
                 icon: Icon(Icons.schedule_send),
                 text: 'Configurazione Demone Automatico',
-              ),
-              Tab(
-                icon: Icon(Icons.send_rounded),
-                text: 'Invio Manuale Sondaggio',
               ),
               Tab(
                 icon: Icon(Icons.notification_important_outlined),
@@ -623,7 +456,6 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
         body: TabBarView(
           children: [
             _buildTabDemone(),
-            _buildTabInvioManuale(),
             _buildTabSollecito(),
             _buildTabJolly(),
             _buildTabModuloTesseramento(),
@@ -1050,324 +882,7 @@ class _MessaggisticaScreenState extends State<MessaggisticaScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // TAB 2: INVIO MANUALE SONDAGGIO
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildTabInvioManuale() {
-    final query = _filtroRicerca.toLowerCase().trim();
-    final corsiFiltrati = _corsi.where((c) {
-      final sNome = c.scuolaNome.toLowerCase();
-      final cNome = '${c.livelloDisplay} (${c.giornoSettimanaDisplay} ${c.orario})'.toLowerCase();
-      return query.isEmpty || sNome.contains(query) || cNome.contains(query);
-    }).toList();
-
-    return Row(
-      children: [
-        // PANNELLO SINISTRO: LISTA CORSI
-        SizedBox(
-          width: 380,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                color: Colors.grey.shade100,
-                child: Column(
-                  children: [
-                    TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Cerca per scuola o corso...',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      onChanged: (v) => setState(() => _filtroRicerca = v),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${_selectedCorsoIds.length} di ${_corsi.length} selezionati',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        Row(
-                          children: [
-                            TextButton(
-                              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                              onPressed: () => setState(() => _selectedCorsoIds.addAll(_corsi.map((c) => c.id))),
-                              child: const Text('Tutti', style: TextStyle(fontSize: 12)),
-                            ),
-                            TextButton(
-                              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                              onPressed: () => setState(() => _selectedCorsoIds.clear()),
-                              child: const Text('Nessuno', style: TextStyle(fontSize: 12)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: corsiFiltrati.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final c = corsiFiltrati[i];
-                    final isChecked = _selectedCorsoIds.contains(c.id);
-                    final hasWa = c.gruppoWhatsapp.isNotEmpty;
-
-                    return CheckboxListTile(
-                      value: isChecked,
-                      dense: true,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(
-                        '${c.scuolaNome.isNotEmpty ? "${c.scuolaNome} - " : ""}${c.livelloDisplay}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${c.giornoSettimanaDisplay} ${c.orario}', style: const TextStyle(fontSize: 12)),
-                          if (!hasWa)
-                            const Text(
-                              '⚠️ Gruppo WhatsApp non impostato',
-                              style: TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w600),
-                            ),
-                        ],
-                      ),
-                      secondary: hasWa
-                          ? const Icon(Icons.chat, color: Colors.green, size: 20)
-                          : const Icon(Icons.chat_bubble_outline, color: Colors.grey, size: 20),
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selectedCorsoIds.add(c.id);
-                          } else {
-                            _selectedCorsoIds.remove(c.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        const VerticalDivider(width: 1, thickness: 1),
-
-        // PANNELLO DESTRO: CONFIGURAZIONE INVIO MANUALE
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 700),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Card(
-                      color: Colors.green.shade50,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.green.shade200),
-                      ),
-                      elevation: 0,
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(Icons.send_rounded, color: Colors.green, size: 36),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Invio Manuale Sondaggio Estemporaneo',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Seleziona i corsi dalla lista a sinistra e invia subito il sondaggio/messaggio ai rispettivi gruppi WhatsApp. '
-                                    'Puoi utilizzare il testo predefinito del demone o personalizzarlo per questo singolo invio.',
-                                    style: TextStyle(fontSize: 13, height: 1.3),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Toggle: Testo predefinito vs Personalizzato
-                    SwitchListTile(
-                      title: const Text('Usa configurazione predefinita del demone', style: TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: const Text('Se disattivato, puoi personalizzare il testo e le opzioni solo per questo invio'),
-                      value: _usaTestoPredefinito,
-                      onChanged: (v) => setState(() => _usaTestoPredefinito = v),
-                    ),
-                    const Divider(height: 32),
-
-                    if (!_usaTestoPredefinito) ...[
-                      // Modalità: Sondaggio vs Testo semplice
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RadioListTile<bool>(
-                              title: const Text('Sondaggio WhatsApp'),
-                              value: true,
-                              groupValue: _manualIsPoll,
-                              onChanged: (v) => setState(() => _manualIsPoll = v!),
-                            ),
-                          ),
-                          Expanded(
-                            child: RadioListTile<bool>(
-                              title: const Text('Messaggio di Testo'),
-                              value: false,
-                              groupValue: _manualIsPoll,
-                              onChanged: (v) => setState(() => _manualIsPoll = v!),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _testoManualeCtl,
-                        maxLines: 4,
-                        decoration: InputDecoration(
-                          labelText: 'Testo del messaggio da inviare:',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.add, size: 14),
-                            label: const Text('{corso}'),
-                            onPressed: () => _inserisciTagNelController(_testoManualeCtl, '{corso}'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.add, size: 14),
-                            label: const Text('{orario}'),
-                            onPressed: () => _inserisciTagNelController(_testoManualeCtl, '{orario}'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.add, size: 14),
-                            label: const Text('{data}'),
-                            onPressed: () => _inserisciTagNelController(_testoManualeCtl, '{data}'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.add, size: 14),
-                            label: const Text('{scuola}'),
-                            onPressed: () => _inserisciTagNelController(_testoManualeCtl, '{scuola}'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.add, size: 14),
-                            label: const Text('{argomento}'),
-                            onPressed: () => _inserisciTagNelController(_testoManualeCtl, '{argomento}'),
-                          ),
-                        ],
-                      ),
-                      if (_manualIsPoll) ...[
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _manualOpt1Ctl,
-                                decoration: const InputDecoration(labelText: 'Opzione 1 (Presenza)'),
-                                onChanged: (_) => setState(() {}),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: TextField(
-                                controller: _manualOpt2Ctl,
-                                decoration: const InputDecoration(labelText: 'Opzione 2 (Assenza)'),
-                                onChanged: (_) => setState(() {}),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                    ],
-
-                    // Anteprima Box
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCF8C6).withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.green.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.preview, size: 16, color: Colors.green),
-                              SizedBox(width: 6),
-                              Text('Anteprima:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _renderAnteprima(_usaTestoPredefinito ? _testoDaemonCtl.text : _testoManualeCtl.text),
-                            style: const TextStyle(fontSize: 14, height: 1.3),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-
-                    ElevatedButton.icon(
-                      icon: _sendingManual
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.send_rounded, size: 22),
-                      label: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text(
-                          _sendingManual
-                              ? 'Invio in corso a ${_selectedCorsoIds.length} corsi...'
-                              : 'Invia Sondaggio a ${_selectedCorsoIds.length} Corsi',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        foregroundColor: Colors.white,
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      onPressed: (_sendingManual || _selectedCorsoIds.isEmpty) ? null : _inviaSondaggioManuale,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // TAB 3: CONFIGURAZIONE MESSAGGIO DI SOLLECITO
+  // TAB 2: CONFIGURAZIONE MESSAGGIO DI SOLLECITO
   // ─────────────────────────────────────────────────────────────
   Widget _buildTabSollecito() {
     return SingleChildScrollView(
