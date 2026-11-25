@@ -3,6 +3,7 @@ import re
 import datetime
 from decimal import Decimal
 from django.db import models
+from django.db.models.functions import Length
 from django.db.models.signals import pre_delete, pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -1396,7 +1397,7 @@ class Socio(models.Model):
         db_table = 'soci'
         verbose_name = "Socio"
         verbose_name_plural = "Libro Soci"
-        ordering = ['numero_tessera']
+        ordering = [Length('numero_tessera'), 'numero_tessera']
         indexes = [
             models.Index(fields=['cognome'], name='idx_socio_cognome'),
             models.Index(fields=['codice_fiscale'], name='idx_socio_cf'),

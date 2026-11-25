@@ -541,10 +541,10 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
           labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
           tabs: const [
+            Tab(icon: Icon(Icons.menu_book), text: 'Libro Soci'),
             Tab(icon: Icon(Icons.account_balance), text: 'Dati Associazione (ASD)'),
             Tab(icon: Icon(Icons.groups_rounded), text: 'Direttivo & Firme'),
             Tab(icon: Icon(Icons.description_outlined), text: 'Genera Verbale Rendiconto'),
-            Tab(icon: Icon(Icons.menu_book), text: 'Libro Soci'),
           ],
         ),
       ),
@@ -562,10 +562,10 @@ class _AsdScreenState extends State<AsdScreen> with SingleTickerProviderStateMix
           : TabBarView(
               controller: _tabController,
               children: [
+                const LibroSociTab(),
                 _buildTabDatiAsd(),
                 _buildTabDirettivo(),
                 const VerbaleRendicontoTab(),
-                const LibroSociTab(),
               ],
             ),
     );

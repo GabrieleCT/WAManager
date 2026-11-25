@@ -932,14 +932,39 @@ class LibroSociTests(TestCase):
         self.assertFalse(Socio.objects.filter(id=socio_id).exists())
 
     def test_ordinamento_per_numero_tessera(self):
-        """Punto 2: Ordinamento predefinito dei soci per numero tessera."""
-        Socio.objects.create(numero_tessera='TS-02', cognome='Zeta', nome='A', origine=OrigineSocio.MANUALE)
-        Socio.objects.create(numero_tessera='TS-01', cognome='Alpha', nome='B', origine=OrigineSocio.MANUALE)
-        res = self.client.get('/api/soci/')
+        """Punto 2: Ordinamento numerico predefinito dei soci per numero tessera."""
+        Socio.objects.create(numero_tessera='10', cognome='Dieci', nome='A', origine=OrigineSocio.MANUALE)
+        Socio.objects.create(numero_tessera='2', cognome='Due', nome='B', origine=OrigineSocio.MANUALE)
+        Socio.objects.create(numero_tessera='1', cognome='Uno', nome='C', origine=OrigineSocio.MANUALE)
+        res = self.client.get('/api/soci/?ordering=numero_tessera')
         self.assertEqual(res.status_code, 200)
         items = res.json()
-        tessere = [s['numero_tessera'] for s in items if s['numero_tessera'].startswith('TS-')]
-        self.assertEqual(tessere, ['TS-01', 'TS-02'])
+        numeric_tessere = [s['numero_tessera'] for s in items if s['numero_tessera'] in ['1', '2', '10']]
+        self.assertEqual(numeric_tessere, ['1', '2', '10'])
+
+        # Ordinamento decrescente
+        res_desc = self.client.get('/api/soci/?ordering=-numero_tessera')
+        self.assertEqual(res_desc.status_code, 200)
+        items_desc = res_desc.json()
+        numeric_desc = [s['numero_tessera'] for s in items_desc if s['numero_tessera'] in ['1', '2', '10']]
+        self.assertEqual(numeric_desc, ['10', '2', '10'][:1] + ['2', '1'])
+
+    def test_azzeramento_quota_associativa(self):
+        """Punto 4: Azzeramento quota associativa salvato a 0.00."""
+        socio = Socio.objects.create(
+            numero_tessera='999', cognome='Test', nome='Quota', quota_associativa=Decimal('20.00'), origine=OrigineSocio.MANUALE
+        )
+        # Azzeramento con 0.00
+        res = self.client.patch(f'/api/soci/{socio.id}/', {'quota_associativa': 0.0}, format='json')
+        self.assertEqual(res.status_code, 200)
+        socio.refresh_from_db()
+        self.assertEqual(socio.quota_associativa, Decimal('0.00'))
+
+        # Azzeramento con null
+        res2 = self.client.patch(f'/api/soci/{socio.id}/', {'quota_associativa': None}, format='json')
+        self.assertEqual(res2.status_code, 200)
+        socio.refresh_from_db()
+        self.assertEqual(socio.quota_associativa, Decimal('0.00'))
 
     def test_sync_socio_to_allievo(self):
         """Punto 4: Se vengono modificati i dati del socio, la modifica viene riportata pure sull'allievo."""

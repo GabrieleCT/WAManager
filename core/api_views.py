@@ -12,6 +12,7 @@ import datetime
 import logging
 from django.utils import timezone
 from django.db import transaction
+from django.db.models.functions import Length
 
 logger = logging.getLogger(__name__)
 
@@ -4404,7 +4405,19 @@ def genera_excel_libro_soci(soci_qs):
         cell.font = header_font
         cell.alignment = header_alignment
 
-    for socio in soci_qs.order_by('numero_tessera'):
+    def natural_sort_key(s):
+        val = s.numero_tessera or ''
+        try:
+            return (0, int(val), '')
+        except (ValueError, TypeError):
+            import re
+            m = re.match(r'(\d+)(.*)', str(val))
+            if m:
+                return (0, int(m.group(1)), m.group(2))
+            return (1, 0, str(val))
+
+    soci_list = sorted(list(soci_qs), key=natural_sort_key)
+    for socio in soci_list:
         stato_str = "Attivo" if socio.attivo else "Cessato"
         quota_val = float(socio.quota_associativa) if socio.quota_associativa is not None else 0.0
 
@@ -4461,12 +4474,21 @@ def genera_excel_libro_soci(soci_qs):
 
 
 class SocioViewSet(viewsets.ModelViewSet):
-    queryset = Socio.objects.all().order_by('numero_tessera')
+    queryset = Socio.objects.all().order_by(Length('numero_tessera'), 'numero_tessera')
     serializer_class = SocioSerializer
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['nome', 'cognome', 'codice_fiscale', 'numero_tessera']
     ordering_fields = ['numero_tessera', 'cognome', 'nome', 'data_iscrizione', 'attivo']
     ordering = ['numero_tessera']
+
+    def filter_queryset(self, queryset):
+        ordering = self.request.query_params.get('ordering', 'numero_tessera')
+        qs = super().filter_queryset(queryset)
+        if ordering in ['numero_tessera', '+numero_tessera']:
+            return qs.order_by(Length('numero_tessera').asc(), 'numero_tessera')
+        elif ordering == '-numero_tessera':
+            return qs.order_by(Length('numero_tessera').desc(), '-numero_tessera')
+        return qs
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -4686,6 +4708,8 @@ class SocioViewSet(viewsets.ModelViewSet):
                     'message': 'Nessun file del Libro Soci presente su Google Drive.',
                     'last_drive_update': None,
                     'webViewLink': None,
+                    'differenze': [],
+                    'differenze_count': 0,
                 })
 
             drive_file = files[0]
@@ -4698,8 +4722,23 @@ class SocioViewSet(viewsets.ModelViewSet):
             latest_socio_update = Socio.objects.aggregate(m=Max('updated_at'))['m']
 
             is_obsolete = False
+            differenze = []
             if latest_socio_update and drive_mod_dt:
                 is_obsolete = latest_socio_update > drive_mod_dt
+
+            if is_obsolete and drive_mod_dt:
+                soci_modificati = Socio.objects.filter(updated_at__gt=drive_mod_dt).order_by(Length('numero_tessera'), 'numero_tessera')
+                for s in soci_modificati:
+                    is_nuovo = bool(s.created_at and s.created_at > drive_mod_dt)
+                    differenze.append({
+                        'id': s.id,
+                        'numero_tessera': s.numero_tessera,
+                        'nome_completo': s.nome_completo,
+                        'attivo': s.attivo,
+                        'is_nuovo': is_nuovo,
+                        'updated_at': s.updated_at.isoformat() if s.updated_at else None,
+                        'created_at': s.created_at.isoformat() if s.created_at else None,
+                    })
 
             status_str = 'NON_AGGIORNATO' if is_obsolete else 'AGGIORNATO'
             message = (
@@ -4716,6 +4755,8 @@ class SocioViewSet(viewsets.ModelViewSet):
                 'webViewLink': drive_file.get('webViewLink'),
                 'last_drive_update': drive_mod_dt.isoformat() if drive_mod_dt else None,
                 'last_system_update': latest_socio_update.isoformat() if latest_socio_update else None,
+                'differenze_count': len(differenze),
+                'differenze': differenze,
             })
         except Exception as e:
             logger.exception("Errore recupero drive-status Libro Soci")

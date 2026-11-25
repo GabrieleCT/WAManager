@@ -17,7 +17,6 @@ class _LibroSociTabState extends State<LibroSociTab> {
   final ApiService _api = ApiService();
 
   bool _loading = false;
-  bool _exportingXls = false;
   bool _exportingDrive = false;
   bool _loadingDriveStatus = false;
   Map<String, dynamic>? _driveStatus;
@@ -103,43 +102,190 @@ class _LibroSociTabState extends State<LibroSociTab> {
     }
   }
 
-  Future<void> _esportaXls() async {
-    setState(() => _exportingXls = true);
+  String _formatDateTimeStr(String? d) {
+    if (d == null || d.isEmpty) return '-';
     try {
-      final bytes = await _api.downloadSociExportXls(
-        search: _searchController.text,
-        stato: _filtroStato,
-        categoria: _filtroCategoria,
-        origine: _filtroOrigine,
-      );
-
-      final dateStr = DateFormat('yyyyMMdd').format(DateTime.now());
-      final filename = 'Libro_Soci_$dateStr.xlsx';
-
-      await saveFileBytes(Uint8List.fromList(bytes), filename);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('File $filename scaricato con successo.'),
-            backgroundColor: Colors.green.shade800,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Errore durante l\'esportazione: $e'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _exportingXls = false);
-      }
+      final parsed = DateTime.parse(d).toLocal();
+      return DateFormat('dd/MM/yyyy HH:mm').format(parsed);
+    } catch (_) {
+      return d;
     }
+  }
+
+  void _showDifferenzeDialog() {
+    if (_driveStatus == null) return;
+    final differenze = (_driveStatus!['differenze'] as List<dynamic>?) ?? [];
+    final lastDrive = _formatDateTimeStr(_driveStatus!['last_drive_update'] as String?);
+    final lastSystem = _formatDateTimeStr(_driveStatus!['last_system_update'] as String?);
+    final filename = _driveStatus!['filename'] as String? ?? 'Libro_Soci.xlsx';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.sync_problem_rounded, color: Colors.amber.shade900),
+              const SizedBox(width: 10),
+              const Text('Evidenza Differenze con Google Drive', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SizedBox(
+            width: 650,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.cloud_done_outlined, size: 18, color: Colors.blueGrey),
+                            const SizedBox(width: 8),
+                            const Text('Ultimo file su Drive:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Spacer(),
+                            Flexible(child: Text('$lastDrive ($filename)', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.storage_outlined, size: 18, color: Colors.blueGrey),
+                            const SizedBox(width: 8),
+                            const Text('Ultima modifica gestionale:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Spacer(),
+                            Text(lastSystem, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.people_alt_outlined, size: 18, color: Colors.blueGrey),
+                            const SizedBox(width: 8),
+                            const Text('Soci modificati o inseriti:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Spacer(),
+                            Text(
+                              '${differenze.length} soci disallineati',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (differenze.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('Nessun dettaglio aggiuntivo disponibile sulle differenze.'),
+                    )
+                  else ...[
+                    const Text('Elenco soci aggiornati o inseriti dopo l\'ultimo caricamento:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: differenze.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final diff = differenze[index] as Map<String, dynamic>;
+                          final isNuovo = diff['is_nuovo'] == true;
+                          final attivo = diff['attivo'] == true;
+                          final dataMod = _formatDateTimeStr(diff['updated_at'] as String?);
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: isNuovo ? Colors.blue.shade100 : Colors.orange.shade100,
+                              child: Icon(
+                                isNuovo ? Icons.person_add : Icons.edit,
+                                size: 16,
+                                color: isNuovo ? Colors.blue.shade900 : Colors.orange.shade900,
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Text(
+                                  'Tessera ${diff['numero_tessera'] ?? '-'} - ${diff['nome_completo'] ?? '-'}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isNuovo ? Colors.blue.shade50 : Colors.amber.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: isNuovo ? Colors.blue.shade200 : Colors.amber.shade300),
+                                  ),
+                                  child: Text(
+                                    isNuovo ? 'Nuovo' : 'Modificato',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isNuovo ? Colors.blue.shade900 : Colors.brown.shade900,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: attivo ? Colors.green.shade50 : Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: attivo ? Colors.green.shade200 : Colors.red.shade200),
+                                  ),
+                                  child: Text(
+                                    attivo ? 'Attivo' : 'Cessato',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: attivo ? Colors.green.shade900 : Colors.red.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text('Data modifica: $dataMod', style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Chiudi'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.cloud_upload, size: 16),
+              label: const Text('Aggiorna su Drive Ora'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _esportaGoogleDrive();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _esportaGoogleDrive() async {
@@ -572,6 +718,8 @@ class _LibroSociTabState extends State<LibroSociTab> {
                   onPressed: () async {
                     if (formKey.currentState?.validate() != true) return;
                     try {
+                      final rawQuota = quotaCtrl.text.trim().replaceAll(',', '.');
+                      final quotaVal = rawQuota.isEmpty ? 0.0 : (double.tryParse(rawQuota) ?? 0.0);
                       final payload = {
                         'numero_tessera': tesseraCtrl.text.trim(),
                         'cognome': cognomeCtrl.text.trim(),
@@ -584,7 +732,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                         'email': emailCtrl.text.trim().toLowerCase(),
                         'data_iscrizione': iscrizioneCtrl.text.trim(),
                         'categoria': categoria,
-                        'quota_associativa': double.tryParse(quotaCtrl.text.replaceAll(',', '.')) ?? 20.0,
+                        'quota_associativa': quotaVal,
                         'attivo': true,
                         'origine': 'MANUALE',
                       };
@@ -805,6 +953,8 @@ class _LibroSociTabState extends State<LibroSociTab> {
                   onPressed: () async {
                     if (formKey.currentState?.validate() != true) return;
                     try {
+                      final rawQuota = quotaCtrl.text.trim().replaceAll(',', '.');
+                      final quotaVal = rawQuota.isEmpty ? 0.0 : (double.tryParse(rawQuota) ?? 0.0);
                       final payload = {
                         'numero_tessera': tesseraCtrl.text.trim(),
                         'cognome': cognomeCtrl.text.trim(),
@@ -817,7 +967,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                         'email': emailCtrl.text.trim().toLowerCase(),
                         'data_iscrizione': iscrizioneCtrl.text.trim(),
                         'categoria': categoria,
-                        'quota_associativa': double.tryParse(quotaCtrl.text.replaceAll(',', '.')) ?? 20.0,
+                        'quota_associativa': quotaVal,
                         'attivo': socio.attivo,
                         'origine': socio.origine,
                       };
@@ -1103,6 +1253,19 @@ class _LibroSociTabState extends State<LibroSociTab> {
             ),
           ),
           const SizedBox(width: 12),
+          if (!isNonPresente) ...[
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: textColor,
+                side: BorderSide(color: borderColor),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              ),
+              icon: const Icon(Icons.info_outline, size: 16),
+              label: const Text('Info Differenze', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: _showDifferenzeDialog,
+            ),
+            const SizedBox(width: 8),
+          ],
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: isNonPresente ? Colors.orange.shade700 : Colors.amber.shade800,
@@ -1223,14 +1386,6 @@ class _LibroSociTabState extends State<LibroSociTab> {
                     icon: const Icon(Icons.person_add),
                     label: const Text('Nuovo Socio'),
                     onPressed: _showNuovoSocioDialog,
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    icon: _exportingXls
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.table_chart),
-                    label: const Text('Esporta XLS'),
-                    onPressed: _exportingXls ? null : _esportaXls,
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(

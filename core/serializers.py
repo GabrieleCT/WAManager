@@ -802,6 +802,9 @@ class GoogleContactsSyncLogSerializer(serializers.ModelSerializer):
 
 
 class SocioSerializer(serializers.ModelSerializer):
+    quota_associativa = serializers.DecimalField(
+        max_digits=8, decimal_places=2, required=False, allow_null=True
+    )
     categoria_display = serializers.CharField(source='get_categoria_display', read_only=True)
     motivo_cessazione_display = serializers.CharField(source='get_motivo_cessazione_display', read_only=True)
     origine_display = serializers.CharField(source='get_origine_display', read_only=True)
@@ -832,5 +835,9 @@ class SocioSerializer(serializers.ModelSerializer):
             attrs['email'] = attrs['email'].strip().lower()
         if 'numero_tessera' in attrs and attrs['numero_tessera']:
             attrs['numero_tessera'] = attrs['numero_tessera'].strip()
+        if 'quota_associativa' in attrs:
+            if attrs['quota_associativa'] is None:
+                from decimal import Decimal
+                attrs['quota_associativa'] = Decimal('0.00')
         return attrs
 
