@@ -4604,7 +4604,8 @@ class SocioViewSet(viewsets.ModelViewSet):
 
                 drive_service = get_google_drive_service(config)
 
-                query = f"name = '{filename}' and '{target_folder_id}' in parents and trashed = false"
+                # Cerca file preesistenti del Libro Soci nella cartella di destinazione
+                query = f"name contains 'Libro_Soci_' and '{target_folder_id}' in parents and trashed = false"
                 existing = drive_service.files().list(
                     q=query,
                     spaces='drive',
@@ -4614,32 +4615,33 @@ class SocioViewSet(viewsets.ModelViewSet):
                 ).execute()
 
                 files_found = existing.get('files', [])
+
                 media = MediaIoBaseUpload(
                     io.BytesIO(xlsx_bytes),
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     resumable=True
                 )
 
-                if files_found:
-                    file_id = files_found[0]['id']
-                    uploaded_file = drive_service.files().update(
-                        fileId=file_id,
-                        media_body=media,
-                        fields='id, name, webViewLink',
-                        supportsAllDrives=True
-                    ).execute()
-                else:
-                    file_metadata = {
-                        'name': filename,
-                        'parents': [target_folder_id],
-                        'description': f"Libro Soci esportato in data {datetime.date.today().strftime('%d/%m/%Y')}"
-                    }
-                    uploaded_file = drive_service.files().create(
-                        body=file_metadata,
-                        media_body=media,
-                        fields='id, name, webViewLink',
-                        supportsAllDrives=True
-                    ).execute()
+                file_metadata = {
+                    'name': filename,
+                    'parents': [target_folder_id],
+                    'description': f"Libro Soci esportato in data {datetime.date.today().strftime('%d/%m/%Y')}"
+                }
+                uploaded_file = drive_service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink',
+                    supportsAllDrives=True
+                ).execute()
+
+                # Elimina tutti i file precedenti del Libro Soci nella cartella
+                for old_f in files_found:
+                    try:
+                        if old_f.get('id') != uploaded_file.get('id'):
+                            drive_service.files().delete(fileId=old_f['id'], supportsAllDrives=True).execute()
+                            logger.info(f"File precedente Libro Soci eliminato da Google Drive: {old_f.get('name')} (id: {old_f.get('id')})")
+                    except Exception as del_err:
+                        logger.warning(f"Impossibile eliminare il vecchio file Drive {old_f.get('id')}: {del_err}")
 
                 return Response({
                     'success': True,
