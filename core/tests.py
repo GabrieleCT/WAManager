@@ -1123,3 +1123,15 @@ class LibroSociTests(TestCase):
         self.assertEqual(re_enrolled.tessera_associativa, '102')
         self.assertNotEqual(allievo_attivo.id, re_enrolled.id)
 
+    def test_next_tessera_considera_anche_soci_manuali(self):
+        """Il suggerimento della prossima tessera deve considerare anche i numeri presenti nel Libro Soci."""
+        Socio.objects.create(
+            numero_tessera='250',
+            cognome='Manuale',
+            nome='Max',
+            origine=OrigineSocio.MANUALE,
+        )
+        res = self.client.get('/api/allievi/next-tessera-associativa/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['next_tessera_associativa'], '251')
+

@@ -277,18 +277,28 @@ class Allievo(models.Model):
     def get_next_tessera_associativa(cls):
         """
         Calcola il prossimo numero progressivo per la tessera associativa
-        prendendo il massimo numero intero presente tra le tessere associative esistenti.
+        prendendo il massimo numero intero presente tra le tessere associative
+        degli allievi e i numeri tessera del Libro Soci.
         """
+        import re
         max_num = 0
-        valori = cls.objects.exclude(tessera_associativa='').exclude(tessera_associativa__isnull=True).values_list('tessera_associativa', flat=True)
-        for v in valori:
+        valori_allievi = list(
+            cls.objects.exclude(tessera_associativa='')
+            .exclude(tessera_associativa__isnull=True)
+            .values_list('tessera_associativa', flat=True)
+        )
+        valori_soci = list(
+            Socio.objects.exclude(numero_tessera='')
+            .exclude(numero_tessera__isnull=True)
+            .values_list('numero_tessera', flat=True)
+        )
+        for v in valori_allievi + valori_soci:
             v_str = str(v).strip()
             if v_str.isdigit():
                 num = int(v_str)
                 if num > max_num:
                     max_num = num
             else:
-                import re
                 m = re.search(r'\d+', v_str)
                 if m:
                     num = int(m.group(0))

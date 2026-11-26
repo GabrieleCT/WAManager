@@ -515,7 +515,15 @@ class _LibroSociTabState extends State<LibroSociTab> {
 
   Future<void> _showNuovoSocioDialog() async {
     final formKey = GlobalKey<FormState>();
-    final tesseraCtrl = TextEditingController();
+
+    int maxTessera = 0;
+    for (final s in _soci) {
+      final n = int.tryParse(s.numeroTessera.trim());
+      if (n != null && n > maxTessera) maxTessera = n;
+    }
+    String suggeritoTessera = (maxTessera + 1).toString();
+
+    final tesseraCtrl = TextEditingController(text: suggeritoTessera);
     final cognomeCtrl = TextEditingController();
     final nomeCtrl = TextEditingController();
     final cfCtrl = TextEditingController();
@@ -528,11 +536,33 @@ class _LibroSociTabState extends State<LibroSociTab> {
     final quotaCtrl = TextEditingController(text: '20.00');
     String categoria = 'ORDINARIO';
 
+    StateSetter? dialogSetState;
+    bool dialogOpen = true;
+    _api.getNextTessere().then((map) {
+      if (!dialogOpen) return;
+      final nextVal = map['next_tessera_associativa']?.trim() ?? '';
+      if (nextVal.isNotEmpty) {
+        final prevSuggerito = suggeritoTessera;
+        suggeritoTessera = nextVal;
+        if (tesseraCtrl.text.trim().isEmpty || tesseraCtrl.text.trim() == prevSuggerito) {
+          tesseraCtrl.text = suggeritoTessera;
+        }
+        if (dialogSetState != null) {
+          dialogSetState!(() {});
+        }
+      }
+    });
+
+    tesseraCtrl.addListener(() {
+      if (dialogOpen && dialogSetState != null) dialogSetState!(() {});
+    });
+
     await showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
+            dialogSetState = setDialogState;
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: const Row(
@@ -551,13 +581,62 @@ class _LibroSociTabState extends State<LibroSociTab> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               flex: 1,
-                              child: TextFormField(
-                                controller: tesseraCtrl,
-                                decoration: const InputDecoration(labelText: 'N. Tessera *', border: OutlineInputBorder()),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Obbligatorio' : null,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextFormField(
+                                    controller: tesseraCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'N. Tessera *',
+                                      hintText: 'Es. 1, 2, 3...',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Obbligatorio' : null,
+                                  ),
+                                  if (tesseraCtrl.text.trim().isEmpty && suggeritoTessera.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: InkWell(
+                                        onTap: () => setDialogState(() => tesseraCtrl.text = suggeritoTessera),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade50,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.blue.shade300, width: 1.1),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.lightbulb_outline, size: 15, color: Colors.blue.shade800),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                'Prossima: #$suggeritoTessera',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blue.shade900),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade700,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: const Text(
+                                                  'Usa',
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -766,6 +845,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
         );
       },
     );
+    dialogOpen = false;
   }
 
   Future<void> _showModificaSocioDialog(Socio socio) async {
