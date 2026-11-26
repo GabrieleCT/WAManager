@@ -911,3 +911,303 @@ def genera_pdf_tessera_associativa_da_template(socio):
     pdf_bytes = doc.tobytes()
     doc.close()
     return pdf_bytes
+
+
+def get_monospace_font_paths():
+    """Restituisce (regular_path, bold_path) per font monospace di sistema."""
+    reg_candidates = [
+        r'C:\Windows\Fonts\cour.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+    ]
+    bold_candidates = [
+        r'C:\Windows\Fonts\courbd.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf',
+    ]
+    reg = next((c for c in reg_candidates if os.path.exists(c)), None)
+    bold = next((c for c in bold_candidates if os.path.exists(c)), None)
+    return reg, bold
+
+
+def _infer_nato_str(socio):
+    cf = (getattr(socio, 'codice_fiscale', '') or '').strip().upper()
+    if len(cf) == 16 and cf[9:11].isdigit():
+        day_code = int(cf[9:11])
+        return 'nata' if day_code > 40 else 'nato'
+    return 'nato/a'
+
+
+def genera_pdf_verbale_ammissione_socio(data_iscrizione):
+    """
+    Genera il PDF del Verbale di Ammissione Socio a partire dal template caricato
+    in DocumentTemplate ('verbale_ammissione_socio') e dai soci iscritti nella
+    data_iscrizione specificata.
+    """
+    import re
+    from django.db.models.functions import Length
+    from .models import Socio
+
+    if isinstance(data_iscrizione, str):
+        d_isc = datetime.datetime.strptime(data_iscrizione.strip(), '%Y-%m-%d').date()
+    elif isinstance(data_iscrizione, datetime.datetime):
+        d_isc = data_iscrizione.date()
+    else:
+        d_isc = data_iscrizione
+
+    tmpl = DocumentTemplate.objects.filter(chiave='verbale_ammissione_socio').first()
+    if not tmpl or not tmpl.file or not os.path.exists(tmpl.file.path):
+        raise ValueError(
+            "Nessun template PDF caricato per 'Verbale di Ammissione Socio'. "
+            "Vai in Impostazioni > Template PDF per caricarlo."
+        )
+
+    soci = Socio.objects.filter(data_iscrizione=d_isc).select_related('allievo').order_by(
+        Length('numero_tessera'), 'numero_tessera'
+    )
+    if not soci.exists():
+        raise ValueError(f"Nessun socio trovato con data di iscrizione {d_isc.strftime('%d/%m/%Y')}.")
+
+    anno_str = str(d_isc.year)
+    giorno_str = str(d_isc.day)
+    mese_str = mese_in_lettere(d_isc.month).capitalize()
+
+    dettagli_lines = []
+    nomi_lines = []
+    for s in soci:
+        nome_comp = f"{(s.nome or '').strip()} {(s.cognome or '').strip()}".strip()
+        nato_str = _infer_nato_str(s)
+        luogo = (s.luogo_nascita or '').strip()
+        if not luogo and s.allievo:
+            c_nasc = (s.allievo.comune_nascita or '').strip()
+            p_nasc = (s.allievo.provincia_nascita or '').strip()
+            if c_nasc and p_nasc:
+                luogo = f"{c_nasc} ({p_nasc})"
+            elif c_nasc:
+                luogo = c_nasc
+
+        data_nasc = ''
+        if s.data_nascita:
+            data_nasc = s.data_nascita.strftime('%d/%m/%Y')
+        elif s.allievo and s.allievo.data_nascita:
+            data_nasc = s.allievo.data_nascita.strftime('%d/%m/%Y')
+
+        line = f"  - {nome_comp}"
+        if luogo:
+            line += f", {nato_str} a {luogo}"
+        if data_nasc:
+            line += f" il {data_nasc}"
+        dettagli_lines.append(line)
+        nomi_lines.append(f"  - {nome_comp}")
+
+    tmpl_doc = pymupdf.open(tmpl.file.path)
+    if len(tmpl_doc) == 0:
+        tmpl_doc.close()
+        raise ValueError("Il file template PDF caricato è vuoto.")
+
+    w = tmpl_doc[0].rect.width
+    h = tmpl_doc[0].rect.height
+    header_bottom = 95.0 * (h / 841.89)
+
+    last_page_idx = len(tmpl_doc) - 1
+    last_page = tmpl_doc[last_page_idx]
+    sig_top = None
+    for marker in ['il Segretario', 'il Presidente', 'Letto, confermato']:
+        hits = last_page.search_for(marker)
+        if hits:
+            y_cand = min(r.y0 for r in hits)
+            if sig_top is None or y_cand < sig_top:
+                sig_top = y_cand
+    if sig_top is None:
+        sig_top = h * 0.25
+    else:
+        sig_top = max(header_bottom + 10.0, sig_top - 25.0)
+    sig_bottom = min(h - 20.0, sig_top + 160.0 * (h / 841.89))
+
+    raw_lines = []
+    for pno, page in enumerate(tmpl_doc):
+        max_y = sig_top if pno == last_page_idx else h - 25.0
+        blocks = page.get_text("blocks")
+        blocks.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
+        for b in blocks:
+            if b[6] != 0:
+                continue
+            by0, by1, btext = b[1], b[3], b[4]
+            if by1 <= header_bottom or by0 >= max_y:
+                continue
+            for ln in btext.splitlines():
+                cleaned = ln.strip()
+                if cleaned:
+                    raw_lines.append(cleaned)
+
+    full_text = "\n".join(raw_lines)
+    full_text = re.sub(
+        r'<elenco_allievi_con_nome_cognome_data_nascita_comune_nascita_provi\s*ncia_nascita\s*>',
+        '__ELENCO_DETTAGLIATO__',
+        full_text,
+        flags=re.IGNORECASE,
+    )
+    full_text = re.sub(
+        r'<elenco_allievi_con_nome_cognome\s*>',
+        '__ELENCO_NOMI__',
+        full_text,
+        flags=re.IGNORECASE,
+    )
+    full_text = full_text.replace('<anno>', anno_str)
+    full_text = full_text.replace('<giorno>', giorno_str)
+    full_text = full_text.replace('<mese>', mese_str)
+
+    paragraphs = []
+    current = []
+    break_starts = (
+        'Verbale del Consiglio',
+        'L’anno',
+        "L'anno",
+        'Ordine del Giorno',
+        '1)',
+        'Assume la Presidenza',
+        'Il Consiglio,',
+        'Prende la parola',
+        'Punto 1',
+        'Il Presidente,',
+        '__ELENCO_DETTAGLIATO__',
+        'Dopo breve discussione',
+        'DELIBERA',
+        'di accogliere',
+        '__ELENCO_NOMI__',
+        'demandando al Presidente',
+        'Il Presidente dà atto',
+        'giorno e nessuno',
+        'Letto, confermato',
+    )
+    for ln in full_text.splitlines():
+        s = ln.strip()
+        if not s:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            continue
+        if any(s.startswith(bs) for bs in break_starts) or s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            if s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
+                paragraphs.append(s)
+            else:
+                current.append(s)
+        else:
+            current.append(s)
+    if current:
+        paragraphs.append(" ".join(current))
+
+    out_doc = pymupdf.open()
+    reg_font_path, bold_font_path = get_monospace_font_paths()
+    reg_name = 'mono_reg' if reg_font_path else 'cour'
+    bold_name = 'mono_bold' if bold_font_path else 'cobo'
+    reg_font_obj = pymupdf.Font(fontfile=reg_font_path) if reg_font_path else None
+    bold_font_obj = pymupdf.Font(fontfile=bold_font_path) if bold_font_path else None
+
+    margin_x = 56.0 * (w / 595.28)
+    content_w = w - 2 * margin_x
+    fontsize = 10.5 * (w / 595.28)
+    line_height = 14.5 * (h / 841.89)
+    bottom_limit = h - 55.0 * (h / 841.89)
+
+    def new_page_with_header():
+        p = out_doc.new_page(width=w, height=h)
+        p.show_pdf_page(pymupdf.Rect(0, 0, w, header_bottom), tmpl_doc, 0, clip=pymupdf.Rect(0, 0, w, header_bottom))
+        if reg_font_path:
+            p.insert_font(fontname=reg_name, fontfile=reg_font_path)
+        if bold_font_path:
+            p.insert_font(fontname=bold_name, fontfile=bold_font_path)
+        return p, header_bottom + 24.0 * (h / 841.89)
+
+    def text_width(txt, is_bold=False):
+        f = bold_font_obj if is_bold else reg_font_obj
+        fn = bold_name if is_bold else reg_name
+        if f:
+            return f.text_length(txt, fontsize=fontsize)
+        return pymupdf.get_text_length(txt, fontname=fn, fontsize=fontsize)
+
+    def wrap_paragraph(txt, is_bold=False):
+        words = txt.split(' ')
+        lines = []
+        cur = ''
+        for word in words:
+            cand = f"{cur} {word}".strip() if cur else word
+            if text_width(cand, is_bold=is_bold) <= content_w:
+                cur = cand
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = word
+        if cur:
+            lines.append(cur)
+        return lines
+
+    page, cur_y = new_page_with_header()
+
+    for para in paragraphs:
+        if para == '__ELENCO_DETTAGLIATO__':
+            for item in dettagli_lines:
+                wrapped = wrap_paragraph(item, is_bold=True)
+                for idx, wl in enumerate(wrapped):
+                    if cur_y + line_height > bottom_limit:
+                        page, cur_y = new_page_with_header()
+                    draw_x = margin_x + (18.0 if idx > 0 else 0.0)
+                    page.insert_text(pymupdf.Point(draw_x, cur_y), wl, fontname=bold_name, fontsize=fontsize, color=(0, 0, 0))
+                    cur_y += line_height
+            cur_y += line_height * 0.6
+            continue
+
+        if para == '__ELENCO_NOMI__':
+            for item in nomi_lines:
+                wrapped = wrap_paragraph(item, is_bold=True)
+                for idx, wl in enumerate(wrapped):
+                    if cur_y + line_height > bottom_limit:
+                        page, cur_y = new_page_with_header()
+                    draw_x = margin_x + (18.0 if idx > 0 else 0.0)
+                    page.insert_text(pymupdf.Point(draw_x, cur_y), wl, fontname=bold_name, fontsize=fontsize, color=(0, 0, 0))
+                    cur_y += line_height
+            cur_y += line_height * 0.6
+            continue
+
+        is_title = para.startswith('Verbale del Consiglio')
+        is_punto = para.startswith('Punto 1')
+        is_delibera = para.strip() == 'DELIBERA'
+        is_bold = is_title or is_punto or is_delibera
+
+        wrapped = wrap_paragraph(para, is_bold=is_bold)
+        for wl in wrapped:
+            if cur_y + line_height > bottom_limit:
+                page, cur_y = new_page_with_header()
+            if is_title or is_delibera:
+                tw = text_width(wl, is_bold=True)
+                dx = (w - tw) / 2.0
+            else:
+                dx = margin_x
+            page.insert_text(pymupdf.Point(dx, cur_y), wl, fontname=bold_name if is_bold else reg_name, fontsize=fontsize, color=(0, 0, 0))
+            if is_title or is_punto:
+                tw = text_width(wl, is_bold=True)
+                page.draw_line(pymupdf.Point(dx, cur_y + 2.0), pymupdf.Point(dx + tw, cur_y + 2.0), color=(0, 0, 0), width=0.8)
+            cur_y += line_height
+        cur_y += line_height * 0.65
+
+    sig_height = sig_bottom - sig_top
+    if cur_y + sig_height > bottom_limit:
+        page, cur_y = new_page_with_header()
+    else:
+        cur_y += line_height * 0.5
+
+    page.show_pdf_page(
+        pymupdf.Rect(0, cur_y, w, cur_y + sig_height),
+        tmpl_doc,
+        last_page_idx,
+        clip=pymupdf.Rect(0, sig_top, w, sig_bottom),
+    )
+
+    pdf_bytes = out_doc.tobytes()
+    out_doc.close()
+    tmpl_doc.close()
+    filename = f"Verbale_Ammissione_Soci_{d_isc.strftime('%Y%m%d')}.pdf"
+    return pdf_bytes, filename

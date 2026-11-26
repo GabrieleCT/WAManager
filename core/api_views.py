@@ -4881,4 +4881,63 @@ class SocioViewSet(viewsets.ModelViewSet):
                 'error': f"Errore invio WhatsApp Tessera Associativa: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'], url_path='date-iscrizione')
+    def date_iscrizione(self, request):
+        """Restituisce le date di iscrizione distinte presenti nel Libro Soci con il relativo conteggio."""
+        from django.db.models import Count
+        rows = (
+            Socio.objects.exclude(data_iscrizione__isnull=True)
+            .values('data_iscrizione')
+            .annotate(count=Count('id'))
+            .order_by('-data_iscrizione')
+        )
+        dates = [
+            {
+                'date': r['data_iscrizione'].strftime('%Y-%m-%d'),
+                'count': r['count'],
+            }
+            for r in rows
+        ]
+        return Response({'dates': dates})
+
+    @action(detail=False, methods=['get'], url_path='verbale-ammissione-pdf', permission_classes=[permissions.AllowAny])
+    def verbale_ammissione_pdf(self, request):
+        """Genera e restituisce il PDF del Verbale di Ammissione Socio per una data di iscrizione."""
+        user = request.user if (request.user and request.user.is_authenticated) else None
+        if not user:
+            auth_header = request.headers.get('Authorization', '')
+            token_key = None
+            if auth_header.startswith('Token '):
+                token_key = auth_header.split(' ')[1].strip()
+            elif request.GET.get('token'):
+                token_key = request.GET.get('token').strip()
+
+            if token_key:
+                from rest_framework.authtoken.models import Token
+                try:
+                    token_obj = Token.objects.select_related('user').get(key=token_key)
+                    user = token_obj.user
+                except Token.DoesNotExist:
+                    pass
+
+        if not user:
+            return Response({'detail': 'Non sono state immesse le credenziali di autenticazione.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        data_isc = (request.GET.get('data_iscrizione') or '').strip()
+        if not data_isc:
+            return Response({'error': 'Parametro data_iscrizione obbligatorio (YYYY-MM-DD).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .pdf_template_service import genera_pdf_verbale_ammissione_socio
+            pdf_bytes, filename = genera_pdf_verbale_ammissione_socio(data_isc)
+            disposition = 'attachment' if request.GET.get('download') in ('1', 'true') else 'inline'
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+            return response
+        except ValueError as ve:
+            return Response({'error': str(ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception("Errore generazione PDF Verbale Ammissione Socio")
+            return Response({'error': f"Errore generazione PDF Verbale: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 

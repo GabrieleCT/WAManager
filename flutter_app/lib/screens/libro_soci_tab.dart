@@ -340,6 +340,155 @@ class _LibroSociTabState extends State<LibroSociTab> {
     }
   }
 
+  // ─── Verbale di Ammissione Socio ──────────────────────────────────────────
+
+  Future<void> _showRedigiVerbaleDialog() async {
+    bool loadingDates = true;
+    String? errorMsg;
+    List<Map<String, dynamic>> dates = [];
+    String? selectedDate;
+
+    Future<void> loadDates(StateSetter setDlgState) async {
+      setDlgState(() {
+        loadingDates = true;
+        errorMsg = null;
+      });
+      try {
+        final list = await _api.getSociDateIscrizione();
+        if (!mounted) return;
+        setDlgState(() {
+          dates = list;
+          loadingDates = false;
+          if (dates.isNotEmpty) {
+            selectedDate = dates.first['date']?.toString();
+          }
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setDlgState(() {
+          loadingDates = false;
+          errorMsg = e.toString();
+        });
+      }
+    }
+
+    bool initialized = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            if (!initialized) {
+              initialized = true;
+              Future.microtask(() => loadDates(setDlgState));
+            }
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.gavel_rounded, color: Colors.deepPurple.shade700),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Redigi Verbale di Ammissione',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Seleziona una data di iscrizione presente nel Libro Soci: verrà generato il Verbale del Consiglio Direttivo con l\'elenco dei soci iscritti in quella data.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+                    if (loadingDates)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (errorMsg != null)
+                      Column(
+                        children: [
+                          Text(errorMsg!, style: const TextStyle(color: Colors.red)),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: () => loadDates(setDlgState),
+                            child: const Text('Riprova'),
+                          ),
+                        ],
+                      )
+                    else if (dates.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('Nessuna data di iscrizione presente nel Libro Soci.'),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        value: selectedDate,
+                        decoration: const InputDecoration(
+                          labelText: 'Data di iscrizione *',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.calendar_today),
+                        ),
+                        items: dates.map((d) {
+                          final iso = d['date']?.toString() ?? '';
+                          final count = d['count'] ?? 0;
+                          final label = '${_formatDateStr(iso)} ($count ${count == 1 ? "socio" : "soci"})';
+                          return DropdownMenuItem<String>(
+                            value: iso,
+                            child: Text(label),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setDlgState(() => selectedDate = val),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Annulla'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: Colors.deepPurple.shade700),
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Genera Verbale PDF'),
+                  onPressed: (loadingDates || selectedDate == null || selectedDate!.isEmpty)
+                      ? null
+                      : () async {
+                          final url = Uri.parse(_api.getVerbaleAmmissionePdfUrl(selectedDate!));
+                          Navigator.pop(ctx);
+                          try {
+                            final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+                            if (!ok && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Impossibile aprire il PDF del verbale.')),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Errore apertura PDF: $e')),
+                              );
+                            }
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ─── Tessera PDF & WhatsApp ───────────────────────────────────────────────
 
   Future<void> _visualizzaTesseraPdf(Socio socio) async {
@@ -1688,6 +1837,18 @@ class _LibroSociTabState extends State<LibroSociTab> {
                     icon: const Icon(Icons.person_add),
                     label: const Text('Nuovo Socio'),
                     onPressed: _showNuovoSocioDialog,
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: Icon(Icons.gavel_rounded, color: Colors.deepPurple.shade700),
+                    label: Text(
+                      'Redigi verbale di Ammissione',
+                      style: TextStyle(color: Colors.deepPurple.shade700),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.deepPurple.shade300),
+                    ),
+                    onPressed: _showRedigiVerbaleDialog,
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(

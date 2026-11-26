@@ -2412,4 +2412,35 @@ class ApiService {
       return {'success': false, 'error': 'Errore di connessione: $e'};
     }
   }
+
+  Future<List<Map<String, dynamic>>> getSociDateIscrizione() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/soci/date-iscrizione/'),
+      headers: _headers,
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (data is Map && data['dates'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (data['dates'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+      }
+      return [];
+    } else {
+      throw Exception('Errore nel recupero delle date di iscrizione (${response.statusCode})');
+    }
+  }
+
+  String getVerbaleAmmissionePdfUrl(String dataIscrizione, {bool download = false}) {
+    final params = <String>[
+      'data_iscrizione=${Uri.encodeComponent(dataIscrizione)}',
+    ];
+    if (_token != null && _token!.isNotEmpty) {
+      params.add('token=${Uri.encodeComponent(_token!)}');
+    }
+    if (download) {
+      params.add('download=1');
+    }
+    return '$baseUrl/api/soci/verbale-ammissione-pdf/?${params.join('&')}';
+  }
 }

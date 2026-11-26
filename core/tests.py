@@ -1197,3 +1197,77 @@ class LibroSociTests(TestCase):
         mock_wa.assert_called_once()
         tmpl.file.delete(save=False)
 
+    def test_verbale_ammissione_socio_date_e_pdf(self):
+        """Test elenco date iscrizione e generazione PDF Verbale di Ammissione Socio."""
+        import pymupdf
+        from django.core.files.base import ContentFile
+        from .models import DocumentTemplate
+
+        # Crea template PDF a 2 pagine con i placeholder reali (incluso quello wrappato)
+        doc = pymupdf.open()
+        p1 = doc.new_page(width=595.28, height=841.89)
+        p1.insert_text(pymupdf.Point(56, 50), "Tanto Tango ASD")
+        p1.insert_text(pymupdf.Point(56, 130), "Verbale del Consiglio direttivo")
+        p1.insert_text(pymupdf.Point(56, 160), "L’anno <anno>, il giorno <giorno> del mese di <mese> alle ore 20:00.")
+        p1.insert_text(pymupdf.Point(56, 200), "Punto 1")
+        p1.insert_text(pymupdf.Point(56, 220), "<elenco_allievi_con_nome_cognome_data_nascita_comune_nascita_provi")
+        p1.insert_text(pymupdf.Point(56, 234), "ncia_nascita>")
+        p1.insert_text(pymupdf.Point(56, 270), "DELIBERA")
+        p1.insert_text(pymupdf.Point(56, 290), "<elenco_allievi_con_nome_cognome >")
+        p1.insert_text(pymupdf.Point(56, 330), "demandando al Presidente gli adempimenti.")
+
+        p2 = doc.new_page(width=595.28, height=841.89)
+        p2.insert_text(pymupdf.Point(56, 50), "Tanto Tango ASD")
+        p2.insert_text(pymupdf.Point(56, 180), "Letto, confermato e sottoscritto.")
+        p2.insert_text(pymupdf.Point(100, 220), "il Segretario")
+        p2.insert_text(pymupdf.Point(360, 220), "il Presidente")
+        tmpl_bytes = doc.tobytes()
+        doc.close()
+
+        tmpl, _ = DocumentTemplate.objects.get_or_create(
+            chiave='verbale_ammissione_socio',
+            defaults={'nome': 'Verbale di Ammissione Socio'},
+        )
+        tmpl.file.save('test_verbale_amm.pdf', ContentFile(tmpl_bytes), save=True)
+
+        Socio.objects.create(
+            numero_tessera='10',
+            cognome='Avolio',
+            nome='Rocco',
+            data_nascita=date(1982, 5, 10),
+            luogo_nascita='Corigliano Calabro (CS)',
+            codice_fiscale='VLARCC82E10D005X',
+            data_iscrizione=date(2026, 10, 22),
+            origine=OrigineSocio.MANUALE,
+        )
+        Socio.objects.create(
+            numero_tessera='11',
+            cognome='D’Ingianna',
+            nome='Francesca',
+            data_nascita=date(1977, 3, 8),
+            luogo_nascita='Melito di Porto Salvo (RC)',
+            codice_fiscale='DNGFNC77C48F112Y',
+            data_iscrizione=date(2026, 10, 22),
+            origine=OrigineSocio.MANUALE,
+        )
+
+        res_dates = self.client.get('/api/soci/date-iscrizione/')
+        self.assertEqual(res_dates.status_code, 200)
+        dates = res_dates.data['dates']
+        self.assertTrue(any(d['date'] == '2026-10-22' and d['count'] == 2 for d in dates))
+
+        res_pdf = self.client.get('/api/soci/verbale-ammissione-pdf/?data_iscrizione=2026-10-22')
+        self.assertEqual(res_pdf.status_code, 200)
+        self.assertEqual(res_pdf['Content-Type'], 'application/pdf')
+
+        compiled = pymupdf.open(stream=res_pdf.content, filetype='pdf')
+        full_out = "\n".join(p.get_text() for p in compiled).replace('\xa0', ' ')
+        compiled.close()
+
+        self.assertIn('2026', full_out)
+        self.assertIn('22', full_out)
+        self.assertIn('Ottobre', full_out)
+        self.assertIn('Rocco Avolio, nato a Corigliano Calabro (CS) il 10/05/1982', full_out)
+        self.assertIn('Francesca D’Ingianna, nata a Melito di Porto Salvo (RC) il 08/03/1977', full_out)
+        tmpl.file.delete(save=False)
+
