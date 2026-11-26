@@ -250,7 +250,7 @@ class _CercaSocioDialogState extends State<_CercaSocioDialog> {
                                           overflow: TextOverflow.ellipsis,
                                         )
                                       : Text('Tessera n. ${s.numeroTessera}'),
-                                  onTap: () => Navigator.pop(ctx, s),
+                                  onTap: () => Navigator.pop(context, s),
                                 );
                               },
                             ),
@@ -260,7 +260,7 @@ class _CercaSocioDialogState extends State<_CercaSocioDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(ctx),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Chiudi'),
         ),
       ],
