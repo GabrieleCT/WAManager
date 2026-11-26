@@ -10,6 +10,7 @@ import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
 import '../widgets/manual_date_field.dart';
+import '../widgets/telefono_input_field.dart';
 
 
 
@@ -202,12 +203,13 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
                   ),
 
-                  TextField(
+                  const SizedBox(height: 12),
 
+                  TelefonoInputField(
                     controller: telefonoController,
-
-                    decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)'),
-
+                    labelText: 'Telefono (opzionale)',
+                    hintText: '333 123 4567',
+                    showPrefixIcon: false,
                   ),
 
                   const SizedBox(height: 12),

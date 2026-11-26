@@ -9,6 +9,7 @@ import '../widgets/invia_istruzioni_pagamento_dialog.dart';
 import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/data_ammissione_field.dart';
 import '../widgets/manual_date_field.dart';
+import '../widgets/telefono_input_field.dart';
 
 class _UpperCaseTextFormatter extends TextInputFormatter {
   @override
@@ -688,24 +689,19 @@ class _AllieviScreenState extends State<AllieviScreen> {
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: TextField(
+                              child: TelefonoInputField(
                                 controller: telefonoController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Telefono',
-                                  hintText: 'Es. +39 333...',
-                                  prefixIcon: Icon(Icons.phone_outlined),
-                                ),
+                                labelText: 'Telefono',
+                                hintText: '333 123 4567',
                               ),
                             ),
                           ],
                         ),
                       ] else ...[
-                        TextField(
+                        TelefonoInputField(
                           controller: telefonoController,
-                          decoration: const InputDecoration(
-                            labelText: 'Telefono (opzionale, es. +39333...)',
-                            prefixIcon: Icon(Icons.phone_outlined),
-                          ),
+                          labelText: 'Telefono (opzionale)',
+                          hintText: '333 123 4567',
                         ),
                       ],
                       const SizedBox(height: 18),
@@ -872,12 +868,10 @@ class _AllieviScreenState extends State<AllieviScreen> {
                         ),
                       ],
                       const SizedBox(height: 16),
-                      TextField(
+                      TelefonoInputField(
                         controller: telefonoController,
-                        decoration: const InputDecoration(
-                          labelText: 'Telefono (opzionale, es. +39333...)',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                        ),
+                        labelText: 'Telefono (opzionale)',
+                        hintText: '333 123 4567',
                       ),
                       const SizedBox(height: 16),
                       TextField(

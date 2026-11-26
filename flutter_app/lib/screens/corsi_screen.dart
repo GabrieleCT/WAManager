@@ -10,6 +10,7 @@ import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
 import '../widgets/data_ammissione_field.dart';
 import '../widgets/manual_date_field.dart';
+import '../widgets/telefono_input_field.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -617,9 +618,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       decoration: const InputDecoration(labelText: 'Cognome *', border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 10),
-                    TextField(
+                    TelefonoInputField(
                       controller: telCtl,
-                      decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39...)', border: OutlineInputBorder()),
+                      labelText: 'Telefono (opzionale)',
+                      hintText: '333 123 4567',
+                      showPrefixIcon: false,
+                      border: const OutlineInputBorder(),
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
@@ -957,7 +961,12 @@ class _CorsiScreenState extends State<CorsiScreen> {
                   const SizedBox(height: 16),
                   TextField(controller: cognomeController, decoration: const InputDecoration(labelText: 'Cognome *')),
                   const SizedBox(height: 16),
-                  TextField(controller: telefonoController, decoration: const InputDecoration(labelText: 'Telefono (opzionale, es. +39333...)')),
+                  TelefonoInputField(
+                    controller: telefonoController,
+                    labelText: 'Telefono (opzionale)',
+                    hintText: '333 123 4567',
+                    showPrefixIcon: false,
+                  ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: ruolo,
