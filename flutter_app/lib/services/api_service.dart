@@ -2380,8 +2380,8 @@ class ApiService {
   String getSocioTesseraPdfUrl(int socioId, {bool download = false}) {
     final base = '$baseUrl/api/soci/$socioId/tessera-pdf/';
     final params = <String>[];
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      params.add('token=${Uri.encodeComponent(_authToken!)}');
+    if (_token != null && _token!.isNotEmpty) {
+      params.add('token=${Uri.encodeComponent(_token!)}');
     }
     if (download) {
       params.add('download=1');
