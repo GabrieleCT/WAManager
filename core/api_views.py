@@ -439,7 +439,12 @@ class AllievoViewSet(viewsets.ModelViewSet):
             allievo.corso = corso
             allievo.livello = corso.livello
             allievo.is_prospect = False
-            allievo.tessera_associativa = ''
+            has_preexisting_socio = (
+                bool(allievo.tessera_associativa)
+                and allievo.soci.filter(created_at__lt=allievo.created_at).exists()
+            )
+            if not has_preexisting_socio:
+                allievo.tessera_associativa = ''
             allievo.numero_tessera_acsi = ''
 
             if allievo.note and re.search(r'\bpotenzial[ei]\b', allievo.note, flags=re.IGNORECASE):
@@ -542,7 +547,12 @@ class AllievoViewSet(viewsets.ModelViewSet):
         allievo.corso = corso
         allievo.livello = corso.livello
         allievo.is_prospect = False
-        allievo.tessera_associativa = ''
+        has_preexisting_socio = (
+            bool(allievo.tessera_associativa)
+            and allievo.soci.filter(created_at__lt=allievo.created_at).exists()
+        )
+        if not has_preexisting_socio:
+            allievo.tessera_associativa = ''
         allievo.numero_tessera_acsi = ''
 
         # Pulisce la parola "potenziale" dalle note locali se presente
@@ -4513,6 +4523,10 @@ class SocioViewSet(viewsets.ModelViewSet):
         origine = self.request.query_params.get('origine')
         if origine:
             qs = qs.filter(origine=origine)
+
+        senza_allievo = self.request.query_params.get('senza_allievo')
+        if senza_allievo is not None and senza_allievo.lower() in ['true', '1']:
+            qs = qs.filter(allievo__isnull=True)
 
         return qs
 

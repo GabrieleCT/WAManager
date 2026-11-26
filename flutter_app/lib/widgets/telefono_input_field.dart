@@ -113,6 +113,7 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
   late final TextEditingController _prefixController;
   late final TextEditingController _localController;
   late final FocusNode _prefixFocusNode;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -121,15 +122,28 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
     _prefixController = TextEditingController(text: parsed.$1);
     _localController = TextEditingController(text: parsed.$2);
     _prefixFocusNode = FocusNode()..addListener(_onPrefixFocusChange);
+    widget.controller.addListener(_onParentControllerChanged);
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onParentControllerChanged);
     _prefixFocusNode.removeListener(_onPrefixFocusChange);
     _prefixFocusNode.dispose();
     _prefixController.dispose();
     _localController.dispose();
     super.dispose();
+  }
+
+  void _onParentControllerChanged() {
+    if (_isSyncing) return;
+    final parsed = _parseInitialPhone(widget.controller.text);
+    if (_prefixController.text != parsed.$1) {
+      _prefixController.text = parsed.$1;
+    }
+    if (_localController.text != parsed.$2) {
+      _localController.text = parsed.$2;
+    }
   }
 
   void _onPrefixFocusChange() {
@@ -179,16 +193,21 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
   }
 
   void _syncToParentController() {
-    final localFormatted = _localController.text.trim();
-    if (localFormatted.isEmpty) {
-      widget.controller.text = '';
-      return;
+    _isSyncing = true;
+    try {
+      final localFormatted = _localController.text.trim();
+      if (localFormatted.isEmpty) {
+        widget.controller.text = '';
+        return;
+      }
+      var prefixDigits = _prefixController.text.replaceAll(RegExp(r'\D'), '');
+      if (prefixDigits.isEmpty) {
+        prefixDigits = '39';
+      }
+      widget.controller.text = '+$prefixDigits $localFormatted';
+    } finally {
+      _isSyncing = false;
     }
-    var prefixDigits = _prefixController.text.replaceAll(RegExp(r'\D'), '');
-    if (prefixDigits.isEmpty) {
-      prefixDigits = '39';
-    }
-    widget.controller.text = '+$prefixDigits $localFormatted';
   }
 
   @override

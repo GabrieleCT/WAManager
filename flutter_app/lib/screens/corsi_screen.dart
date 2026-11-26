@@ -11,6 +11,7 @@ import '../widgets/convert_prospect_dialog.dart';
 import '../widgets/data_ammissione_field.dart';
 import '../widgets/manual_date_field.dart';
 import '../widgets/telefono_input_field.dart';
+import '../widgets/cerca_socio_dialog.dart';
 
 class CorsiScreen extends StatefulWidget {
   const CorsiScreen({super.key});
@@ -537,6 +538,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
     final noteCtl = TextEditingController();
     String ruolo = 'leader';
     bool isSaving = false;
+    Socio? selectedSocio;
 
     showDialog(
       context: context,
@@ -608,6 +610,55 @@ class _CorsiScreenState extends State<CorsiScreen> {
                       ),
                     ],
                   ] else ...[
+                    if (selectedSocio == null)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.person_search),
+                        label: const Text('Cerca tra i Soci (ex-allievi)'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.indigo,
+                          side: BorderSide(color: Colors.indigo.shade200),
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        ),
+                        onPressed: () async {
+                          final socio = await showCercaSocioDialog(context, _api);
+                          if (socio != null) {
+                            setDlgState(() {
+                              selectedSocio = socio;
+                              nomeCtl.text = socio.nome;
+                              cognomeCtl.text = socio.cognome;
+                              telCtl.text = socio.telefono ?? '';
+                            });
+                          }
+                        },
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.indigo.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified_user, color: Colors.indigo, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Socio: ${selectedSocio!.nomeCompleto} (Tessera #${selectedSocio!.numeroTessera})',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              tooltip: 'Rimuovi collegamento socio',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => setDlgState(() => selectedSocio = null),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 10),
                     TextField(
                       controller: nomeCtl,
                       decoration: const InputDecoration(labelText: 'Nome *', border: OutlineInputBorder()),
@@ -687,6 +738,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                             'is_prospect': true,
                             'recensione': 'no',
                             'note': noteCtl.text.trim().isNotEmpty ? noteCtl.text.trim() : 'Lezione di prova',
+                            if (selectedSocio != null) ...buildSocioAnagraficaPayload(selectedSocio!),
                           };
                           final res = await _api.createAllievo(data);
                           if (res == null) {

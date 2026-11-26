@@ -2149,6 +2149,7 @@ class ApiService {
     String? categoria,
     String? origine,
     String? ordering,
+    bool? senzaAllievo,
   }) async {
     final queryParams = <String, String>{};
     if (search != null && search.trim().isNotEmpty) {
@@ -2165,6 +2166,9 @@ class ApiService {
     }
     if (ordering != null && ordering.isNotEmpty) {
       queryParams['ordering'] = ordering;
+    }
+    if (senzaAllievo == true) {
+      queryParams['senza_allievo'] = 'true';
     }
 
     final uri = Uri.parse('$baseUrl/api/soci/').replace(

@@ -10,6 +10,7 @@ import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/data_ammissione_field.dart';
 import '../widgets/manual_date_field.dart';
 import '../widgets/telefono_input_field.dart';
+import '../widgets/cerca_socio_dialog.dart';
 
 class _UpperCaseTextFormatter extends TextInputFormatter {
   @override
@@ -563,6 +564,7 @@ class _AllieviScreenState extends State<AllieviScreen> {
 
     bool tesseratoAltraAsd = allievo?.tesseratoAltraAsd ?? false;
     bool isSaving = false;
+    Socio? selectedSocio;
 
     showDialog(
       context: context,
@@ -647,6 +649,68 @@ class _AllieviScreenState extends State<AllieviScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (allievo == null) ...[
+                      const SizedBox(height: 8),
+                      if (selectedSocio == null)
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.person_search),
+                          label: const Text('Cerca tra i Soci (ex-allievi)'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.indigo,
+                            side: BorderSide(color: Colors.indigo.shade200),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                          ),
+                          onPressed: () async {
+                            final socio = await showCercaSocioDialog(context, _api);
+                            if (socio != null) {
+                              final (comuneNasc, provNasc) = parseLuogoNascitaSocio(socio.luogoNascita);
+                              final (indirizzoRes, comuneRes, provRes) = parseResidenzaSocio(socio.indirizzoResidenza);
+                              setDlgState(() {
+                                selectedSocio = socio;
+                                nomeController.text = socio.nome;
+                                cognomeController.text = socio.cognome;
+                                telefonoController.text = socio.telefono ?? '';
+                                emailController.text = socio.email ?? '';
+                                codiceFiscaleController.text = (socio.codiceFiscale ?? '').toUpperCase();
+                                dataNascitaController.text = formatSocioIsoDateToItalian(socio.dataNascita);
+                                comuneNascitaController.text = comuneNasc;
+                                provinciaNascitaController.text = provNasc;
+                                indirizzoResidenzaController.text = indirizzoRes;
+                                comuneResidenzaController.text = comuneRes;
+                                provinciaResidenzaController.text = provRes;
+                                tesseraAssociativaController.text = socio.numeroTessera;
+                              });
+                            }
+                          },
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.indigo.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.verified_user, color: Colors.indigo, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Dati ripresi da Socio: ${selectedSocio!.nomeCompleto} (Tessera #${selectedSocio!.numeroTessera})',
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.indigo),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Rimuovi collegamento socio',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => setDlgState(() => selectedSocio = null),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 14),
                     // SEZIONE 1: ANAGRAFICA
                     if (!isMobile) ...[

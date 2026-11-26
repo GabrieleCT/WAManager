@@ -1066,3 +1066,60 @@ class LibroSociTests(TestCase):
         self.assertIn("Residenza", headers)
         self.assertNotIn("Origine", headers)
 
+    def test_soci_senza_allievo_e_reiscrizione(self):
+        """Test filtro senza_allievo=true e reiscrizione da socio con conservazione tessera."""
+        import time
+        allievo_attivo = Allievo.objects.create(
+            nome='Attivo',
+            cognome='Test',
+            tessera_associativa='101',
+        )
+        ex_allievo = Allievo.objects.create(
+            nome='Ex',
+            cognome='Allievo',
+            tessera_associativa='102',
+        )
+        socio_ex = Socio.objects.get(numero_tessera='102')
+        ex_allievo.delete()
+        socio_ex.refresh_from_db()
+        self.assertIsNone(socio_ex.allievo)
+
+        res = self.client.get('/api/soci/?senza_allievo=true')
+        self.assertEqual(res.status_code, 200)
+        results = res.data if isinstance(res.data, list) else res.data.get('results', [])
+        tessere = [s['numero_tessera'] for s in results]
+        self.assertIn('102', tessere)
+        self.assertNotIn('101', tessere)
+
+        # Garantisce created_at successivo al socio esistente
+        time.sleep(0.02)
+        scuola = Scuola.objects.create(nome='Scuola Test')
+        corso = Corso.objects.create(
+            scuola=scuola,
+            livello='principiante',
+            orario='20:00:00',
+            giorno_settimana='LUNEDI',
+        )
+        # Reiscrizione come prospect con la stessa tessera
+        res_create = self.client.post('/api/allievi/', {
+            'nome': 'Ex',
+            'cognome': 'Allievo',
+            'is_prospect': True,
+            'tessera_associativa': '102',
+            'corso': str(corso.id),
+        }, format='json')
+        self.assertEqual(res_create.status_code, 201)
+        new_id = res_create.data['id']
+        socio_ex.refresh_from_db()
+        self.assertEqual(str(socio_ex.allievo_id), str(new_id))
+
+        # Conversione del prospect in allievo effettivo deve preservare la tessera del socio preesistente
+        res_conv = self.client.post(f'/api/allievi/{new_id}/convert-status/', {
+            'corso_id': str(corso.id),
+        }, format='json')
+        self.assertEqual(res_conv.status_code, 200)
+        re_enrolled = Allievo.objects.get(id=new_id)
+        self.assertFalse(re_enrolled.is_prospect)
+        self.assertEqual(re_enrolled.tessera_associativa, '102')
+        self.assertNotEqual(allievo_attivo.id, re_enrolled.id)
+

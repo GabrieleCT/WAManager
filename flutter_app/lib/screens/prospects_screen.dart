@@ -11,6 +11,7 @@ import '../widgets/invia_modulo_tesseramento_dialog.dart';
 import '../widgets/convert_prospect_dialog.dart';
 import '../widgets/manual_date_field.dart';
 import '../widgets/telefono_input_field.dart';
+import '../widgets/cerca_socio_dialog.dart';
 
 
 
@@ -140,6 +141,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
     String? selectedCorsoId = editingProspect?.corsoId;
 
     bool isSaving = false;
+    Socio? selectedSocio;
 
     showDialog(
 
@@ -186,6 +188,60 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                 mainAxisSize: MainAxisSize.min,
 
                 children: [
+                  if (editingProspect == null) ...[
+                    if (selectedSocio == null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.person_search),
+                          label: const Text('Cerca tra i Soci (ex-allievi)'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.indigo,
+                            side: BorderSide(color: Colors.indigo.shade200),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          ),
+                          onPressed: () async {
+                            final socio = await showCercaSocioDialog(context, _api);
+                            if (socio != null) {
+                              setDlgState(() {
+                                selectedSocio = socio;
+                                nomeController.text = socio.nome;
+                                cognomeController.text = socio.cognome;
+                                telefonoController.text = socio.telefono ?? '';
+                              });
+                            }
+                          },
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.indigo.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified_user, color: Colors.indigo, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Socio: ${selectedSocio!.nomeCompleto} (Tessera #${selectedSocio!.numeroTessera})',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              tooltip: 'Rimuovi collegamento socio',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => setDlgState(() => selectedSocio = null),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
 
                   TextField(
 
@@ -494,6 +550,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
                             'recensione': recensione,
                             'is_prospect': true,
                             'note': noteController.text.trim().isNotEmpty ? noteController.text.trim() : 'Prospect',
+                            if (selectedSocio != null) ...buildSocioAnagraficaPayload(selectedSocio!),
                           };
 
                           final res = editingProspect == null
