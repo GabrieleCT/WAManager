@@ -2,30 +2,43 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
+class SocioLuogoNascita {
+  final String comune;
+  final String provincia;
+  const SocioLuogoNascita(this.comune, this.provincia);
+}
+
+class SocioResidenza {
+  final String indirizzo;
+  final String comune;
+  final String provincia;
+  const SocioResidenza(this.indirizzo, this.comune, this.provincia);
+}
+
 /// Estrae (comune, provincia) da `socio.luogoNascita` (es. "MILANO (MI)" -> ("MILANO", "MI")).
-(String, String) parseLuogoNascitaSocio(String? raw) {
+SocioLuogoNascita parseLuogoNascitaSocio(String? raw) {
   final trimmed = (raw ?? '').trim();
-  if (trimmed.isEmpty) return ('', '');
+  if (trimmed.isEmpty) return const SocioLuogoNascita('', '');
   final match = RegExp(r'^(.+?)\s*\(([A-Za-z]{2})\)$').firstMatch(trimmed);
   if (match != null) {
-    return (match.group(1)!.trim().toUpperCase(), match.group(2)!.trim().toUpperCase());
+    return SocioLuogoNascita(match.group(1)!.trim().toUpperCase(), match.group(2)!.trim().toUpperCase());
   }
-  return (trimmed.toUpperCase(), '');
+  return SocioLuogoNascita(trimmed.toUpperCase(), '');
 }
 
 /// Estrae (indirizzo, comune, provincia) da `socio.indirizzoResidenza`
 /// (es. "Via Roma 10, MILANO, MI" -> ("Via Roma 10", "MILANO", "MI")).
-(String, String, String) parseResidenzaSocio(String? raw) {
+SocioResidenza parseResidenzaSocio(String? raw) {
   final trimmed = (raw ?? '').trim();
-  if (trimmed.isEmpty) return ('', '', '');
+  if (trimmed.isEmpty) return const SocioResidenza('', '', '');
   final parts = trimmed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
   if (parts.length >= 3 && RegExp(r'^[A-Za-z]{2}$').hasMatch(parts.last)) {
     final prov = parts.last.toUpperCase();
     final comune = parts[parts.length - 2].toUpperCase();
     final indirizzo = parts.sublist(0, parts.length - 2).join(', ');
-    return (indirizzo, comune, prov);
+    return SocioResidenza(indirizzo, comune, prov);
   }
-  return (trimmed, '', '');
+  return SocioResidenza(trimmed, '', '');
 }
 
 /// Converte una data ISO (`yyyy-MM-dd`) nel formato italiano (`dd/MM/yyyy`).
@@ -42,8 +55,8 @@ String formatSocioIsoDateToItalian(String? iso) {
 /// Costruisce il payload anagrafico completo a partire da un [Socio] selezionato
 /// (usato quando si crea un Prospect collegato a un ex-Socio).
 Map<String, dynamic> buildSocioAnagraficaPayload(Socio socio) {
-  final (comuneNasc, provNasc) = parseLuogoNascitaSocio(socio.luogoNascita);
-  final (indirizzoRes, comuneRes, provRes) = parseResidenzaSocio(socio.indirizzoResidenza);
+  final nasc = parseLuogoNascitaSocio(socio.luogoNascita);
+  final res = parseResidenzaSocio(socio.indirizzoResidenza);
   return {
     'tessera_associativa': socio.numeroTessera,
     if (socio.email != null && socio.email!.trim().isNotEmpty) 'email': socio.email!.trim(),
@@ -51,11 +64,11 @@ Map<String, dynamic> buildSocioAnagraficaPayload(Socio socio) {
       'codice_fiscale': socio.codiceFiscale!.trim().toUpperCase(),
     if (socio.dataNascita != null && socio.dataNascita!.trim().isNotEmpty)
       'data_nascita': socio.dataNascita!.trim(),
-    if (comuneNasc.isNotEmpty) 'comune_nascita': comuneNasc,
-    if (provNasc.isNotEmpty) 'provincia_nascita': provNasc,
-    if (indirizzoRes.isNotEmpty) 'indirizzo_residenza': indirizzoRes,
-    if (comuneRes.isNotEmpty) 'comune_residenza': comuneRes,
-    if (provRes.isNotEmpty) 'provincia_residenza': provRes,
+    if (nasc.comune.isNotEmpty) 'comune_nascita': nasc.comune,
+    if (nasc.provincia.isNotEmpty) 'provincia_nascita': nasc.provincia,
+    if (res.indirizzo.isNotEmpty) 'indirizzo_residenza': res.indirizzo,
+    if (res.comune.isNotEmpty) 'comune_residenza': res.comune,
+    if (res.provincia.isNotEmpty) 'provincia_residenza': res.provincia,
   };
 }
 

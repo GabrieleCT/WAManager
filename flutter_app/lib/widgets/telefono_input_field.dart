@@ -119,8 +119,8 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
   void initState() {
     super.initState();
     final parsed = _parseInitialPhone(widget.controller.text);
-    _prefixController = TextEditingController(text: parsed.$1);
-    _localController = TextEditingController(text: parsed.$2);
+    _prefixController = TextEditingController(text: parsed.key);
+    _localController = TextEditingController(text: parsed.value);
     _prefixFocusNode = FocusNode()..addListener(_onPrefixFocusChange);
     widget.controller.addListener(_onParentControllerChanged);
   }
@@ -138,11 +138,11 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
   void _onParentControllerChanged() {
     if (_isSyncing) return;
     final parsed = _parseInitialPhone(widget.controller.text);
-    if (_prefixController.text != parsed.$1) {
-      _prefixController.text = parsed.$1;
+    if (_prefixController.text != parsed.key) {
+      _prefixController.text = parsed.key;
     }
-    if (_localController.text != parsed.$2) {
-      _localController.text = parsed.$2;
+    if (_localController.text != parsed.value) {
+      _localController.text = parsed.value;
     }
   }
 
@@ -156,11 +156,11 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
     }
   }
 
-  /// Restituisce `(prefisso, numeroLocaleFormattato)`.
-  (String, String) _parseInitialPhone(String raw) {
+  /// Restituisce `MapEntry(prefisso, numeroLocaleFormattato)`.
+  MapEntry<String, String> _parseInitialPhone(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty || trimmed.toUpperCase() == 'TBD') {
-      return ('+39', '');
+      return const MapEntry('+39', '');
     }
 
     if (trimmed.startsWith('+')) {
@@ -169,27 +169,27 @@ class _TelefonoInputFieldState extends State<TelefonoInputField> {
         final prefDigits = trimmed.substring(1, spaceIdx).replaceAll(RegExp(r'\D'), '');
         final restDigits = trimmed.substring(spaceIdx + 1).replaceAll(RegExp(r'\D'), '');
         final pref = prefDigits.isNotEmpty ? '+$prefDigits' : '+39';
-        return (pref, PhoneLocalInputFormatter.formatDigits(restDigits));
+        return MapEntry(pref, PhoneLocalInputFormatter.formatDigits(restDigits));
       }
 
       final allDigits = trimmed.substring(1).replaceAll(RegExp(r'\D'), '');
       if (allDigits.startsWith('39') && allDigits.length > 2) {
-        return ('+39', PhoneLocalInputFormatter.formatDigits(allDigits.substring(2)));
+        return MapEntry('+39', PhoneLocalInputFormatter.formatDigits(allDigits.substring(2)));
       }
       if ((allDigits.startsWith('1') || allDigits.startsWith('7')) && allDigits.length > 1) {
-        return ('+${allDigits.substring(0, 1)}', PhoneLocalInputFormatter.formatDigits(allDigits.substring(1)));
+        return MapEntry('+${allDigits.substring(0, 1)}', PhoneLocalInputFormatter.formatDigits(allDigits.substring(1)));
       }
       if (allDigits.length > 2) {
-        return ('+${allDigits.substring(0, 2)}', PhoneLocalInputFormatter.formatDigits(allDigits.substring(2)));
+        return MapEntry('+${allDigits.substring(0, 2)}', PhoneLocalInputFormatter.formatDigits(allDigits.substring(2)));
       }
-      return (allDigits.isNotEmpty ? '+$allDigits' : '+39', '');
+      return MapEntry(allDigits.isNotEmpty ? '+$allDigits' : '+39', '');
     }
 
     final digits = trimmed.replaceAll(RegExp(r'\D'), '');
     if (digits.startsWith('0039') && digits.length > 4) {
-      return ('+39', PhoneLocalInputFormatter.formatDigits(digits.substring(4)));
+      return MapEntry('+39', PhoneLocalInputFormatter.formatDigits(digits.substring(4)));
     }
-    return ('+39', PhoneLocalInputFormatter.formatDigits(digits));
+    return MapEntry('+39', PhoneLocalInputFormatter.formatDigits(digits));
   }
 
   void _syncToParentController() {

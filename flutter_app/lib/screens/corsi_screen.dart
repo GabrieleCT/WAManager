@@ -728,7 +728,7 @@ class _CorsiScreenState extends State<CorsiScreen> {
                         if (nomeCtl.text.trim().isEmpty || cognomeCtl.text.trim().isEmpty) return;
                         setDlgState(() => isSaving = true);
                         try {
-                          final data = {
+                          final Map<String, dynamic> data = {
                             'nome': nomeCtl.text.trim(),
                             'cognome': cognomeCtl.text.trim(),
                             'telefono': telCtl.text.trim(),

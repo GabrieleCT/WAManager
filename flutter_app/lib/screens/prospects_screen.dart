@@ -540,7 +540,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
 
                         setDlgState(() => isSaving = true);
                         try {
-                          final data = {
+                          final Map<String, dynamic> data = {
                             'nome': nomeController.text.trim(),
                             'cognome': cognomeController.text.trim(),
                             'telefono': telefonoController.text.trim(),

@@ -663,8 +663,8 @@ class _AllieviScreenState extends State<AllieviScreen> {
                           onPressed: () async {
                             final socio = await showCercaSocioDialog(context, _api);
                             if (socio != null) {
-                              final (comuneNasc, provNasc) = parseLuogoNascitaSocio(socio.luogoNascita);
-                              final (indirizzoRes, comuneRes, provRes) = parseResidenzaSocio(socio.indirizzoResidenza);
+                              final nasc = parseLuogoNascitaSocio(socio.luogoNascita);
+                              final res = parseResidenzaSocio(socio.indirizzoResidenza);
                               setDlgState(() {
                                 selectedSocio = socio;
                                 nomeController.text = socio.nome;
@@ -673,11 +673,11 @@ class _AllieviScreenState extends State<AllieviScreen> {
                                 emailController.text = socio.email ?? '';
                                 codiceFiscaleController.text = (socio.codiceFiscale ?? '').toUpperCase();
                                 dataNascitaController.text = formatSocioIsoDateToItalian(socio.dataNascita);
-                                comuneNascitaController.text = comuneNasc;
-                                provinciaNascitaController.text = provNasc;
-                                indirizzoResidenzaController.text = indirizzoRes;
-                                comuneResidenzaController.text = comuneRes;
-                                provinciaResidenzaController.text = provRes;
+                                comuneNascitaController.text = nasc.comune;
+                                provinciaNascitaController.text = nasc.provincia;
+                                indirizzoResidenzaController.text = res.indirizzo;
+                                comuneResidenzaController.text = res.comune;
+                                provinciaResidenzaController.text = res.provincia;
                                 tesseraAssociativaController.text = socio.numeroTessera;
                               });
                             }
