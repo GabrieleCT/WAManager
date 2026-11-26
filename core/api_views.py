@@ -2171,7 +2171,8 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
             ('ricevuta', 'Template Ricevuta Pagamento', 'Template PDF utilizzato per la generazione delle ricevute di pagamento quote e corsi.'),
             ('modulo_tesseramento', 'Modulo di Tesseramento', 'Modulo PDF ufficiale per la richiesta o rinnovo del tesseramento degli allievi.'),
             ('verbale_rendiconto', 'Verbale Approvazione Rendiconto', 'Modello di verbale assembleare per l\'approvazione del rendiconto economico-finanziario annuale.'),
-            ('verbale_ammissione_socio', 'Verbale di Ammissione Socio', 'Modello di verbale del Consiglio Direttivo per l\'ammissione e iscrizione a libro soci dei nuovi associati.')
+            ('verbale_ammissione_socio', 'Verbale di Ammissione Socio', 'Modello di verbale del Consiglio Direttivo per l\'ammissione e iscrizione a libro soci dei nuovi associati.'),
+            ('tessera_associativa', 'Tessera Associativa', 'Template PDF della tessera associativa del socio, compilato automaticamente con numero, nome, cognome e tessera ACSI.')
         ]
         for chiave, nome, desc in predefiniti:
             DocumentTemplate.objects.get_or_create(
@@ -4780,6 +4781,104 @@ class SocioViewSet(viewsets.ModelViewSet):
                 'configured': True,
                 'status': 'ERRORE',
                 'message': f"Impossibile verificare lo stato di Google Drive: {str(e)}",
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'], url_path='tessera-pdf', permission_classes=[permissions.AllowAny])
+    def tessera_pdf(self, request, pk=None):
+        """Restituisce il PDF della tessera associativa compilato per il socio."""
+        user = request.user if (request.user and request.user.is_authenticated) else None
+        if not user:
+            auth_header = request.headers.get('Authorization', '')
+            token_key = None
+            if auth_header.startswith('Token '):
+                token_key = auth_header.split(' ')[1].strip()
+            elif request.GET.get('token'):
+                token_key = request.GET.get('token').strip()
+
+            if token_key:
+                from rest_framework.authtoken.models import Token
+                try:
+                    token_obj = Token.objects.select_related('user').get(key=token_key)
+                    user = token_obj.user
+                except Token.DoesNotExist:
+                    pass
+
+        if not user:
+            return Response({'detail': 'Non sono state immesse le credenziali di autenticazione.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        socio = self.get_object()
+        try:
+            from .pdf_template_service import genera_pdf_tessera_associativa_da_template
+            pdf_bytes = genera_pdf_tessera_associativa_da_template(socio)
+            if not pdf_bytes:
+                return Response(
+                    {'error': 'Template Tessera Associativa non trovato o non configurato. Caricalo nella sezione Template PDF.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            safe_name = "".join(c for c in f"{socio.cognome}_{socio.nome}" if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Tessera_Socio_{socio.numero_tessera}_{safe_name}.pdf"
+            disposition = 'attachment' if request.GET.get('download') in ('1', 'true') else 'inline'
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+            return response
+        except Exception as e:
+            logger.exception("Errore generazione PDF Tessera Associativa")
+            return Response({'error': f"Errore generazione PDF Tessera Associativa: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='send-tessera-whatsapp')
+    def send_tessera_whatsapp(self, request, pk=None):
+        """Invia il PDF della tessera associativa compilato via WhatsApp al socio."""
+        socio = self.get_object()
+        telefono = (request.data.get('telefono') or socio.telefono or '').strip()
+        if not telefono and socio.allievo and socio.allievo.telefono:
+            telefono = socio.allievo.telefono.strip()
+
+        if not telefono or telefono.upper() == 'TBD':
+            return Response({
+                'success': False,
+                'error': f"Numero di telefono mancante per {socio.cognome} {socio.nome}. Specifica un numero WhatsApp valido."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        messaggio = request.data.get('messaggio')
+        if not messaggio or not str(messaggio).strip():
+            messaggio = (
+                f"Ciao {socio.nome}, in allegato trovi la tua Tessera Associativa n. {socio.numero_tessera}!"
+            )
+
+        try:
+            from .pdf_template_service import genera_pdf_tessera_associativa_da_template
+            pdf_bytes = genera_pdf_tessera_associativa_da_template(socio)
+            if not pdf_bytes:
+                return Response({
+                    'success': False,
+                    'error': 'Template Tessera Associativa non trovato o non configurato. Caricalo nella sezione Template PDF.'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            from .wa_client import send_whatsapp_document
+            safe_name = "".join(c for c in f"{socio.cognome}_{socio.nome}" if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Tessera_Socio_{socio.numero_tessera}_{safe_name}.pdf"
+
+            res = send_whatsapp_document(
+                to=telefono,
+                file_bytes=pdf_bytes,
+                filename=filename,
+                caption=str(messaggio).strip()
+            )
+            if res.get('success'):
+                return Response({
+                    'success': True,
+                    'message': f"Tessera associativa inviata con successo via WhatsApp a {telefono}!"
+                })
+            return Response({
+                'success': False,
+                'error': res.get('error', 'Errore durante l\'invio tramite WhatsApp Gateway.')
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            logger.exception("Errore invio WhatsApp Tessera Associativa")
+            return Response({
+                'success': False,
+                'error': f"Errore invio WhatsApp Tessera Associativa: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../utils/file_download_helper.dart';
+import '../widgets/telefono_input_field.dart';
 
 class LibroSociTab extends StatefulWidget {
   const LibroSociTab({super.key});
@@ -339,6 +340,158 @@ class _LibroSociTabState extends State<LibroSociTab> {
     }
   }
 
+  // ─── Tessera PDF & WhatsApp ───────────────────────────────────────────────
+
+  Future<void> _visualizzaTesseraPdf(Socio socio) async {
+    final url = Uri.parse(_api.getSocioTesseraPdfUrl(socio.id));
+    try {
+      final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossibile aprire il PDF della tessera.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore apertura PDF: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showInviaTesseraWhatsAppDialog(Socio socio) async {
+    final phoneCtrl = TextEditingController(text: socio.telefono ?? '');
+    final msgCtrl = TextEditingController(
+      text: 'Ciao ${socio.nome}, in allegato trovi la tua Tessera Associativa n. ${socio.numeroTessera}!',
+    );
+    bool sending = false;
+    String? localError;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(Icons.send_to_mobile, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Invia Tessera via WhatsApp (${socio.nomeCompleto})',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.brown.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.brown.shade200),
+                      ),
+                      child: Text(
+                        'Tessera n. ${socio.numeroTessera}'
+                        '${(socio.numeroTesseraAcsi ?? '').isNotEmpty ? " • ACSI: ${socio.numeroTesseraAcsi}" : ""}',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.brown.shade900),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TelefonoInputField(
+                      controller: phoneCtrl,
+                      labelText: 'Numero WhatsApp *',
+                      hintText: '333 123 4567',
+                      border: const OutlineInputBorder(),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: msgCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Messaggio di accompagnamento',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (localError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(localError!, style: const TextStyle(color: Colors.red, fontSize: 12.5)),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: sending ? null : () => Navigator.pop(ctx),
+                  child: const Text('Annulla'),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: sending
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send),
+                  label: Text(sending ? 'Invio in corso...' : 'Invia su WhatsApp'),
+                  onPressed: sending
+                      ? null
+                      : () async {
+                          final tel = phoneCtrl.text.trim();
+                          if (tel.isEmpty) {
+                            setDlgState(() => localError = 'Inserisci un numero di telefono WhatsApp valido.');
+                            return;
+                          }
+                          setDlgState(() {
+                            sending = true;
+                            localError = null;
+                          });
+                          final res = await _api.sendSocioTesseraWhatsApp(
+                            socio.id,
+                            telefono: tel,
+                            messaggio: msgCtrl.text.trim(),
+                          );
+                          if (!ctx.mounted) return;
+                          if (res['success'] == true) {
+                            Navigator.pop(ctx);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res['message'] ?? 'Tessera inviata via WhatsApp!'),
+                                  backgroundColor: Colors.green.shade800,
+                                ),
+                              );
+                            }
+                          } else {
+                            setDlgState(() {
+                              sending = false;
+                              localError = res['error']?.toString() ?? 'Errore durante l\'invio.';
+                            });
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ─── Dialogs ──────────────────────────────────────────────────────────────
 
   void _showDettaglio(Socio socio) {
@@ -424,6 +577,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                   const SizedBox(height: 16),
 
                   _buildInfoGrid([
+                    _buildInfoTile('Tessera ACSI', socio.numeroTesseraAcsi?.isNotEmpty == true ? socio.numeroTesseraAcsi! : '-'),
                     _buildInfoTile('Codice Fiscale', socio.codiceFiscale ?? '-'),
                     _buildInfoTile('Categoria', socio.categoriaDisplay),
                     _buildInfoTile('Data Iscrizione', _formatDateStr(socio.dataIscrizione)),
@@ -471,6 +625,23 @@ class _LibroSociTabState extends State<LibroSociTab> {
             ),
           ),
           actions: [
+            OutlinedButton.icon(
+              icon: Icon(Icons.badge_outlined, color: Colors.brown.shade700),
+              label: Text('Visualizza Tessera PDF', style: TextStyle(color: Colors.brown.shade800)),
+              onPressed: () => _visualizzaTesseraPdf(socio),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.send_to_mobile),
+              label: const Text('Invia Tessera WhatsApp'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _showInviaTesseraWhatsAppDialog(socio);
+              },
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Chiudi'),
@@ -524,6 +695,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
     String suggeritoTessera = (maxTessera + 1).toString();
 
     final tesseraCtrl = TextEditingController(text: suggeritoTessera);
+    final acsiCtrl = TextEditingController();
     final cognomeCtrl = TextEditingController();
     final nomeCtrl = TextEditingController();
     final cfCtrl = TextEditingController();
@@ -680,6 +852,15 @@ class _LibroSociTabState extends State<LibroSociTab> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        TextFormField(
+                          controller: acsiCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'N. Tessera ACSI (opzionale)',
+                            hintText: 'Es. PS7546012',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
@@ -801,6 +982,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                       final quotaVal = rawQuota.isEmpty ? 0.0 : (double.tryParse(rawQuota) ?? 0.0);
                       final payload = {
                         'numero_tessera': tesseraCtrl.text.trim(),
+                        'numero_tessera_acsi': acsiCtrl.text.trim(),
                         'cognome': cognomeCtrl.text.trim(),
                         'nome': nomeCtrl.text.trim(),
                         'codice_fiscale': cfCtrl.text.trim().toUpperCase(),
@@ -851,6 +1033,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
   Future<void> _showModificaSocioDialog(Socio socio) async {
     final formKey = GlobalKey<FormState>();
     final tesseraCtrl = TextEditingController(text: socio.numeroTessera);
+    final acsiCtrl = TextEditingController(text: socio.numeroTesseraAcsi ?? '');
     final cognomeCtrl = TextEditingController(text: socio.cognome);
     final nomeCtrl = TextEditingController(text: socio.nome);
     final cfCtrl = TextEditingController(text: socio.codiceFiscale ?? '');
@@ -957,6 +1140,15 @@ class _LibroSociTabState extends State<LibroSociTab> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        TextFormField(
+                          controller: acsiCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'N. Tessera ACSI (opzionale)',
+                            hintText: 'Es. PS7546012',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
@@ -1037,6 +1229,7 @@ class _LibroSociTabState extends State<LibroSociTab> {
                       final quotaVal = rawQuota.isEmpty ? 0.0 : (double.tryParse(rawQuota) ?? 0.0);
                       final payload = {
                         'numero_tessera': tesseraCtrl.text.trim(),
+                        'numero_tessera_acsi': acsiCtrl.text.trim(),
                         'cognome': cognomeCtrl.text.trim(),
                         'nome': nomeCtrl.text.trim(),
                         'codice_fiscale': cfCtrl.text.trim().toUpperCase(),
@@ -1660,6 +1853,16 @@ class _LibroSociTabState extends State<LibroSociTab> {
                                         icon: const Icon(Icons.visibility, size: 18),
                                         tooltip: 'Dettaglio',
                                         onPressed: () => _showDettaglio(socio),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.badge_outlined, size: 18, color: Colors.brown.shade700),
+                                        tooltip: 'Visualizza Tessera PDF',
+                                        onPressed: () => _visualizzaTesseraPdf(socio),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.send_to_mobile, size: 18, color: Colors.green.shade700),
+                                        tooltip: 'Invia Tessera via WhatsApp',
+                                        onPressed: () => _showInviaTesseraWhatsAppDialog(socio),
                                       ),
                                       IconButton(
                                         icon: const Icon(Icons.edit, size: 18),

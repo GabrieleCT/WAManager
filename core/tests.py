@@ -1135,3 +1135,65 @@ class LibroSociTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data['next_tessera_associativa'], '251')
 
+    def test_tessera_associativa_template_pdf_e_whatsapp(self):
+        """Test generazione PDF tessera associativa da template e invio via WhatsApp."""
+        import pymupdf
+        from django.core.files.base import ContentFile
+        from unittest.mock import patch
+        from .models import DocumentTemplate
+
+        # Crea un template PDF vuoto A4 con le etichette del retro tessera
+        doc = pymupdf.open()
+        page = doc.new_page(width=595.28, height=841.89)
+        page.insert_text(pymupdf.Point(100, 515), "Numero:")
+        page.insert_text(pymupdf.Point(100, 565), "Nome:")
+        page.insert_text(pymupdf.Point(100, 615), "Cognome:")
+        page.insert_text(pymupdf.Point(100, 665), "Tessera ACSI associata:")
+        tmpl_bytes = doc.tobytes()
+        doc.close()
+
+        tmpl, _ = DocumentTemplate.objects.get_or_create(
+            chiave='tessera_associativa',
+            defaults={'nome': 'Tessera Associativa'}
+        )
+        tmpl.file.save('test_tessera.pdf', ContentFile(tmpl_bytes), save=True)
+
+        socio = Socio.objects.create(
+            numero_tessera='4',
+            numero_tessera_acsi='PS7546012',
+            cognome='Avolio',
+            nome='Rocco',
+            telefono='+39 333 123 4567',
+            origine=OrigineSocio.MANUALE,
+        )
+
+        # 1. Verifica list document-templates contenga tessera_associativa
+        res_list = self.client.get('/api/document-templates/')
+        self.assertEqual(res_list.status_code, 200)
+        chiavi = [t['chiave'] for t in (res_list.data if isinstance(res_list.data, list) else res_list.data.get('results', []))]
+        self.assertIn('tessera_associativa', chiavi)
+
+        # 2. Verifica endpoint tessera-pdf
+        res_pdf = self.client.get(f'/api/soci/{socio.id}/tessera-pdf/')
+        self.assertEqual(res_pdf.status_code, 200)
+        self.assertEqual(res_pdf['Content-Type'], 'application/pdf')
+        compiled_doc = pymupdf.open(stream=res_pdf.content, filetype='pdf')
+        text = compiled_doc[0].get_text()
+        compiled_doc.close()
+        self.assertIn('4', text)
+        self.assertIn('Rocco', text)
+        self.assertIn('Avolio', text)
+        self.assertIn('PS7546012', text)
+
+        # 3. Verifica endpoint send-tessera-whatsapp
+        with patch('core.wa_client.send_whatsapp_document', return_value={'success': True}) as mock_wa:
+            res_wa = self.client.post(
+                f'/api/soci/{socio.id}/send-tessera-whatsapp/',
+                {'telefono': '+39 333 123 4567', 'messaggio': 'Ecco la tua tessera'},
+                format='json',
+            )
+        self.assertEqual(res_wa.status_code, 200)
+        self.assertTrue(res_wa.data['success'])
+        mock_wa.assert_called_once()
+        tmpl.file.delete(save=False)
+

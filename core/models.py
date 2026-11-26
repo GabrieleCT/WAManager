@@ -839,6 +839,7 @@ class DocumentTemplate(models.Model):
         ('modulo_tesseramento', 'Modulo di Tesseramento'),
         ('verbale_rendiconto', 'Verbale Approvazione Rendiconto'),
         ('verbale_ammissione_socio', 'Verbale di Ammissione Socio'),
+        ('tessera_associativa', 'Tessera Associativa'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1344,6 +1345,12 @@ class Socio(models.Model):
         verbose_name="Numero Tessera",
         help_text="Numero tessera associativa del socio"
     )
+    numero_tessera_acsi = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name="Numero Tessera ACSI"
+    )
     cognome = models.CharField(max_length=100, db_index=True)
     nome = models.CharField(max_length=100)
 
@@ -1461,6 +1468,7 @@ def sync_allievo_to_socio(sender, instance, created, **kwargs):
         try:
             socio.allievo = instance
             socio.numero_tessera = tessera
+            socio.numero_tessera_acsi = (instance.numero_tessera_acsi or '').strip()
             socio.cognome = instance.cognome.strip()
             socio.nome = instance.nome.strip()
             socio.data_nascita = instance.data_nascita
@@ -1477,6 +1485,7 @@ def sync_allievo_to_socio(sender, instance, created, **kwargs):
     else:
         Socio.objects.create(
             numero_tessera=tessera,
+            numero_tessera_acsi=(instance.numero_tessera_acsi or '').strip(),
             cognome=instance.cognome.strip(),
             nome=instance.nome.strip(),
             data_nascita=instance.data_nascita,
@@ -1520,6 +1529,9 @@ def sync_socio_to_allievo(sender, instance, created, **kwargs):
             updated = True
         if instance.numero_tessera and allievo.tessera_associativa != instance.numero_tessera.strip():
             allievo.tessera_associativa = instance.numero_tessera.strip()
+            updated = True
+        if instance.numero_tessera_acsi is not None and allievo.numero_tessera_acsi != instance.numero_tessera_acsi.strip():
+            allievo.numero_tessera_acsi = instance.numero_tessera_acsi.strip()
             updated = True
         if instance.data_nascita != allievo.data_nascita:
             allievo.data_nascita = instance.data_nascita

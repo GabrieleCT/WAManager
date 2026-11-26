@@ -1892,6 +1892,7 @@ class GoogleContactsSyncLog {
 class Socio {
   final int id;
   final String numeroTessera;
+  final String? numeroTesseraAcsi;
   final String cognome;
   final String nome;
   final String? dataNascita;
@@ -1918,6 +1919,7 @@ class Socio {
   Socio({
     required this.id,
     required this.numeroTessera,
+    this.numeroTesseraAcsi,
     required this.cognome,
     required this.nome,
     this.dataNascita,
@@ -1950,6 +1952,7 @@ class Socio {
     return Socio(
       id: (json['id'] as num).toInt(),
       numeroTessera: json['numero_tessera'] ?? '',
+      numeroTesseraAcsi: json['numero_tessera_acsi'] ?? '',
       cognome: json['cognome'] ?? '',
       nome: json['nome'] ?? '',
       dataNascita: json['data_nascita'],

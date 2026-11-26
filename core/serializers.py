@@ -813,7 +813,7 @@ class SocioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Socio
         fields = [
-            'id', 'numero_tessera', 'cognome', 'nome',
+            'id', 'numero_tessera', 'numero_tessera_acsi', 'cognome', 'nome',
             'data_nascita', 'luogo_nascita', 'codice_fiscale', 'indirizzo_residenza',
             'telefono', 'email', 'data_iscrizione', 'categoria', 'categoria_display',
             'quota_associativa', 'attivo', 'data_cessazione', 'motivo_cessazione',
@@ -821,6 +821,12 @@ class SocioSerializer(serializers.ModelSerializer):
             'allievo_nome_completo', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not (data.get('numero_tessera_acsi') or '').strip() and instance.allievo and instance.allievo.numero_tessera_acsi:
+            data['numero_tessera_acsi'] = instance.allievo.numero_tessera_acsi.strip()
+        return data
 
     def get_allievo_nome_completo(self, obj):
         if obj.allievo:

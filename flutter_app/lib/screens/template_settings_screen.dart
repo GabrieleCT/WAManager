@@ -244,6 +244,16 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
       ),
     );
 
+    final tesseraAssociativaTmpl = _templates.firstWhere(
+      (t) => t.chiave == 'tessera_associativa',
+      orElse: () => DocumentTemplate(
+        id: '',
+        chiave: 'tessera_associativa',
+        nome: 'Tessera Associativa',
+        descrizione: 'Template PDF della tessera associativa del socio, compilato automaticamente con numero tessera, nome, cognome e tessera ACSI.',
+      ),
+    );
+
     return RefreshIndicator(
       onRefresh: _loadTemplates,
       child: SingleChildScrollView(
@@ -282,7 +292,7 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Carica qui i file PDF o modelli ufficiali dei documenti. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, il modulo di tesseramento per nuove iscrizioni e rinnovi, il modello di verbale per l\'approvazione del rendiconto e il verbale per l\'ammissione di nuovi soci.',
+                              'Carica qui i file PDF o modelli ufficiali dei documenti. Il template della ricevuta viene utilizzato per le ricevute di pagamento quote, il modulo di tesseramento per nuove iscrizioni e rinnovi, la tessera associativa per la stampa e l\'invio ai soci, il modello di verbale per l\'approvazione del rendiconto e il verbale per l\'ammissione di nuovi soci.',
                               style: TextStyle(fontSize: 13, color: Colors.blue.shade900),
                             ),
                           ],
@@ -332,6 +342,15 @@ class _TemplateSettingsScreenState extends State<TemplateSettingsScreen> {
                   icon: Icons.how_to_reg_rounded,
                   accentColor: Colors.deepPurple.shade700,
                   badgeLabel: 'Ammissione Soci & Direttivo',
+                ),
+                const SizedBox(height: 20),
+
+                // Card 5: Tessera Associativa
+                _buildTemplateCard(
+                  tmpl: tesseraAssociativaTmpl,
+                  icon: Icons.badge_rounded,
+                  accentColor: Colors.brown.shade700,
+                  badgeLabel: 'Tessera Socio',
                 ),
               ],
             ),

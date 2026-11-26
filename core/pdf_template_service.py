@@ -827,3 +827,87 @@ def genera_pdf_verbale_rendiconto(data_assemblea, orario_assemblea, data_affissi
     }
 
     return pdf_bytes, filename, info
+
+
+def genera_pdf_tessera_associativa_da_template(socio):
+    """
+    Carica il template PDF 'tessera_associativa' da DocumentTemplate e compila
+    i campi: numero tessera, nome, cognome e numero tessera ACSI.
+    Supporta sia PDF con testo selezionabile (ricerca etichette) sia PDF
+    vettoriali/rasterizzati tramite coordinate proporzionali calibrate sul modello.
+    """
+    tmpl = DocumentTemplate.objects.filter(chiave='tessera_associativa').first()
+    if not tmpl or not tmpl.file or not os.path.exists(tmpl.file.path):
+        return None
+
+    doc = pymupdf.open(tmpl.file.path)
+    if len(doc) == 0:
+        doc.close()
+        return None
+
+    page = doc[0]
+    w = page.rect.width
+    h = page.rect.height
+
+    font_path = get_system_font_path()
+    font = pymupdf.Font(fontfile=font_path) if font_path else None
+    fontname = 'custom_font' if font_path else 'helv'
+    if font_path:
+        page.insert_font(fontname=fontname, fontfile=font_path)
+
+    numero = (getattr(socio, 'numero_tessera', '') or '').strip()
+    nome = (getattr(socio, 'nome', '') or '').strip()
+    cognome = (getattr(socio, 'cognome', '') or '').strip()
+    tessera_acsi = (getattr(socio, 'numero_tessera_acsi', '') or '').strip()
+    if not tessera_acsi and getattr(socio, 'allievo', None):
+        tessera_acsi = (socio.allievo.numero_tessera_acsi or '').strip()
+
+    # Coordinate proporzionali calibrate sul template ufficiale (A4: 595.28 x 841.89)
+    # e fallback dinamico con search_for se il PDF contiene testo selezionabile.
+    fields = [
+        ('Numero:', numero, 0.315 * w, 0.613 * h),
+        ('Nome:', nome, 0.278 * w, 0.674 * h),
+        ('Cognome:', cognome, 0.325 * w, 0.732 * h),
+        ('Tessera ACSI associata:', tessera_acsi, 0.470 * w, 0.788 * h),
+    ]
+
+    base_fontsize = 13.0 * (w / 595.28)
+    max_right_x = 0.85 * w
+
+    for label, value, fallback_x, fallback_y in fields:
+        if not value:
+            continue
+        x, y = fallback_x, fallback_y
+        try:
+            hits = page.search_for(label)
+            if hits:
+                # Prende il primo match nella metà inferiore (retro della tessera) o il primo disponibile
+                bottom_hits = [r for r in hits if r.y0 > h * 0.45]
+                rect = bottom_hits[0] if bottom_hits else hits[0]
+                x = rect.x1 + 8.0 * (w / 595.28)
+                y = rect.y1 - 2.0 * (h / 841.89)
+        except Exception:
+            pass
+
+        max_w = max(40.0, max_right_x - x)
+        size = base_fontsize
+        while size > 7.5:
+            if font:
+                tl = font.text_length(value, fontsize=size)
+            else:
+                tl = pymupdf.get_text_length(value, fontname=fontname, fontsize=size)
+            if tl <= max_w:
+                break
+            size -= 0.5
+
+        page.insert_text(
+            pymupdf.Point(x, y),
+            value,
+            fontsize=size,
+            fontname=fontname,
+            color=(0, 0, 0),
+        )
+
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes

@@ -2376,4 +2376,40 @@ class ApiService {
       };
     }
   }
+
+  String getSocioTesseraPdfUrl(int socioId, {bool download = false}) {
+    final base = '$baseUrl/api/soci/$socioId/tessera-pdf/';
+    final params = <String>[];
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      params.add('token=${Uri.encodeComponent(_authToken!)}');
+    }
+    if (download) {
+      params.add('download=1');
+    }
+    return params.isEmpty ? base : '$base?${params.join('&')}';
+  }
+
+  Future<Map<String, dynamic>> sendSocioTesseraWhatsApp(
+    int socioId, {
+    String? telefono,
+    String? messaggio,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/soci/$socioId/send-tessera-whatsapp/'),
+        headers: _headers,
+        body: jsonEncode({
+          if (telefono != null && telefono.trim().isNotEmpty) 'telefono': telefono.trim(),
+          if (messaggio != null && messaggio.trim().isNotEmpty) 'messaggio': messaggio.trim(),
+        }),
+      );
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+      return {'success': false, 'error': 'Risposta inattesa dal server (${response.statusCode})'};
+    } catch (e) {
+      return {'success': false, 'error': 'Errore di connessione: $e'};
+    }
+  }
 }
