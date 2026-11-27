@@ -1024,41 +1024,67 @@ def genera_pdf_verbale_ammissione_socio(data_iscrizione):
         sig_top = max(header_bottom + 10.0, sig_top - 25.0)
     sig_bottom = min(h - 20.0, sig_top + 160.0 * (h / 841.89))
 
-    raw_lines = []
+    raw_lines = []  # lista di (line_text, [(span_text, is_bold), ...], line_x0)
+    detected_sizes = []
+    detected_x0s = []
     for pno, page in enumerate(tmpl_doc):
         max_y = sig_top if pno == last_page_idx else h - 25.0
-        blocks = page.get_text("blocks")
-        blocks.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
-        for b in blocks:
-            if b[6] != 0:
+        pdict = page.get_text("dict")
+        lines_on_page = []
+        for b in pdict.get("blocks", []):
+            if b.get("type") != 0:
                 continue
-            by0, by1, btext = b[1], b[3], b[4]
-            if by1 <= header_bottom or by0 >= max_y:
-                continue
-            for ln in btext.splitlines():
-                cleaned = ln.strip()
-                if cleaned:
-                    raw_lines.append(cleaned)
+            for ln in b.get("lines", []):
+                lx0, ly0, lx1, ly1 = ln["bbox"]
+                if ly1 <= header_bottom or ly0 >= max_y:
+                    continue
+                spans = []
+                full_ln_parts = []
+                for sp in ln.get("spans", []):
+                    stxt = sp.get("text", "")
+                    if not stxt:
+                        continue
+                    sfont = (sp.get("font") or "").lower()
+                    sbold = bool(sp.get("flags", 0) & 16) or ("bold" in sfont) or ("cobo" in sfont)
+                    spans.append((stxt, sbold))
+                    full_ln_parts.append(stxt)
+                    if stxt.strip():
+                        detected_sizes.append(sp.get("size", 11.0))
+                line_text = "".join(full_ln_parts).strip()
+                if line_text:
+                    lines_on_page.append((ly0, lx0, line_text, spans))
+                    if lx0 < w * 0.25:
+                        detected_x0s.append(lx0)
+        lines_on_page.sort(key=lambda item: (round(item[0], 1), round(item[1], 1)))
+        for _, lx0, line_text, spans in lines_on_page:
+            raw_lines.append((line_text, spans))
 
-    full_text = "\n".join(raw_lines)
-    full_text = re.sub(
+    def _norm_winansi(txt):
+        return (
+            txt.replace('\u2019', "'")
+            .replace('\u2018', "'")
+            .replace('\u201c', '"')
+            .replace('\u201d', '"')
+            .replace('\u2013', '-')
+            .replace('\u2014', '-')
+        )
+
+    # Unisce il testo per rilevare il placeholder eventualmente spezzato su due righe
+    joined_lines = "\n".join(lt for lt, _ in raw_lines)
+    joined_lines = re.sub(
         r'<elenco_allievi_con_nome_cognome_data_nascita_comune_nascita_provi\s*ncia_nascita\s*>',
         '__ELENCO_DETTAGLIATO__',
-        full_text,
+        joined_lines,
         flags=re.IGNORECASE,
     )
-    full_text = re.sub(
+    joined_lines = re.sub(
         r'<elenco_allievi_con_nome_cognome\s*>',
         '__ELENCO_NOMI__',
-        full_text,
+        joined_lines,
         flags=re.IGNORECASE,
     )
-    full_text = full_text.replace('<anno>', anno_str)
-    full_text = full_text.replace('<giorno>', giorno_str)
-    full_text = full_text.replace('<mese>', mese_str)
 
-    paragraphs = []
-    current = []
+    # Ricostruisce i paragrafi mantenendo gli span (text, is_bold)
     break_starts = (
         'Verbale del Consiglio',
         'L’anno',
@@ -1080,116 +1106,253 @@ def genera_pdf_verbale_ammissione_socio(data_iscrizione):
         'giorno e nessuno',
         'Letto, confermato',
     )
-    for ln in full_text.splitlines():
-        s = ln.strip()
+
+    # Riallinea le righe normalizzate con gli span originali
+    norm_lines_list = joined_lines.splitlines()
+    # Gestisce il caso in cui il placeholder su 2 righe sia diventato 1 riga
+    aligned_lines = []
+    raw_idx = 0
+    for nline in norm_lines_list:
+        s = nline.strip()
         if not s:
-            if current:
-                paragraphs.append(" ".join(current))
-                current = []
             continue
-        if any(s.startswith(bs) for bs in break_starts) or s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
-            if current:
-                paragraphs.append(" ".join(current))
-                current = []
-            if s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
-                paragraphs.append(s)
-            else:
-                current.append(s)
+        if s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
+            aligned_lines.append((s, [(s, True)]))
+            # Avanza raw_idx oltre le righe del placeholder
+            while raw_idx < len(raw_lines) and ('<' in raw_lines[raw_idx][0] or 'ncia_nascita>' in raw_lines[raw_idx][0]):
+                raw_idx += 1
+                if raw_idx > 0 and '>' in raw_lines[raw_idx - 1][0]:
+                    break
         else:
-            current.append(s)
-    if current:
-        paragraphs.append(" ".join(current))
+            spans = raw_lines[raw_idx][1] if raw_idx < len(raw_lines) else [(s, False)]
+            raw_idx += 1
+            aligned_lines.append((s, spans))
+
+    paragraphs = []  # lista di 'STR_MARKER' o lista di (text_piece, is_bold)
+    cur_runs = []
+    for s, spans in aligned_lines:
+        if s in ('__ELENCO_DETTAGLIATO__', '__ELENCO_NOMI__'):
+            if cur_runs:
+                paragraphs.append(cur_runs)
+                cur_runs = []
+            paragraphs.append(s)
+            continue
+        if any(s.startswith(bs) for bs in break_starts):
+            if cur_runs:
+                paragraphs.append(cur_runs)
+                cur_runs = []
+        elif cur_runs:
+            cur_runs.append((' ', False))
+        for sp_txt, sp_bold in spans:
+            cur_runs.append((sp_txt, sp_bold))
+    if cur_runs:
+        paragraphs.append(cur_runs)
+
+    # Sostituisce <anno>, <giorno>, <mese> preservando i grassetti ed evidenziando i valori sostituiti
+    def _substitute_runs(runs):
+        combined = "".join(t for t, _ in runs)
+        bold_flags = []
+        for t, b in runs:
+            bold_flags.extend([b] * len(t))
+
+        replacements = [
+            ('<anno>', anno_str, True),
+            ('<giorno>', giorno_str, True),
+            ('<mese>', mese_str, True),
+        ]
+        for ph, val, ph_bold in replacements:
+            while ph in combined:
+                idx = combined.index(ph)
+                combined = combined[:idx] + val + combined[idx + len(ph):]
+                bold_flags = bold_flags[:idx] + ([ph_bold] * len(val)) + bold_flags[idx + len(ph):]
+
+        # Normalizza apostrofi/trattini mantenendo la lunghezza 1:1
+        combined = _norm_winansi(combined)
+        # Raggruppa in run contigui con stesso flag bold
+        out_runs = []
+        if not combined:
+            return out_runs
+        cur_b = bold_flags[0]
+        cur_t = [combined[0]]
+        for ch, b in zip(combined[1:], bold_flags[1:]):
+            if b == cur_b:
+                cur_t.append(ch)
+            else:
+                out_runs.append(("".join(cur_t), cur_b))
+                cur_b = b
+                cur_t = [ch]
+        out_runs.append(("".join(cur_t), cur_b))
+        return out_runs
 
     out_doc = pymupdf.open()
-    reg_font_path, bold_font_path = get_monospace_font_paths()
-    reg_name = 'mono_reg' if reg_font_path else 'cour'
-    bold_name = 'mono_bold' if bold_font_path else 'cobo'
-    reg_font_obj = pymupdf.Font(fontfile=reg_font_path) if reg_font_path else None
-    bold_font_obj = pymupdf.Font(fontfile=bold_font_path) if bold_font_path else None
+    reg_name = 'cour'
+    bold_name = 'cobo'
 
-    margin_x = 56.0 * (w / 595.28)
+    margin_x = (min(detected_x0s) if detected_x0s else 56.7)
+    margin_x = max(42.0, min(margin_x, 72.0))
     content_w = w - 2 * margin_x
-    fontsize = 10.5 * (w / 595.28)
-    line_height = 14.5 * (h / 841.89)
+    fontsize = (sorted(detected_sizes)[len(detected_sizes) // 2] if detected_sizes else 11.0)
+    fontsize = max(9.5, min(fontsize, 12.0))
+    line_height = fontsize * 1.38
     bottom_limit = h - 55.0 * (h / 841.89)
 
     def new_page_with_header():
         p = out_doc.new_page(width=w, height=h)
         p.show_pdf_page(pymupdf.Rect(0, 0, w, header_bottom), tmpl_doc, 0, clip=pymupdf.Rect(0, 0, w, header_bottom))
-        if reg_font_path:
-            p.insert_font(fontname=reg_name, fontfile=reg_font_path)
-        if bold_font_path:
-            p.insert_font(fontname=bold_name, fontfile=bold_font_path)
         return p, header_bottom + 24.0 * (h / 841.89)
 
     def text_width(txt, is_bold=False):
-        f = bold_font_obj if is_bold else reg_font_obj
         fn = bold_name if is_bold else reg_name
-        if f:
-            return f.text_length(txt, fontsize=fontsize)
         return pymupdf.get_text_length(txt, fontname=fn, fontsize=fontsize)
 
-    def wrap_paragraph(txt, is_bold=False):
-        words = txt.split(' ')
+    def wrap_runs(runs):
+        """Spezza una lista di (text, is_bold) in righe di [(segment, is_bold)]."""
+        # Estrae token (parola_con_spazio_opzionale, is_bold)
+        words = []  # lista di list[(char, is_bold)]
+        cur_word = []
+        for txt, b in runs:
+            for ch in txt:
+                if ch == ' ':
+                    if cur_word:
+                        words.append(cur_word)
+                        cur_word = []
+                else:
+                    cur_word.append((ch, b))
+        if cur_word:
+            words.append(cur_word)
+
+        def word_str(w_chars):
+            return "".join(c for c, _ in w_chars)
+
+        def word_runs(w_chars):
+            if not w_chars:
+                return []
+            res = []
+            cb = w_chars[0][1]
+            ct = [w_chars[0][0]]
+            for c, b in w_chars[1:]:
+                if b == cb:
+                    ct.append(c)
+                else:
+                    res.append(("".join(ct), cb))
+                    cb = b
+                    ct = [c]
+            res.append(("".join(ct), cb))
+            return res
+
+        def measure_line_runs(line_words):
+            total = 0.0
+            for i, w_chars in enumerate(line_words):
+                if i > 0:
+                    total += text_width(' ', is_bold=False)
+                for seg, b in word_runs(w_chars):
+                    total += text_width(seg, is_bold=b)
+            return total
+
         lines = []
-        cur = ''
-        for word in words:
-            cand = f"{cur} {word}".strip() if cur else word
-            if text_width(cand, is_bold=is_bold) <= content_w:
-                cur = cand
+        cur_line = []
+        for w_chars in words:
+            cand = cur_line + [w_chars]
+            if not cur_line or measure_line_runs(cand) <= content_w:
+                cur_line = cand
             else:
-                if cur:
-                    lines.append(cur)
-                cur = word
-        if cur:
-            lines.append(cur)
-        return lines
+                lines.append(cur_line)
+                cur_line = [w_chars]
+        if cur_line:
+            lines.append(cur_line)
+
+        out_lines = []
+        for lw in lines:
+            segs = []
+            for i, w_chars in enumerate(lw):
+                if i > 0:
+                    segs.append((' ', False))
+                segs.extend(word_runs(w_chars))
+            # Compatta segmenti adiacenti con stesso bold
+            merged = []
+            for seg, b in segs:
+                if merged and merged[-1][1] == b:
+                    merged[-1] = (merged[-1][0] + seg, b)
+                else:
+                    merged.append((seg, b))
+            out_lines.append((merged, measure_line_runs(lw)))
+        return out_lines
+
+    def wrap_plain_bold(txt):
+        return wrap_runs([(_norm_winansi(txt), True)])
 
     page, cur_y = new_page_with_header()
 
     for para in paragraphs:
         if para == '__ELENCO_DETTAGLIATO__':
             for item in dettagli_lines:
-                wrapped = wrap_paragraph(item, is_bold=True)
-                for idx, wl in enumerate(wrapped):
+                wrapped = wrap_plain_bold(item)
+                for idx, (segs, _) in enumerate(wrapped):
                     if cur_y + line_height > bottom_limit:
                         page, cur_y = new_page_with_header()
                     draw_x = margin_x + (18.0 if idx > 0 else 0.0)
-                    page.insert_text(pymupdf.Point(draw_x, cur_y), wl, fontname=bold_name, fontsize=fontsize, color=(0, 0, 0))
+                    for seg, b in segs:
+                        page.insert_text(
+                            pymupdf.Point(draw_x, cur_y),
+                            seg,
+                            fontname=bold_name if b else reg_name,
+                            fontsize=fontsize,
+                            color=(0, 0, 0),
+                        )
+                        draw_x += text_width(seg, is_bold=b)
                     cur_y += line_height
             cur_y += line_height * 0.6
             continue
 
         if para == '__ELENCO_NOMI__':
             for item in nomi_lines:
-                wrapped = wrap_paragraph(item, is_bold=True)
-                for idx, wl in enumerate(wrapped):
+                wrapped = wrap_plain_bold(item)
+                for idx, (segs, _) in enumerate(wrapped):
                     if cur_y + line_height > bottom_limit:
                         page, cur_y = new_page_with_header()
                     draw_x = margin_x + (18.0 if idx > 0 else 0.0)
-                    page.insert_text(pymupdf.Point(draw_x, cur_y), wl, fontname=bold_name, fontsize=fontsize, color=(0, 0, 0))
+                    for seg, b in segs:
+                        page.insert_text(
+                            pymupdf.Point(draw_x, cur_y),
+                            seg,
+                            fontname=bold_name if b else reg_name,
+                            fontsize=fontsize,
+                            color=(0, 0, 0),
+                        )
+                        draw_x += text_width(seg, is_bold=b)
                     cur_y += line_height
             cur_y += line_height * 0.6
             continue
 
-        is_title = para.startswith('Verbale del Consiglio')
-        is_punto = para.startswith('Punto 1')
-        is_delibera = para.strip() == 'DELIBERA'
-        is_bold = is_title or is_punto or is_delibera
+        runs = _substitute_runs(para)
+        plain_text = "".join(t for t, _ in runs).strip()
+        is_title = plain_text.startswith('Verbale del Consiglio')
+        is_punto = plain_text.startswith('Punto 1')
+        is_delibera = plain_text == 'DELIBERA'
 
-        wrapped = wrap_paragraph(para, is_bold=is_bold)
-        for wl in wrapped:
+        wrapped = wrap_runs(runs)
+        for segs, lw_width in wrapped:
             if cur_y + line_height > bottom_limit:
                 page, cur_y = new_page_with_header()
-            if is_title or is_delibera:
-                tw = text_width(wl, is_bold=True)
-                dx = (w - tw) / 2.0
-            else:
-                dx = margin_x
-            page.insert_text(pymupdf.Point(dx, cur_y), wl, fontname=bold_name if is_bold else reg_name, fontsize=fontsize, color=(0, 0, 0))
+            dx = (w - lw_width) / 2.0 if (is_title or is_delibera) else margin_x
+            start_x = dx
+            for seg, b in segs:
+                use_bold = b or is_title or is_punto or is_delibera
+                page.insert_text(
+                    pymupdf.Point(dx, cur_y),
+                    seg,
+                    fontname=bold_name if use_bold else reg_name,
+                    fontsize=fontsize,
+                    color=(0, 0, 0),
+                )
+                dx += text_width(seg, is_bold=use_bold)
             if is_title or is_punto:
-                tw = text_width(wl, is_bold=True)
-                page.draw_line(pymupdf.Point(dx, cur_y + 2.0), pymupdf.Point(dx + tw, cur_y + 2.0), color=(0, 0, 0), width=0.8)
+                page.draw_line(
+                    pymupdf.Point(start_x, cur_y + 2.0),
+                    pymupdf.Point(dx, cur_y + 2.0),
+                    color=(0, 0, 0),
+                    width=0.8,
+                )
             cur_y += line_height
         cur_y += line_height * 0.65
 

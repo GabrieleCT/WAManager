@@ -1268,6 +1268,6 @@ class LibroSociTests(TestCase):
         self.assertIn('22', full_out)
         self.assertIn('Ottobre', full_out)
         self.assertIn('Rocco Avolio, nato a Corigliano Calabro (CS) il 10/05/1982', full_out)
-        self.assertIn('Francesca D’Ingianna, nata a Melito di Porto Salvo (RC) il 08/03/1977', full_out)
+        self.assertIn("Francesca D'Ingianna, nata a Melito di Porto Salvo (RC) il 08/03/1977", full_out)
         tmpl.file.delete(save=False)
 
