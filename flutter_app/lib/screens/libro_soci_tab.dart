@@ -467,10 +467,19 @@ class _LibroSociTabState extends State<LibroSociTab> {
                           Navigator.pop(ctx);
                           try {
                             final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
-                            if (!ok && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Impossibile aprire il PDF del verbale.')),
-                              );
+                            if (mounted) {
+                              if (ok) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('Verbale PDF generato e pubblicato su Google Drive (se la cartella è configurata).'),
+                                    backgroundColor: Colors.green.shade800,
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Impossibile aprire il PDF del verbale.')),
+                                );
+                              }
                             }
                           } catch (e) {
                             if (mounted) {

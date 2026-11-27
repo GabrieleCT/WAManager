@@ -973,6 +973,8 @@ class GoogleDriveConfig(models.Model):
     folder_tessere_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Tessere")
     folder_verbali_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Verbale di Rendiconto Economico")
     folder_verbali_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbale di Rendiconto Economico")
+    folder_verbali_direttivo_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Verbali Consiglio Direttivo")
+    folder_verbali_direttivo_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Verbali Consiglio Direttivo")
     folder_libro_soci_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Libro Soci")
     folder_libro_soci_nome = models.CharField(max_length=255, blank=True, default='', help_text="Nome cartella Google Drive per Libro Soci")
     folder_certificati_id = models.CharField(max_length=255, blank=True, default='', help_text="ID cartella Google Drive per Certificati Medici")

@@ -1269,5 +1269,35 @@ class LibroSociTests(TestCase):
         self.assertIn('Ottobre', full_out)
         self.assertIn('Rocco Avolio, nato a Corigliano Calabro (CS) il 10/05/1982', full_out)
         self.assertIn("Francesca D'Ingianna, nata a Melito di Porto Salvo (RC) il 08/03/1977", full_out)
+
+        # Verifica salvataggio cartella Verbali Consiglio Direttivo e pubblicazione automatica su GDrive
+        from unittest.mock import MagicMock, patch
+        from .models import GoogleDriveConfig
+
+        res_upd = self.client.patch(
+            '/api/google-drive/update-settings/',
+            {
+                'folder_verbali_direttivo_id': 'folder_dir_123',
+                'folder_verbali_direttivo_nome': 'Verbali Direttivo',
+            },
+            format='json',
+        )
+        self.assertEqual(res_upd.status_code, 200)
+        cfg = GoogleDriveConfig.get_instance()
+        cfg.auth_type = 'oauth'
+        cfg.oauth_refresh_token = 'dummy_refresh'
+        cfg.save()
+
+        mock_drive = MagicMock()
+        mock_drive.files().list().execute.return_value = {'files': []}
+        mock_drive.files().create().execute.return_value = {'id': 'file_1', 'name': 'Verbale_Ammissione_Soci_20261022.pdf'}
+
+        with patch('core.api_views.get_google_drive_service', return_value=mock_drive):
+            res_pdf_drive = self.client.get('/api/soci/verbale-ammissione-pdf/?data_iscrizione=2026-10-22')
+        self.assertEqual(res_pdf_drive.status_code, 200)
+        self.assertEqual(res_pdf_drive['X-Drive-Uploaded'], 'true')
+        self.assertEqual(res_pdf_drive['X-Drive-Folder'], 'Verbali Direttivo')
+        mock_drive.files().create.assert_called()
+
         tmpl.file.delete(save=False)
 

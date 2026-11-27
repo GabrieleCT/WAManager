@@ -1036,6 +1036,8 @@ class GoogleDriveConfig {
   final String folderTessereNome;
   final String folderVerbaliId;
   final String folderVerbaliNome;
+  final String folderVerbaliDirettivoId;
+  final String folderVerbaliDirettivoNome;
   final String folderLibroSociId;
   final String folderLibroSociNome;
   final String folderCertificatiId;
@@ -1069,6 +1071,8 @@ class GoogleDriveConfig {
     this.folderTessereNome = '',
     this.folderVerbaliId = '',
     this.folderVerbaliNome = '',
+    this.folderVerbaliDirettivoId = '',
+    this.folderVerbaliDirettivoNome = '',
     this.folderLibroSociId = '',
     this.folderLibroSociNome = '',
     this.folderCertificatiId = '',
@@ -1106,6 +1110,8 @@ class GoogleDriveConfig {
       folderTessereNome: json['folder_tessere_nome'] ?? '',
       folderVerbaliId: json['folder_verbali_id'] ?? '',
       folderVerbaliNome: json['folder_verbali_nome'] ?? '',
+      folderVerbaliDirettivoId: json['folder_verbali_direttivo_id'] ?? '',
+      folderVerbaliDirettivoNome: json['folder_verbali_direttivo_nome'] ?? '',
       folderLibroSociId: json['folder_libro_soci_id'] ?? '',
       folderLibroSociNome: json['folder_libro_soci_nome'] ?? '',
       folderCertificatiId: json['folder_certificati_id'] ?? '',

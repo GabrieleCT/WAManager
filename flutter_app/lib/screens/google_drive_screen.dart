@@ -514,6 +514,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isRicevute = targetType == 'ricevute';
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
+    final isVerbaliDirettivo = targetType == 'verbali_direttivo';
     final isLibroSoci = targetType == 'libro_soci';
     final isCertificati = targetType == 'certificati';
 
@@ -525,7 +526,9 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 ? _config?.folderLibroSociId
                 : (isCertificati
                     ? _config?.folderCertificatiId
-                    : _config?.folderVerbaliId)));
+                    : (isVerbaliDirettivo
+                        ? _config?.folderVerbaliDirettivoId
+                        : _config?.folderVerbaliId))));
     final String? currentFolderName = isRicevute
         ? _config?.folderRicevuteNome
         : (isTessere
@@ -534,13 +537,17 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
                 ? _config?.folderLibroSociNome
                 : (isCertificati
                     ? _config?.folderCertificatiNome
-                    : _config?.folderVerbaliNome)));
+                    : (isVerbaliDirettivo
+                        ? _config?.folderVerbaliDirettivoNome
+                        : _config?.folderVerbaliNome))));
 
     String dialogTitle = 'Seleziona Cartella per le RICEVUTE';
     if (isTessere) {
       dialogTitle = 'Seleziona Cartella per le TESSERE';
     } else if (isVerbali) {
       dialogTitle = 'Seleziona Cartella per VERBALE DI RENDICONTO ECONOMICO';
+    } else if (isVerbaliDirettivo) {
+      dialogTitle = 'Seleziona Cartella per VERBALI CONSIGLIO DIRETTIVO';
     } else if (isLibroSoci) {
       dialogTitle = 'Seleziona Cartella per il LIBRO SOCI';
     } else if (isCertificati) {
@@ -590,6 +597,12 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
           'folder_certificati_nome': selected.name,
         };
         targetLabel = 'Certificati Medici';
+      } else if (isVerbaliDirettivo) {
+        updateData = {
+          'folder_verbali_direttivo_id': selected.id,
+          'folder_verbali_direttivo_nome': selected.name,
+        };
+        targetLabel = 'Verbali Consiglio Direttivo';
       } else {
         updateData = {
           'folder_verbali_id': selected.id,
@@ -627,6 +640,7 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     final isRicevute = targetType == 'ricevute';
     final isTessere = targetType == 'tessere';
     final isVerbali = targetType == 'verbali';
+    final isVerbaliDirettivo = targetType == 'verbali_direttivo';
     final isLibroSoci = targetType == 'libro_soci';
     final isCertificati = targetType == 'certificati';
 
@@ -638,6 +652,9 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     } else if (isVerbali) {
       targetLabel = 'Verbale di Rendiconto Economico';
       targetArticle = 'il verbale di rendiconto economico';
+    } else if (isVerbaliDirettivo) {
+      targetLabel = 'Verbali Consiglio Direttivo';
+      targetArticle = 'i verbali del Consiglio Direttivo';
     } else if (isLibroSoci) {
       targetLabel = 'Libro Soci';
       targetArticle = 'il libro soci';
@@ -675,6 +692,8 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
         updateData = {'folder_libro_soci_id': '', 'folder_libro_soci_nome': ''};
       } else if (isCertificati) {
         updateData = {'folder_certificati_id': '', 'folder_certificati_nome': ''};
+      } else if (isVerbaliDirettivo) {
+        updateData = {'folder_verbali_direttivo_id': '', 'folder_verbali_direttivo_nome': ''};
       } else {
         updateData = {'folder_verbali_id': '', 'folder_verbali_nome': ''};
       }
@@ -1650,6 +1669,20 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
               folderId: _config?.folderVerbaliId ?? '',
               folderName: _config?.folderVerbaliNome ?? '',
               targetType: 'verbali',
+              isConfigured: isConfigured,
+            ),
+
+            const SizedBox(height: 20),
+
+            // Card Cartella Verbali Consiglio Direttivo
+            _buildFolderCard(
+              title: 'Cartella Verbali Consiglio Direttivo',
+              description: 'Cartella Google Drive in cui vengono pubblicati automaticamente i verbali di ammissione soci del Consiglio Direttivo.',
+              icon: Icons.gavel_rounded,
+              color: Colors.deepPurple,
+              folderId: _config?.folderVerbaliDirettivoId ?? '',
+              folderName: _config?.folderVerbaliDirettivoNome ?? '',
+              targetType: 'verbali_direttivo',
               isConfigured: isConfigured,
             ),
 

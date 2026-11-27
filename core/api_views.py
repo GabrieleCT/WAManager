@@ -3305,6 +3305,8 @@ class GoogleDriveConfigViewSet(viewsets.ViewSet):
             'folder_tessere_nome',
             'folder_verbali_id',
             'folder_verbali_nome',
+            'folder_verbali_direttivo_id',
+            'folder_verbali_direttivo_nome',
             'folder_libro_soci_id',
             'folder_libro_soci_nome',
             'folder_certificati_id',
@@ -4930,9 +4932,63 @@ class SocioViewSet(viewsets.ModelViewSet):
         try:
             from .pdf_template_service import genera_pdf_verbale_ammissione_socio
             pdf_bytes, filename = genera_pdf_verbale_ammissione_socio(data_isc)
+
+            drive_uploaded = False
+            drive_folder_nome = ''
+            drive_error = ''
+            config = GoogleDriveConfig.get_instance()
+            target_folder_id = (config.folder_verbali_direttivo_id or '').strip()
+            if config.is_configured and target_folder_id:
+                try:
+                    from googleapiclient.http import MediaIoBaseUpload
+                    import io
+
+                    drive_service = get_google_drive_service(config)
+                    query = f"name = '{filename}' and '{target_folder_id}' in parents and trashed = false"
+                    existing = drive_service.files().list(
+                        q=query,
+                        spaces='drive',
+                        fields='files(id, name, webViewLink)',
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True,
+                    ).execute()
+                    files_found = existing.get('files', [])
+                    media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
+
+                    if files_found:
+                        drive_service.files().update(
+                            fileId=files_found[0]['id'],
+                            media_body=media,
+                            fields='id, name, webViewLink',
+                            supportsAllDrives=True,
+                        ).execute()
+                    else:
+                        file_metadata = {
+                            'name': filename,
+                            'parents': [target_folder_id],
+                            'description': f"Verbale di ammissione soci - data iscrizione {data_isc}",
+                        }
+                        drive_service.files().create(
+                            body=file_metadata,
+                            media_body=media,
+                            fields='id, name, webViewLink',
+                            supportsAllDrives=True,
+                        ).execute()
+
+                    drive_uploaded = True
+                    drive_folder_nome = config.folder_verbali_direttivo_nome or 'Verbali Consiglio Direttivo'
+                except Exception as g_err:
+                    logger.warning(f"Impossibile caricare il verbale ammissione soci su Google Drive: {g_err}")
+                    drive_error = str(g_err)
+
             disposition = 'attachment' if request.GET.get('download') in ('1', 'true') else 'inline'
             response = HttpResponse(pdf_bytes, content_type='application/pdf')
             response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+            response['X-Drive-Uploaded'] = 'true' if drive_uploaded else 'false'
+            if drive_folder_nome:
+                response['X-Drive-Folder'] = drive_folder_nome
+            if drive_error:
+                response['X-Drive-Error'] = drive_error
             return response
         except ValueError as ve:
             return Response({'error': str(ve)}, status=status.HTTP_400_BAD_REQUEST)
