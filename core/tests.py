@@ -511,6 +511,7 @@ class ImportDocumentiDriveTests(TestCase):
         from PIL import Image
         import io
         from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import GoogleDriveConfig
 
         config = GoogleDriveConfig.get_instance()
         config.folder_id = "default_folder_id"
@@ -558,6 +559,61 @@ class ImportDocumentiDriveTests(TestCase):
         self.assertEqual(len(data["uploaded_files"]), 1)
         self.assertEqual(data["uploaded_files"][0]["name"], "Mario_Rossi.pdf")
         self.assertEqual(data["folder_nome"], "Certificati")
+
+    @patch("core.api_views.get_google_drive_service")
+    def test_upload_nuovo_certificato_elimina_vecchio_dopo_caricamento(self, mock_get_service):
+        from PIL import Image
+        import io
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import GoogleDriveConfig
+
+        config = GoogleDriveConfig.get_instance()
+        config.folder_id = "default_folder_id"
+        config.folder_certificati_id = "cert_folder_id"
+        config.folder_certificati_nome = "Certificati"
+        config.auth_type = "oauth"
+        config.oauth_refresh_token = "valid_refresh_token"
+        config.save()
+
+        mock_drive_service = MagicMock()
+        mock_files = MagicMock()
+        mock_create = MagicMock()
+        mock_create.execute.return_value = {
+            "id": "new_cert_id",
+            "name": "Mario_Rossi.pdf",
+            "webViewLink": "https://drive.google.com/file/d/new_cert_id/view"
+        }
+        mock_files.create.return_value = mock_create
+        mock_files.list.return_value.execute.return_value = {
+            "files": [
+                {"id": "new_cert_id", "name": "Mario_Rossi.pdf", "description": "Certificati Medici per Mario Rossi"},
+                {"id": "old_cert_id", "name": "Mario_Rossi.pdf", "description": "Certificati Medici per Mario Rossi"},
+                {"id": "other_student_id", "name": "Mario_Rossini.pdf", "description": "Certificati Medici per Mario Rossini"},
+            ]
+        }
+        mock_drive_service.files.return_value = mock_files
+        mock_get_service.return_value = mock_drive_service
+
+        img = Image.new("RGB", (100, 100), color="green")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        file1 = SimpleUploadedFile("cert.jpg", buf.getvalue(), content_type="image/jpeg")
+
+        res = self.client.post(
+            f"/api/allievi/{self.allievo.id}/import-documento-drive/",
+            {
+                "tipo_documento": "certificati",
+                "convert_to_pdf": "true",
+                "filename": "Mario_Rossi.pdf",
+                "files": [file1],
+            },
+            format="multipart"
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["deleted_old_files"], 1)
+        mock_files.delete.assert_called_once_with(fileId="old_cert_id", supportsAllDrives=True)
 
     def test_prospect_creation_and_conversion_keeps_tessera_empty(self):
         # 1. Creazione prospect tramite serializer

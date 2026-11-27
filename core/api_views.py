@@ -1378,10 +1378,66 @@ class AllievoViewSet(viewsets.ModelViewSet):
                 except Exception as e:
                     logger.error(f"Errore salvataggio scadenza certificato medico: {e}")
 
+            # Se è un certificato medico e il nuovo upload è andato a buon fine, elimina eventuali certificati precedenti dello stesso allievo
+            deleted_old_count = 0
+            if tipo_documento == 'certificati' and uploaded_results:
+                try:
+                    new_ids = {u.get('id') for u in uploaded_results if u.get('id')}
+                    new_names_lower = {(u.get('name') or '').lower() for u in uploaded_results if u.get('name')}
+                    res_list = drive_service.files().list(
+                        q=f"'{target_folder_id}' in parents and trashed = false",
+                        spaces='drive',
+                        fields='files(id, name, description)',
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True,
+                        pageSize=1000,
+                    ).execute()
+                    all_in_folder = res_list.get('files', [])
+
+                    full_name_lower = f"{allievo.nome} {allievo.cognome}".strip().lower()
+                    rev_name_lower = f"{allievo.cognome} {allievo.nome}".strip().lower()
+                    base_lower = default_base_name.lower()
+                    rev_base_lower = f"{clean_cognome}_{clean_nome}".strip('_').lower()
+
+                    def _matches_prefix(fname_l, prefix):
+                        if not prefix:
+                            return False
+                        if fname_l == prefix:
+                            return True
+                        if fname_l.startswith(prefix):
+                            return fname_l[len(prefix)] in ('.', '_', '-', ' ')
+                        return False
+
+                    for old_f in all_in_folder:
+                        old_id = old_f.get('id')
+                        if not old_id or old_id in new_ids:
+                            continue
+                        fname_l = (old_f.get('name') or '').strip().lower()
+                        fdesc_l = (old_f.get('description') or '').strip().lower()
+                        matches_name = (
+                            fname_l in new_names_lower
+                            or _matches_prefix(fname_l, base_lower)
+                            or _matches_prefix(fname_l, rev_base_lower)
+                        )
+                        matches_desc = (
+                            (full_name_lower and (fdesc_l.endswith(f"per {full_name_lower}") or f"per {full_name_lower} " in fdesc_l))
+                            or (rev_name_lower and (fdesc_l.endswith(f"per {rev_name_lower}") or f"per {rev_name_lower} " in fdesc_l))
+                        )
+                        if matches_name or matches_desc:
+                            try:
+                                drive_service.files().delete(fileId=old_id, supportsAllDrives=True).execute()
+                                deleted_old_count += 1
+                                logger.info(f"Vecchio certificato medico eliminato da Drive: {old_f.get('name')} (id: {old_id})")
+                            except Exception as del_err:
+                                logger.warning(f"Impossibile eliminare il vecchio certificato Drive {old_id}: {del_err}")
+                except Exception as list_err:
+                    logger.warning(f"Impossibile verificare vecchi certificati su Drive: {list_err}")
+
             return Response({
                 'success': True,
                 'message': f"Documento caricato con successo su Google Drive nella cartella '{folder_label}'!",
                 'uploaded_files': uploaded_results,
+                'deleted_old_files': deleted_old_count,
                 'folder_nome': folder_label,
                 'tipo_documento': tipo_documento
             })
