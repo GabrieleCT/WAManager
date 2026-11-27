@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../utils/camera_capture_helper.dart';
 import '../widgets/manual_date_field.dart';
 
 class ImportDocumentiScreen extends StatefulWidget {
@@ -154,6 +155,32 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore selezione file: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _captureFromCamera() async {
+    try {
+      final photo = await capturePhotoFromCamera();
+      if (photo != null) {
+        setState(() {
+          _manualFiles.add({
+            'name': photo.name,
+            'bytes': photo.bytes,
+            'size': photo.bytes.length,
+            'isImage': true,
+            'isPdf': false,
+          });
+        });
+        if (_tipoDocumento == 'certificati' && _scadenzaCertificatoController.text.trim().isEmpty) {
+          _analizzaCertificatoMedico(userTriggered: false);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore acquisizione foto: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -614,32 +641,44 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
       key: const ValueKey(1),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const Text(
+              'Passo 2 e 3: File e Immagini ricevuti',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'File dalla chat WhatsApp di ${_selectedAllievo?.nome ?? "allievo"}, caricamento dal dispositivo o foto diretta con fotocamera.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
               children: [
-                const Text(
-                  'Passo 2 e 3: File e Immagini ricevuti',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  icon: const Icon(Icons.upload_file, size: 18),
+                  label: const Text('Carica dal dispositivo'),
+                  onPressed: _pickManualFiles,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'File dalla chat WhatsApp di ${_selectedAllievo?.nome ?? "allievo"} e upload manuale.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  icon: const Icon(Icons.camera_alt, size: 18),
+                  label: const Text('Scatta foto'),
+                  onPressed: _captureFromCamera,
                 ),
               ],
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade700,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              icon: const Icon(Icons.add_photo_alternate, size: 18),
-              label: const Text('Carica da PC'),
-              onPressed: _pickManualFiles,
             ),
           ],
         ),
@@ -667,7 +706,7 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Nessun file multimediale memorizzato per questo contatto via WhatsApp. Puoi caricare le immagini/documenti direttamente dal tuo computer cliccando "Carica da PC".',
+                    'Nessun file multimediale memorizzato per questo contatto via WhatsApp. Puoi caricare le immagini/documenti dal tuo dispositivo o scattare una foto con la fotocamera.',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ),
@@ -739,11 +778,11 @@ class _ImportDocumentiScreenState extends State<ImportDocumentiScreen> {
             }).toList(),
           ),
 
-        // Sezione file manuali aggiunti da PC
+        // Sezione file manuali aggiunti dal dispositivo o fotocamera
         if (_manualFiles.isNotEmpty) ...[
           const SizedBox(height: 16),
           Text(
-            'File aggiunti dal computer (${_manualFiles.length}):',
+            'File e foto aggiunti dal dispositivo (${_manualFiles.length}):',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
           const SizedBox(height: 6),
